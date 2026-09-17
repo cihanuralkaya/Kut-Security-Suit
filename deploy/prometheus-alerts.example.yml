@@ -1,0 +1,110 @@
+# KUT — Prometheus alarm kuralları (örnek) / Prometheus alerting rules (example).
+#
+# KUT C2 /metrics ucunu (KUT_METRICS_TOKEN ile) Prometheus'a scrape ettirin, sonra
+# bu kuralları prometheus.yml'de `rule_files` altına ekleyin. Eşikleri ortamınıza göre
+# ayarlayın. Scrape config örneği:
+#
+#   scrape_configs:
+#     - job_name: kut-c2
+#       scheme: https
+#       authorization: { credentials: "<KUT_METRICS_TOKEN>" }
+#       static_configs: [{ targets: ["c2.sirket.local:8445"] }]
+
+groups:
+  - name: kut-availability
+    rules:
+      - alert: KUTPipelineStalled
+        # Telemetri alımı 15 dk durdu → ajan/alım yolu sorunu (kör nokta).
+        expr: kut_seconds_since_last_ingest > 900
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "KUT olay-alımı durmuş görünüyor"
+          description: "Son telemetri alımından {{ $value }} sn geçti."
+
+      - alert: KUTClusterNotifyFallback
+        # Küme fan-out fallback artıyorsa DB NOTIFY erişiminde sorun var (#10 HA).
+        expr: increase(kut_cluster_notices_total{direction="fallback"}[10m]) > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "KUT küme NOTIFY fallback'i artıyor"
+          description: "DB LISTEN/NOTIFY erişimini kontrol edin."
+
+  - name: kut-certificates
+    rules:
+      - alert: KUTCertExpiringSoon
+        # CA/sunucu sertifikası 14 günden az → yenileyin (süre dolması = mTLS kesintisi).
+        expr: kut_cert_expiry_days < 14
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "KUT CA/sunucu sertifikası yakında doluyor"
+          description: "En az kalan gün: {{ $value }}. Sertifikayı yenileyin."
+
+      - alert: KUTCertExpired
+        expr: kut_cert_expiry_days < 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "KUT CA/sunucu sertifikası SÜRESİ DOLDU"
+          description: "mTLS kesintisi riski — hemen yenileyin."
+
+  - name: kut-security
+    rules:
+      - alert: KUTLoginBruteForce
+        # Kısa sürede kaba-kuvvet kilidi → admin konsoluna saldırı girişimi.
+        expr: increase(kut_login_lockouts_total[15m]) > 0
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "KUT admin konsoluna kaba-kuvvet girişimi"
+          description: "Son 15 dk içinde {{ $value }} giriş kilidi tetiklendi."
+
+      - alert: KUTDNSTunnel
+        expr: increase(kut_dns_tunnel_total[15m]) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "KUT olası DNS tünelleme / sızdırma"
+          description: "Bir uç nokta tek alan altında çok sayıda alt alan sorguladı."
+
+      - alert: KUTLateralMovement
+        expr: increase(kut_lateral_movement_total[15m]) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "KUT olası yanal hareket tespiti"
+          description: "Bir uç nokta kısa sürede çok sayıda iç hedefe bağlandı."
+
+      - alert: KUTEndpointBruteForce
+        expr: increase(kut_brute_force_total[15m]) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "KUT olası kaba-kuvvet / parola-püskürtme"
+          description: "Bir kaynak ana bilgisayarda kısa pencerede çok sayıda başarısız oturum açma (Windows 4625/4771)."
+
+      - alert: KUTAccountCompromise
+        expr: increase(kut_brute_force_success_total[15m]) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "KUT olası HESAP ELE GEÇİRME (başarılı kaba-kuvvet)"
+          description: "Bir ana bilgisayarda başarısız-oturum serisinin ardından başarılı oturum açma gözlendi (T1110)."
+
+      - alert: KUTHighConfidenceAttackChain
+        expr: increase(kut_chain_fired_total[15m]) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "KUT yüksek-güvenli saldırı zinciri"
+          description: "Aynı cihazda çok-sinyal korelasyon tetiklendi."
+
+      - alert: KUTIoCHit
+        expr: increase(kut_ioc_hits_total[10m]) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "KUT tehdit istihbaratı (IoC) eşleşmesi"
+          description: "Bilinen-kötü bir gösterge bir uç noktada görüldü."

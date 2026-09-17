@@ -1,0 +1,56 @@
+;
+; kutflt.inf - KUT tamper-protection MiniFilter
+; StartType=3 (demand) and ErrorControl=1 are deliberate: the driver is opt-in
+; and a load failure NEVER blocks Windows boot.
+;
+[Version]
+Signature   = "$Windows NT$"
+Class       = "ActivityMonitor"
+ClassGuid   = {b86dff51-a31d-4f34-8e58-5f3c5c4e2d67}   ; FSFilter Activity Monitor
+Provider    = %ProviderName%
+DriverVer   =
+CatalogFile = kutflt.cat
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir      = 12            ; %SystemRoot%\System32\drivers
+KutFlt.DriverFiles = 12
+
+[DefaultInstall.NTamd64]
+OptionDesc = %ServiceDesc%
+CopyFiles  = KutFlt.DriverFiles
+
+[DefaultInstall.NTamd64.Services]
+AddService = %ServiceName%,,KutFlt.Service
+
+[KutFlt.Service]
+DisplayName    = %ServiceName%
+Description    = %ServiceDesc%
+ServiceBinary  = %12%\kutflt.sys
+Dependencies   = "FltMgr"
+ServiceType    = 2                  ; SERVICE_FILE_SYSTEM_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START (opt-in; not boot)
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL (never block boot)
+LoadOrderGroup = "FSFilter Activity Monitor"
+AddReg         = KutFlt.AddRegistry
+
+[KutFlt.AddRegistry]
+HKR,"Instances","DefaultInstance",0x00000000,%InstanceName%
+HKR,"Instances\"%InstanceName%,"Altitude",0x00000000,"385200"   ; PLACEHOLDER altitude
+HKR,"Instances\"%InstanceName%,"Flags",0x00010001,0x0
+
+[KutFlt.DriverFiles]
+kutflt.sys
+
+[SourceDisksFiles]
+kutflt.sys = 1
+
+[SourceDisksNames]
+1 = %DiskName%
+
+[Strings]
+ProviderName = "KUT Security"
+ServiceName  = "kutflt"
+ServiceDesc  = "KUT Tamper-Protection MiniFilter"
+InstanceName = "KutFlt Instance"
+DiskName     = "KUT Driver Install Disk"

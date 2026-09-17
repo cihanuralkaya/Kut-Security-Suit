@@ -1,0 +1,2652 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KUT Komuta Merkezi</title>
+<style>
+  /* Koyu güvenlik-operasyon teması (bilinçli tek tema; her renk açıkça boyanır). */
+  :root {
+    --bg:#0a0d12; --bg2:#0e131a; --panel:#121924; --panel2:#0f1620;
+    --line:#1f2a37; --line2:#2a3746;
+    --ink:#e6edf3; --muted:#8b98a8; --faint:#5f6d7e;
+    --accent:#38bdf8; --accent2:#0ea5e9; --accent-dim:#0b3a52; --accent-glow:rgba(56,189,248,.15);
+    --ok:#22c55e; --ok-dim:#0f2e1c; --warn:#f59e0b; --warn-dim:#332208;
+    --crit:#ef4444; --crit-dim:#3a1414; --med:#fb923c;
+    --radius:12px; --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+
+  /* ---------- AÇIK TEMA (LIGHT) ----------
+     Aynı değişkenleri override eder; tüm bileşen CSS'i zaten bu token'ları okur.
+     • Kullanıcı "Açık" seçtiyse:  :root[data-theme="light"]
+     • Kullanıcı bir şey seçmediyse ve OS açık tercih ediyorsa (koyu'yu zorlamadıysa):
+       @media (prefers-color-scheme:light) + :root:not([data-theme="dark"])
+     Böylece açık bir explicit seçim OS tercihini her yönde ezer. */
+  :root[data-theme="light"] {
+    --bg:#eef1f6; --bg2:#e6eaf0; --panel:#ffffff; --panel2:#f2f5f9;
+    --line:#dce2ea; --line2:#c5cede;
+    --ink:#101a26; --muted:#526074; --faint:#78859a;
+    --accent:#0284c7; --accent2:#0369a1; --accent-dim:rgba(2,132,199,.13); --accent-glow:rgba(2,132,199,.20);
+    --ok:#15803d; --ok-dim:#dcfce7; --warn:#b45309; --warn-dim:#fdf1d6;
+    --crit:#dc2626; --crit-dim:#fde3e3; --med:#c2410c;
+  }
+  @media (prefers-color-scheme:light) {
+    :root:not([data-theme="dark"]) {
+      --bg:#eef1f6; --bg2:#e6eaf0; --panel:#ffffff; --panel2:#f2f5f9;
+      --line:#dce2ea; --line2:#c5cede;
+      --ink:#101a26; --muted:#526074; --faint:#78859a;
+      --accent:#0284c7; --accent2:#0369a1; --accent-dim:rgba(2,132,199,.13); --accent-glow:rgba(2,132,199,.20);
+      --ok:#15803d; --ok-dim:#dcfce7; --warn:#b45309; --warn-dim:#fdf1d6;
+      --crit:#dc2626; --crit-dim:#fde3e3; --med:#c2410c;
+    }
+  }
+  /* Açık temada bazı sabit-boyalı yerleri düzelt (kontrast/uyum). */
+  :root[data-theme="light"] body {
+    background:radial-gradient(1200px 600px at 80% -10%, #d9ecfb 0%, transparent 55%), var(--bg);
+  }
+  :root[data-theme="light"] .pill.offl { background:#e7ecf2; }
+  :root[data-theme="light"] .btn.warn { color:#fff; }
+  :root[data-theme="light"] .login-card,
+  :root[data-theme="light"] .toast { box-shadow:0 14px 34px rgba(15,26,38,.14); }
+  :root[data-theme="light"] .popover { box-shadow:0 16px 40px rgba(15,26,38,.16); }
+  @media (prefers-color-scheme:light) {
+    :root:not([data-theme="dark"]) body {
+      background:radial-gradient(1200px 600px at 80% -10%, #d9ecfb 0%, transparent 55%), var(--bg);
+    }
+    :root:not([data-theme="dark"]) .pill.offl { background:#e7ecf2; }
+    :root:not([data-theme="dark"]) .btn.warn { color:#fff; }
+    :root:not([data-theme="dark"]) .login-card,
+    :root:not([data-theme="dark"]) .toast { box-shadow:0 14px 34px rgba(15,26,38,.14); }
+    :root:not([data-theme="dark"]) .popover { box-shadow:0 16px 40px rgba(15,26,38,.16); }
+  }
+  /* Tema geçişini yumuşat (hareket azaltma tercihine saygılı). */
+  @media (prefers-reduced-motion:no-preference) {
+    body, header.top, .card, .stat, .login-card, input, select, textarea,
+    table td, thead th, .pill, .chip, .toast, .seg, .seg button, .icon-btn,
+    .popover, .theme-seg button, .swatch {
+      transition: background-color .25s ease, border-color .25s ease, color .25s ease, box-shadow .2s ease;
+    }
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; }
+  body {
+    margin:0; background:
+      radial-gradient(1200px 600px at 80% -10%, #0f2233 0%, transparent 55%),
+      var(--bg);
+    color:var(--ink); font-family:var(--sans); font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  button { font-family:inherit; cursor:pointer; }
+  ::selection { background:var(--accent-dim); }
+
+  /* ---------- LOGIN ---------- */
+  #login { min-height:100%; display:grid; place-items:center; padding:24px; }
+  .login-card {
+    width:100%; max-width:360px; background:var(--panel); border:1px solid var(--line);
+    border-radius:16px; padding:28px; box-shadow:0 20px 60px rgba(0,0,0,.5);
+  }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; letter-spacing:-.01em; }
+  .brand .logo { font-size:22px; }
+  .brand .sub { display:block; font-size:11px; font-weight:500; color:var(--faint);
+    letter-spacing:.14em; text-transform:uppercase; margin-top:2px; }
+  .login-card h1 { font-size:15px; margin:22px 0 4px; }
+  .login-card p.hint { color:var(--muted); font-size:12.5px; margin:0 0 18px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:14px 0 6px; letter-spacing:.02em; }
+  input, select {
+    width:100%; padding:10px 12px; background:var(--panel2); color:var(--ink);
+    border:1px solid var(--line2); border-radius:9px; font-size:14px; outline:none;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  input:focus, select:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+  .btn {
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    padding:9px 14px; border-radius:9px; border:1px solid transparent; font-size:13px; font-weight:600;
+    background:var(--accent); color:var(--accent-ink,#04121c); transition:filter .15s, transform .05s;
+  }
+  .btn:hover { filter:brightness(1.08); }
+  .btn:active { transform:translateY(1px); }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .btn.block { width:100%; margin-top:20px; padding:11px; }
+  .btn.ghost { background:transparent; color:var(--ink); border-color:var(--line2); }
+  .btn.ghost:hover { border-color:var(--accent); color:var(--accent); filter:none; }
+  .btn.danger { background:var(--crit); color:#fff; }
+  .btn.warn { background:var(--warn); color:#1a1204; }
+  .btn.sm { padding:6px 10px; font-size:12px; }
+  .err { color:var(--crit); font-size:12.5px; margin-top:12px; min-height:16px; }
+
+  /* ---------- APP SHELL ---------- */
+  #app { display:none; height:100vh; grid-template-columns:216px 1fr; grid-template-rows:auto 1fr; overflow:hidden; }
+  @media (max-width:860px){ #app { grid-template-columns:58px 1fr; } }
+  header.top {
+    grid-column:1 / -1;
+    display:flex; align-items:center; gap:10px 14px; flex-wrap:wrap; padding:11px 20px;
+    background:linear-gradient(var(--panel),var(--panel2)); border-bottom:1px solid var(--line);
+    position:relative; z-index:30;
+  }
+  body { overflow-x:hidden; }
+  header.top .brand { font-size:15px; }
+  header.top .sp { flex:1; }
+  .page-title { font-size:14px; font-weight:650; letter-spacing:.01em; color:var(--ink);
+    margin-left:4px; padding-left:14px; border-left:1px solid var(--line2); }
+  /* ---------- SIDEBAR NAV ---------- */
+  .sidebar { grid-row:2; grid-column:1; background:var(--panel2); border-right:1px solid var(--line);
+    padding:14px 10px; display:flex; flex-direction:column; gap:3px; overflow-y:auto; }
+  .nav-item { display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:9px;
+    color:var(--muted); font-size:13.5px; font-weight:550; cursor:pointer; border:1px solid transparent;
+    background:transparent; text-align:left; width:100%; font-family:inherit;
+    transition:background .15s ease,color .15s ease; }
+  .nav-item .ic { font-size:15px; width:20px; text-align:center; flex:none; }
+  .nav-item:hover { background:var(--panel); color:var(--ink); }
+  .nav-item.active { background:var(--accent-dim); color:var(--accent); border-color:var(--line2); }
+  .nav-item:focus-visible { outline:2px solid var(--accent-glow,var(--accent)); outline-offset:1px; }
+  .nav-sep { height:1px; background:var(--line); margin:8px 6px; }
+  @media (max-width:860px){ .nav-item .lbl { display:none; } .nav-item{ justify-content:center; padding:11px 0; }
+    .sidebar{ padding:12px 5px; } .nav-sep{ margin:8px 4px; } }
+  .live { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);
+    font-family:var(--mono); }
+  .live .dot { width:8px; height:8px; border-radius:50%; background:var(--ok);
+    box-shadow:0 0 0 0 rgba(34,197,94,.5); animation:pulse 2s infinite; }
+  .live.off .dot { background:var(--crit); animation:none; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.45);} 70%{box-shadow:0 0 0 7px rgba(34,197,94,0);} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0);} }
+  @media (prefers-reduced-motion:reduce){ .live .dot{animation:none;} }
+  .whoami { font-size:12.5px; color:var(--muted); }
+  .whoami b { color:var(--ink); font-weight:600; }
+
+  main { grid-row:2; grid-column:2; padding:22px 24px; display:flex; flex-direction:column; gap:18px;
+    overflow-y:auto; width:100%; }
+
+  /* ---------- STAT TILES ---------- */
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px 18px; position:relative; overflow:hidden; }
+  .stat::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent); opacity:.8; }
+  .stat.good::before{ background:var(--ok);} .stat.warn::before{ background:var(--warn);} .stat.crit::before{ background:var(--crit);}
+  .stat .k { font-size:12px; color:var(--muted); letter-spacing:.03em; }
+  .stat .v { font-size:30px; font-weight:700; font-family:var(--mono); font-variant-numeric:tabular-nums;
+    line-height:1.1; margin-top:6px; }
+  .stat .v small { font-size:13px; color:var(--faint); font-weight:500; }
+
+  /* ---------- CARD GRID ---------- */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:16px; align-items:start; }
+  .col { display:contents; }
+  .card[data-span="2"] { grid-column:span 2; }
+  @media (max-width:820px){ .card[data-span="2"]{ grid-column:auto; } }
+  /* Dar ekran: kart ızgarası tek sütun; kart min-width:0 ile track'e küçülür —
+     geniş tablolar kartı/viewport'u AŞMAZ, .tbl-wrap içinde yatay kaydırılır. */
+  @media (max-width:640px){ .grid{ grid-template-columns:1fr; } .grid .card{ min-width:0; } }
+  /* View (section) show/hide — sidebar navigation switches the active view. */
+  main[data-active="overview"] [data-view]:not([data-view~="overview"]),
+  main[data-active="devices"]  [data-view]:not([data-view~="devices"]),
+  main[data-active="policies"] [data-view]:not([data-view~="policies"]),
+  main[data-active="security"] [data-view]:not([data-view~="security"]),
+  main[data-active="admin"]    [data-view]:not([data-view~="admin"]) { display:none !important; }
+
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
+  .card > .head { display:flex; align-items:center; gap:10px; padding:13px 16px; border-bottom:1px solid var(--line); }
+  .card > .head h2 { font-size:13px; margin:0; font-weight:650; letter-spacing:.02em; display:flex; align-items:center; gap:8px; }
+  .card > .head .count { font-family:var(--mono); font-size:12px; color:var(--faint);
+    background:var(--panel2); border:1px solid var(--line); border-radius:20px; padding:1px 9px; }
+  .card > .head .sp { flex:1; }
+  .card > .body { padding:14px 16px; }
+
+  /* ---------- TABLES ---------- */
+  .tbl-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  thead th { text-align:left; padding:9px 14px; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--faint); border-bottom:1px solid var(--line); font-weight:600; white-space:nowrap; }
+  tbody td { padding:10px 14px; border-bottom:1px solid var(--line); white-space:nowrap; vertical-align:middle; }
+  tbody tr:last-child td { border-bottom:0; }
+  tbody tr.sel td { background:var(--accent-dim); }
+  tbody tr.click { cursor:pointer; }
+  tbody tr.click:hover td { background:var(--panel2); }
+  td.mono, .mono { font-family:var(--mono); font-size:12px; }
+  .empty { padding:26px 16px; text-align:center; color:var(--faint); font-size:13px; }
+
+  /* ---------- PILLS / CHIPS ---------- */
+  .pill { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600;
+    padding:2px 9px; border-radius:20px; border:1px solid transparent; font-family:var(--mono); white-space:nowrap; }
+  .pill::before { content:""; width:6px; height:6px; border-radius:50%; }
+  .pill.on { color:var(--ok); background:var(--ok-dim); } .pill.on::before{ background:var(--ok); }
+  .pill.offl { color:var(--faint); background:#141c26; } .pill.offl::before{ background:var(--faint); }
+  .pill.q { color:var(--crit); background:var(--crit-dim); } .pill.q::before{ background:var(--crit); }
+  .chip { font-size:10.5px; font-family:var(--mono); color:var(--muted); background:var(--panel2);
+    border:1px solid var(--line); border-radius:5px; padding:1px 6px; letter-spacing:.03em; }
+  .sev { display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:12px; }
+  .sev::before { content:""; width:7px; height:7px; border-radius:2px; background:var(--faint); }
+  .sev.INFO::before{ background:var(--faint);} .sev.LOW::before{ background:var(--accent);}
+  .sev.MEDIUM{ color:var(--med);} .sev.MEDIUM::before{ background:var(--med);}
+  .sev.HIGH{ color:var(--warn);} .sev.HIGH::before{ background:var(--warn);}
+  .sev.CRITICAL{ color:var(--crit);} .sev.CRITICAL::before{ background:var(--crit);}
+
+  /* ---------- ACTION PANEL ---------- */
+  .sel-head { font-size:12.5px; color:var(--muted); }
+  .sel-head b { color:var(--ink); }
+  .sel-none { color:var(--faint); font-style:italic; }
+  .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .field { margin-top:12px; }
+  .out { margin-top:12px; font-size:12.5px; font-family:var(--mono); word-break:break-all;
+    background:var(--panel2); border:1px solid var(--line); border-radius:9px; padding:10px 12px; display:none; }
+  .out.show{ display:block; } .out.ok{ border-color:var(--ok); } .out.err{ border-color:var(--crit); color:var(--crit); }
+  .divider { height:1px; background:var(--line); margin:16px 0; }
+  .lbl { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); font-weight:600; }
+  .detail { margin-top:14px; font-size:12.5px; display:none; }
+  .detail.show { display:block; }
+  .detail h4 { margin:12px 0 6px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); }
+  .detail .kv { display:flex; justify-content:space-between; gap:10px; padding:3px 0; border-bottom:1px solid var(--line); }
+  .detail .kv span:first-child { color:var(--muted); }
+  .detail .kv span:last-child { font-family:var(--mono); font-size:12px; text-align:right; word-break:break-all; }
+  .detail .mini { font-family:var(--mono); font-size:11.5px; color:var(--muted); padding:2px 0; }
+
+  /* ---------- TOAST ---------- */
+  #toasts { position:fixed; right:18px; bottom:18px; display:flex; flex-direction:column; gap:10px; z-index:60; }
+  .toast { background:var(--panel); border:1px solid var(--line2); border-left:3px solid var(--accent);
+    border-radius:10px; padding:11px 14px; font-size:13px; box-shadow:0 12px 30px rgba(0,0,0,.5);
+    min-width:220px; max-width:340px; animation:slidein .2s ease; }
+  .toast.ok{ border-left-color:var(--ok);} .toast.err{ border-left-color:var(--crit);} .toast.warn{ border-left-color:var(--warn);}
+  .toast .t { font-weight:600; margin-bottom:2px; }
+  .toast .d { color:var(--muted); font-size:12px; }
+  @keyframes slidein { from{ transform:translateY(8px); opacity:0; } to{ transform:none; opacity:1; } }
+
+  .row { display:flex; gap:8px; align-items:center; }
+  .seg { display:inline-flex; border:1px solid var(--line2); border-radius:8px; overflow:hidden; }
+  .seg button { background:var(--panel2); color:var(--muted); border:0; padding:5px 10px; font-size:12px; }
+  .seg button.on { background:var(--accent-dim); color:var(--accent); }
+
+  /* ---------- TEMA / GÖRÜNÜM KONTROLLERİ ---------- */
+  .icon-btn {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:32px; height:32px; padding:0; border-radius:8px; line-height:1; font-size:15px;
+    background:var(--panel2); color:var(--ink); border:1px solid var(--line2);
+    transition:border-color .15s, color .15s, background .15s;
+  }
+  .icon-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .icon-btn:focus-visible { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+  .settings-wrap { position:relative; display:inline-flex; }
+  .popover {
+    position:absolute; top:calc(100% + 10px); right:0; z-index:50; width:250px;
+    background:var(--panel); border:1px solid var(--line2); border-radius:12px;
+    box-shadow:0 18px 44px rgba(0,0,0,.5); padding:14px; display:none;
+  }
+  .popover.show { display:block; }
+  .popover h3 { margin:0 0 9px; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--faint); font-weight:600; }
+  .popover .grp { margin-bottom:15px; }
+  .popover .grp:last-child { margin-bottom:0; }
+  .theme-seg { display:flex; border:1px solid var(--line2); border-radius:8px; overflow:hidden; }
+  .theme-seg button { flex:1; background:var(--panel2); color:var(--muted); border:0; padding:6px 8px; font-size:12px; }
+  .theme-seg button:not(:last-child) { border-right:1px solid var(--line2); }
+  .theme-seg button.on { background:var(--accent-dim); color:var(--accent); font-weight:600; }
+  .theme-seg button:focus-visible { outline:none; box-shadow:inset 0 0 0 2px var(--accent); }
+  .swatches { display:flex; flex-wrap:wrap; gap:9px; align-items:center; }
+  .swatch { width:26px; height:26px; border-radius:50%; border:2px solid var(--line2); padding:0;
+    cursor:pointer; position:relative; transition:transform .1s, border-color .15s; }
+  .swatch:hover { transform:scale(1.09); }
+  .swatch.on { border-color:var(--ink); }
+  .swatch.on::after { content:"✓"; position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; color:#fff; font-size:13px; font-weight:700; text-shadow:0 1px 2px rgba(0,0,0,.65); }
+  .swatch:focus-visible { outline:none; box-shadow:0 0 0 3px var(--accent-glow); }
+  .swatch.custom { background:conic-gradient(from 90deg,#f43f5e,#f59e0b,#22c55e,#38bdf8,#8b5cf6,#f43f5e);
+    overflow:hidden; }
+  .swatch.custom input { position:absolute; inset:0; width:100%; height:100%; opacity:0; padding:0; border:0; cursor:pointer; }
+  .link-btn { background:transparent; border:0; color:var(--muted); font-size:11.5px; padding:0;
+    margin-top:9px; text-decoration:underline; }
+  .link-btn:hover { color:var(--accent); }
+  .link-btn:focus-visible { outline:none; color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); border-radius:4px; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="login-card">
+    <div class="brand"><span>KUT Komuta Merkezi<span class="sub">Endpoint Security · MDM</span></span></div>
+    <h1>Yönetici Girişi</h1>
+    <p class="hint">Kurumsal uç nokta güvenlik ve ajan yönetim konsolu.</p>
+    <label for="l-email">E-posta</label>
+    <input id="l-email" type="email" autocomplete="username" placeholder="admin@sirket.local">
+    <label for="l-pass">Parola</label>
+    <input id="l-pass" type="password" autocomplete="current-password" placeholder="••••••••">
+    <div id="l-mfa-row" style="display:none">
+      <label for="l-code">Doğrulama kodu (2FA)</label>
+      <input id="l-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
+    </div>
+    <button id="l-btn" class="btn block">Giriş Yap</button>
+    <div id="l-err" class="err"></div>
+    <details style="margin-top:16px">
+      <summary style="cursor:pointer;font-size:12px;color:var(--muted);list-style:none">🔒 KVKK Aydınlatma Metni</summary>
+      <p id="notice-text" style="font-size:11.5px;color:var(--faint);line-height:1.55;margin:8px 0 0"></p>
+    </details>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <header class="top">
+    <div class="brand">KUT Komuta Merkezi</div>
+    <span id="page-title" class="page-title">Genel Bakış</span>
+    <span class="sp"></span>
+    <span id="live" class="live"><span class="dot"></span><span id="live-txt">bağlanıyor…</span></span>
+    <div class="seg" title="Otomatik yenileme">
+      <button id="rf-on" class="on">Canlı</button>
+      <button id="rf-off">Durdur</button>
+    </div>
+    <button id="theme-toggle" class="icon-btn" type="button" aria-label="Temayı değiştir">🌙</button>
+    <div class="settings-wrap">
+      <button id="settings-btn" class="icon-btn" type="button" aria-label="Görünüm ayarları"
+        aria-haspopup="dialog" aria-expanded="false" title="Görünüm ayarları">⚙️</button>
+      <div id="settings-panel" class="popover" role="dialog" aria-label="Görünüm ayarları">
+        <div class="grp">
+          <h3>Tema</h3>
+          <div class="theme-seg" id="theme-seg" role="group" aria-label="Tema modu">
+            <button id="theme-auto" type="button" data-mode="auto">Otomatik</button>
+            <button id="theme-light" type="button" data-mode="light">Açık</button>
+            <button id="theme-dark" type="button" data-mode="dark">Koyu</button>
+          </div>
+        </div>
+        <div class="grp">
+          <h3>Vurgu Rengi</h3>
+          <div class="swatches" id="accent-swatches">
+            <button id="accent-custom" class="swatch custom" type="button" aria-label="Özel vurgu rengi seç" title="Özel renk">
+              <input id="accent-picker" type="color" aria-label="Özel vurgu rengi" value="#38bdf8">
+            </button>
+          </div>
+          <button id="accent-reset" class="link-btn" type="button">Varsayılana döndür</button>
+        </div>
+      </div>
+    </div>
+    <span class="whoami">👤 <b id="who"></b></span>
+    <button id="logout" class="btn ghost sm">Çıkış</button>
+  </header>
+
+  <aside class="sidebar" id="sidebar">
+    <button class="nav-item active" data-nav="overview" type="button"><span class="ic">📊</span><span class="lbl">Genel Bakış</span></button>
+    <button class="nav-item" data-nav="devices" type="button"><span class="ic">💻</span><span class="lbl">Cihazlar</span></button>
+    <button class="nav-item" data-nav="policies" type="button"><span class="ic">🎫</span><span class="lbl">Politika &amp; Kayıt</span></button>
+    <div class="nav-sep"></div>
+    <button class="nav-item" data-nav="security" type="button"><span class="ic">🛡️</span><span class="lbl">Güvenlik</span></button>
+    <button class="nav-item" data-nav="admin" type="button"><span class="ic">👥</span><span class="lbl">Yönetim</span></button>
+  </aside>
+
+  <main data-active="overview">
+    <section class="stats" id="stats" data-view="overview"></section>
+
+    <div class="card" id="sevcard" data-view="overview" style="display:none">
+      <div class="head"><h2>📊 Önem Dağılımı <span class="count" id="sev-total">0</span></h2>
+        <span class="sp"></span><span class="mono" id="sev-window" style="color:var(--faint);font-size:11px"></span></div>
+      <div class="body">
+        <div id="sevbar" style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--panel2);border:1px solid var(--line)"></div>
+        <div id="sevlegend" style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px"></div>
+      </div>
+    </div>
+
+    <div class="card" data-view="overview">
+      <div class="head"><h2>⚔️ Tehdit Etkinliği <span class="count" id="act-uptime">—</span></h2>
+        <span class="sp"></span>
+        <button class="btn ghost sm" data-act="reportHTML" title="Güvenlik duruş raporunu HTML olarak aç">📄 Rapor</button>
+        <button class="btn ghost sm" data-act="reportCSV" title="KPI'ları CSV olarak indir">⬇ CSV</button>
+        <button class="btn ghost sm" data-act="reportExecMD" title="Yönetici özetini Markdown olarak indir">⬇ Yönetici (MD)</button></div>
+      <div class="body">
+        <div id="act-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px"></div>
+        <div class="lbl" style="margin:14px 0 6px">Olay hızı (canlı · alım/aralık)</div>
+        <div id="act-chart" style="display:flex;align-items:flex-end;gap:3px;height:52px;padding:4px 0"></div>
+      </div>
+    </div>
+
+    <div class="card" data-view="overview">
+      <div class="head"><h2>🖥️ OS Envanteri <span class="count" id="osinv-count">0</span></h2></div>
+      <div class="body">
+        <div id="osinv" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+    </div>
+
+    <div class="card" data-view="overview">
+      <div class="head"><h2>🛰️ Filo Kapsamı <span class="count" id="cov-pct">—</span></h2>
+        <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">kim korunuyor?</span></div>
+      <div class="body">
+        <p class="hint" style="margin:0 0 8px">Çevrimiçi (korunan) oran ve ajan sürüm dağılımı (sürüm-kayması). Sessiz/eski ajanlar gerçek dağıtım boşluğudur.</p>
+        <div id="cov-summary" style="margin-bottom:8px"></div>
+        <div class="lbl" style="margin:6px 0 4px">Ajan sürüm dağılımı</div>
+        <div id="cov-versions" style="display:flex;flex-direction:column;gap:5px"></div>
+      </div>
+    </div>
+
+    <div class="card" data-view="overview">
+      <div class="head"><h2>📊 Risk &amp; Uyum <span class="count" id="risk-score">—</span></h2>
+        <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">çok-faktörlü</span></div>
+      <div class="body">
+        <p class="hint" style="margin:0 0 8px">Açık incident, uyum ihlali ve karantina durumundan hesaplanan filo riski; uyum çerçeveleri; tespit/yanıt süreleri.</p>
+        <div id="risk-summary" style="margin-bottom:8px"></div>
+        <div class="lbl" style="margin:6px 0 4px">En riskli cihazlar</div>
+        <div id="risk-devices" style="display:flex;flex-direction:column;gap:5px"></div>
+        <div class="lbl" style="margin:10px 0 4px">Uyum çerçeveleri</div>
+        <div id="fw-list" style="display:flex;flex-direction:column;gap:5px"></div>
+        <div class="lbl" style="margin:10px 0 4px">Tespit/Yanıt süreleri</div>
+        <div id="trend-summary" class="mono" style="font-size:12px;color:var(--muted)"></div>
+        <div class="lbl" style="margin:10px 0 4px">Yönetici davranışı (UEBA)</div>
+        <div id="ueba-summary" style="display:flex;flex-direction:column;gap:4px"></div>
+      </div>
+    </div>
+
+    <div class="card" data-view="overview">
+      <div class="head"><h2>🔥 En Çok Olay Üreten Cihazlar <span class="count" id="topdev-count">0</span></h2>
+        <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">son olaylardan · triyaj</span></div>
+      <div class="body">
+        <div id="topdev" style="display:flex;flex-direction:column;gap:6px"></div>
+        <div id="topdev-empty" class="empty" style="padding:10px">Henüz olay yok.</div>
+      </div>
+    </div>
+
+    <div class="card" data-view="overview">
+      <div class="head"><h2>🔒 Disk Şifreleme Uyumu <span class="count" id="enc-count">0</span></h2>
+        <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">cihaz uyum durumundan</span></div>
+      <div class="body">
+        <div id="enc-summary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px"></div>
+        <div id="enc-noncompliant"></div>
+        <div id="enc-empty" class="empty" style="padding:10px">Henüz uyum verisi yok.</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="col">
+        <!-- DEVICES -->
+        <div class="card" data-view="devices" data-span="2">
+          <div class="head">
+            <h2>💻 Cihazlar <span id="dev-count" class="count">0</span></h2>
+            <span class="sp"></span>
+            <div class="seg" id="devfilter" title="Duruma göre süz">
+              <button data-status="" class="on" type="button">Tümü</button>
+              <button data-status="online" type="button">Çevrimiçi</button>
+              <button data-status="offline" type="button">Çevrimdışı</button>
+              <button data-status="quarantine" type="button">Karantina</button>
+            </div>
+            <input id="dev-search" placeholder="🔍 hostname / MAC / OS / etiket" style="width:auto;padding:5px 10px;font-size:12px">
+            <button class="btn ghost sm" id="dev-csv" title="Görünen cihazları CSV indir">↓ CSV</button>
+            <button class="btn ghost sm" id="dev-refresh">↻ Yenile</button>
+          </div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Durum</th><th>Hostname</th><th>MAC</th><th>OS</th><th>Sürüm</th><th>Son görülme</th></tr></thead>
+              <tbody id="dev-body"></tbody>
+            </table>
+          </div>
+          <div id="dev-empty" class="empty">Henüz kayıtlı cihaz yok. Sağdan bir <b>enrollment token</b> üretip ajanı kurun.</div>
+        </div>
+
+        <!-- SOFTWARE SEARCH -->
+        <div class="card" data-view="devices" data-span="2">
+          <div class="head"><h2>🔎 Yazılım Ara <span id="sw-count" class="count">0</span></h2>
+            <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">zafiyet müdahalesi</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Filo genelinde yüklü yazılım arayın — "hangi cihazlarda X kurulu?". Her cihazın en son envanterinde aranır.</p>
+            <div style="display:flex;gap:8px;margin-bottom:10px">
+              <input id="sw-q" placeholder="ör. Chrome, 7-Zip, Log4j…" style="flex:1;padding:6px 10px;font-size:12px">
+              <button class="btn sm" id="sw-run" type="button">Ara</button>
+            </div>
+            <div id="sw-result"></div>
+          </div>
+        </div>
+
+        <!-- EVENTS -->
+        <div class="card" data-view="devices" data-span="2">
+          <div class="head">
+            <h2>📡 Olaylar <span id="evt-count" class="count">0</span></h2>
+            <span class="sp"></span>
+            <div class="seg" id="sevfilter" title="Öneme göre süz">
+              <button data-sev="" class="on">Tümü</button>
+              <button data-sev="HIGH">Yüksek+</button>
+              <button data-sev="CRITICAL">Kritik</button>
+            </div>
+            <button class="btn ghost sm" id="evt-pending" type="button" title="Yalnız çözülmemiş (kapatılmamış) olayları göster">Bekleyen</button>
+            <button class="btn ghost sm" id="evt-csv" title="Görünen olayları CSV indir">↓ CSV</button>
+            <button class="btn ghost sm" id="evt-refresh">↻</button>
+          </div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Zaman</th><th>Kategori</th><th>Önem</th><th>Mesaj</th></tr></thead>
+              <tbody id="evt-body"></tbody>
+            </table>
+          </div>
+          <div id="evt-empty" class="empty">Olay yok.</div>
+        </div>
+
+        <!-- AUDIT -->
+        <div class="card" data-view="admin" data-span="2">
+          <div class="head"><h2>📝 Denetim İzi <span id="aud-count" class="count">0</span></h2>
+            <span class="sp"></span>
+            <input id="aud-search" placeholder="🔍 yönetici / eylem / hedef" style="width:auto;padding:5px 10px;font-size:12px">
+            <button class="btn ghost sm" id="aud-verify" title="Denetim izi hash-zincirinin bütünlüğünü doğrula">🔐 Zinciri Doğrula</button>
+            <button class="btn ghost sm" id="aud-csv" title="Görünen kayıtları CSV indir">↓ CSV</button>
+            <button class="btn ghost sm" id="aud-refresh">↻</button></div>
+          <div class="tbl-wrap">
+            <table><thead><tr><th>Zaman</th><th>Yönetici</th><th>Eylem</th><th>Hedef</th></tr></thead>
+              <tbody id="aud-body"></tbody></table>
+          </div>
+          <div id="aud-empty" class="empty">Kayıt yok.</div>
+        </div>
+      </div>
+
+      <!-- ACTIONS -->
+      <div class="col">
+        <div class="card" data-view="devices">
+          <div class="head"><h2>⚡ Cihaz Eylemleri</h2></div>
+          <div class="body">
+            <div id="sel-head" class="sel-head sel-none">Bir cihaz seçmek için tablodan satıra tıklayın.</div>
+            <div class="actions">
+              <button class="btn warn sm" data-act="quarantine" disabled>🔒 Karantina</button>
+              <button class="btn ghost sm" data-act="release" disabled>🔓 Serbest</button>
+              <button class="btn ghost sm" data-act="diagnostics" disabled>🩺 Tanılama Topla</button>
+              <button class="btn danger sm" data-act="revoke" disabled>⛔ Sertifika İptal</button>
+            </div>
+            <div class="lbl" style="margin-top:14px">MDM — Uzak Eylemler</div>
+            <div class="actions" style="margin-top:8px">
+              <button class="btn ghost sm" data-act="lock" disabled>🔒 Ekranı Kilitle</button>
+              <button class="btn warn sm" data-act="restart" disabled>🔄 Yeniden Başlat</button>
+              <button class="btn danger sm" data-act="wipe" disabled>💥 Veriyi Sil (ADMIN)</button>
+            </div>
+            <!-- Çift-kontrol (dört-göz) bekleyen WIPE talepleri; boşsa gizli. -->
+            <div id="pending-wipes" style="margin-top:10px;display:none">
+              <div class="lbl" style="color:var(--crit)">⚠ Onay Bekleyen WIPE Talepleri (dört-göz)</div>
+              <div id="pending-wipes-list" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
+            </div>
+            <div class="lbl" style="margin-top:14px">Adli — Dosya Toplama (IR)</div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <input id="cf-path" placeholder="ör. C:\Windows\Temp\suspicious.log" style="flex:1;padding:6px 9px;font-size:12px" disabled>
+              <button class="btn sm" data-act="collectFile" disabled>📥 Topla</button>
+            </div>
+            <div class="lbl" style="margin-top:14px">KVKK — Veri Sahibi Hakları</div>
+            <div class="actions" style="margin-top:8px">
+              <button class="btn ghost sm" data-act="exportData" disabled>📤 Veri Dışa Aktar</button>
+              <button class="btn danger sm" data-act="eraseData" disabled>🗑 Veriyi Sil</button>
+            </div>
+            <div class="divider"></div>
+            <div class="lbl">Etiketler (filo gruplama)</div>
+            <div id="dev-tags" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px"></div>
+            <div class="field"><input id="tag-input" type="text" placeholder="virgülle ayır: prod, finans, istanbul"></div>
+            <button class="btn sm" data-act="setTags" disabled style="margin-top:6px">Etiketleri Kaydet</button>
+            <div class="divider"></div>
+            <div class="lbl">Politika Ata</div>
+            <div class="field"><select id="a-pol"><option value="">— politika seç —</option></select></div>
+            <button class="btn sm" data-act="assignPolicy" disabled style="margin-top:10px">Seçili cihaza ata</button>
+            <div id="o-dev" class="out"></div>
+            <div id="dev-detail" class="detail"></div>
+          </div>
+        </div>
+
+        <div class="card" data-view="policies">
+          <div class="head"><h2>🎫 Kayıt & Politika</h2></div>
+          <div class="body">
+            <div class="lbl">Yeni cihaz kaydı</div>
+            <button class="btn sm" data-act="token" style="margin-top:10px">Enrollment Token Üret</button>
+            <div id="o-token" class="out"></div>
+            <div class="field lbl" style="margin-top:14px;display:flex;align-items:center;gap:8px">
+              Aktif token'lar <span id="tok-count" class="count">0</span>
+              <span class="sp" style="flex:1"></span>
+              <button class="btn ghost sm" data-act="loadTokens" style="padding:3px 8px">↻</button>
+            </div>
+            <div class="tbl-wrap" style="margin-top:6px">
+              <table><thead><tr><th>ID</th><th>Üreten</th><th>Durum</th><th></th></tr></thead>
+                <tbody id="tok-body"></tbody></table>
+            </div>
+            <div id="tok-empty" class="empty" style="padding:14px">Aktif token yok.</div>
+            <div class="divider"></div>
+            <div class="lbl">Politika oluştur</div>
+            <div class="field"><input id="p-name" placeholder="Ad (ör. Mesai Politikası)"></div>
+            <div class="field"><input id="p-ver" placeholder="Sürüm (ör. v1)"></div>
+            <button class="btn sm" data-act="createPolicy" style="margin-top:10px">Oluştur</button>
+            <div id="o-pol" class="out"></div>
+            <div class="divider"></div>
+            <div class="lbl">Politika kuralı ekle</div>
+            <div class="field"><input id="r-pol" placeholder="Politika ID"></div>
+            <div class="field"><select id="r-type">
+              <option value="APP_BLOCK_ALWAYS">Uygulama — her zaman yasak</option>
+              <option value="APP_TIME_BLOCK">Uygulama — saat aralığında yasak</option>
+            </select></div>
+            <div class="field"><input id="r-target" placeholder="Hedef (ör. oyun.exe)"></div>
+            <div class="row" id="r-times" style="display:none;margin-top:8px">
+              <input id="r-start" placeholder="Başlangıç 18:00">
+              <input id="r-end" placeholder="Bitiş 08:00">
+            </div>
+            <button class="btn sm" data-act="addRule" style="margin-top:10px">Kural Ekle</button>
+            <div id="o-rule" class="out"></div>
+          </div>
+        </div>
+
+        <!-- POLICIES -->
+        <div class="card" data-view="policies" data-span="2">
+          <div class="head"><h2>📋 Politikalar <span id="pol-count" class="count">0</span></h2>
+            <span class="sp"></span><button class="btn ghost sm" data-act="loadPolicies">↻</button></div>
+          <div class="tbl-wrap">
+            <table><thead><tr><th>Ad</th><th>Sürüm</th><th>Kural</th><th>Cihaz</th><th></th></tr></thead>
+              <tbody id="pol-body"></tbody></table>
+          </div>
+          <div id="pol-empty" class="empty" style="padding:14px">Henüz politika yok. Yukarıdan oluşturun.</div>
+        </div>
+
+        <!-- BULK -->
+        <div class="card" data-view="policies">
+          <div class="head"><h2>🎯 Toplu İşlem (etikete göre)</h2></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Bir <b>etikete</b> sahip TÜM cihazlara tek seferde eylem uygular (filo yönetimi).</p>
+            <div class="field"><input id="bulk-tag" type="text" placeholder="etiket (ör. prod)"></div>
+            <div class="field"><select id="bulk-action">
+              <option value="collect-diagnostics">🩺 Tanılama Topla</option>
+              <option value="quarantine">🔒 Karantina</option>
+              <option value="release">🔓 Serbest Bırak</option>
+              <option value="assign-policy">📋 Politika Ata</option>
+            </select></div>
+            <div class="field" id="bulk-pol-wrap" style="display:none"><select id="bulk-pol"><option value="">— politika seç —</option></select></div>
+            <button class="btn ghost sm" data-act="bulkPreview">👁 Önizle (dry-run)</button>
+            <button class="btn sm" data-act="bulkApply">Uygula</button>
+            <div id="o-bulk" class="out"></div>
+          </div>
+        </div>
+
+        <!-- ADMINS -->
+        <div class="card" data-view="admin">
+          <div class="head"><h2>👥 Yöneticiler <span id="adm-count" class="count">0</span></h2>
+            <span class="sp"></span><button class="btn ghost sm" data-act="loadAdmins">↻</button></div>
+          <div class="body">
+            <div class="tbl-wrap">
+              <table><thead><tr><th>E-posta</th><th>Rol</th><th>Durum</th><th></th></tr></thead>
+                <tbody id="adm-body"></tbody></table>
+            </div>
+            <div id="adm-empty" class="empty" style="padding:14px">Yönetici listesi yükleniyor…</div>
+            <div class="divider"></div>
+            <div class="lbl">Yeni yönetici ekle</div>
+            <div class="field"><input id="ad-email" type="email" placeholder="E-posta (ör. soc@sirket.local)"></div>
+            <div class="field"><input id="ad-pass" type="password" placeholder="Geçici parola (min 8)"></div>
+            <div class="field"><select id="ad-role">
+              <option value="VIEWER">VIEWER — yalnız izleme</option>
+              <option value="OPERATOR" selected>OPERATOR — eylem uygulayabilir</option>
+              <option value="ADMIN">ADMIN — tam yetki</option>
+            </select></div>
+            <button class="btn sm" data-act="createAdmin" style="margin-top:10px">Yönetici Oluştur</button>
+            <div id="o-adm" class="out"></div>
+          </div>
+        </div>
+        <div class="card" data-view="admin">
+          <div class="head"><h2>🔐 İki Adımlı Doğrulama (2FA)</h2>
+            <span class="sp"></span><span id="mfa-status" class="count">—</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Hesabınızı TOTP (authenticator uygulaması) ile koruyun. Etkinleştirildiğinde girişte parola + kod gerekir.</p>
+            <button class="btn sm" data-act="mfaEnroll">Kurulumu Başlat</button>
+            <div id="mfa-setup" style="display:none;margin-top:12px">
+              <div class="lbl">1) Bu sırrı authenticator'a ekleyin</div>
+              <div id="mfa-secret" class="out" style="user-select:all;word-break:break-all"></div>
+              <div class="lbl" style="margin-top:8px">otpauth URI (QR üretmek için)</div>
+              <div id="mfa-uri" class="out" style="user-select:all;word-break:break-all;font-size:10px"></div>
+              <div class="lbl" style="margin-top:8px">2) Uygulamadaki kodu girin</div>
+              <div class="field"><input id="mfa-code" type="text" inputmode="numeric" maxlength="6" placeholder="123456"></div>
+              <button class="btn sm" data-act="mfaActivate">Etkinleştir</button>
+            </div>
+            <div id="mfa-disable" style="display:none;margin-top:12px">
+              <div class="lbl">MFA'yı kapatmak için mevcut kodu girin</div>
+              <div class="field"><input id="mfa-dcode" type="text" inputmode="numeric" maxlength="6" placeholder="123456"></div>
+              <button class="btn sm ghost" data-act="mfaDisable">2FA'yı Kapat</button>
+            </div>
+            <div id="o-mfa" class="out"></div>
+          </div>
+        </div>
+        <div class="card" data-view="admin">
+          <div class="head"><h2>🛡️ Koruma Katmanları</h2><span class="sp"></span>
+            <button class="btn ghost sm" id="feat-refresh">↻</button></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Dağıtımda hangi opsiyonel korumaların etkin olduğu (yalnız ADMIN).</p>
+            <div id="feat-grid" style="display:flex;flex-direction:column;gap:8px"></div>
+          </div>
+        </div>
+        <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🎯 MITRE ATT&amp;CK Kapsamı</h2>
+            <span class="sp"></span><span id="mitre-gap" class="count" style="display:none"></span>
+            <span id="mitre-count" class="count">0</span>
+            <button class="btn ghost sm" id="posture-csv" title="Tespit duruşunu (teknik + kural + boşluk) JSON olarak indir">↓ JSON</button></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Bu dağıtımın eşleyebildiği düşman teknikleri ve her biri için etkin tespit kuralı olup olmadığı (kapsam boşluğu analizi).</p>
+            <div class="tbl-wrap">
+              <table><thead><tr><th>Teknik</th><th>Ad</th><th>Taktik</th><th>Kapsam</th></tr></thead>
+                <tbody id="mitre-body"></tbody></table>
+            </div>
+            <div id="mitre-empty" class="empty" style="padding:14px">Yükleniyor…</div>
+          </div>
+        </div>
+        <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🛰️ Tespit Kuralları</h2>
+            <span class="sp"></span><span id="det-count" class="count">0</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Sunucu-taraflı, adlandırılmış tespit kuralları (olay örüntüsü → önem + ATT&amp;CK).</p>
+            <div class="tbl-wrap">
+              <table><thead><tr><th>ID</th><th>Ad</th><th>Önem</th><th>Teknik</th></tr></thead>
+                <tbody id="det-body"></tbody></table>
+            </div>
+            <div id="det-empty" class="empty" style="padding:14px">Yükleniyor…</div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🩹 Zafiyetler (CVE) <span id="vuln-count" class="count">0</span></h2>
+            <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">envanter × CVE veri kümesi</span>
+            <button class="btn ghost sm" id="vuln-refresh" title="Yenile">↻</button></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Cihazların yüklü yazılımı bilinen zafiyet (CVE) veri kümesiyle eşleştirilir. Veri kümesi <span class="mono">KUT_VULN_FILE</span> ile yüklenir.</p>
+            <div id="vuln-body"></div>
+            <div id="vuln-empty" class="empty" style="padding:14px">Zafiyet verisi yok (veri kümesi yüklü değil veya eşleşme yok).</div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🧪 Kural Test Aracı</h2>
+            <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">kuru çalıştırma</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Örnek bir olay girip hangi tespit kurallarının tetikleneceğini görün — gerçek olay beklemeden kapsamı doğrulayın. Salt-okunur; hiçbir olay saklanmaz.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint)">Kategori
+                <input id="rt-cat" list="rt-cats" placeholder="SECURITY" style="width:180px;padding:6px 9px;font-size:12px">
+              </label>
+              <datalist id="rt-cats">
+                <option value="SECURITY"></option>
+                <option value="POLICY_VIOLATION"></option>
+                <option value="NETWORK_DISCOVERY"></option>
+                <option value="COMPLIANCE"></option>
+                <option value="HEARTBEAT"></option>
+              </datalist>
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);flex:1;min-width:220px">Olay mesajı
+                <input id="rt-msg" placeholder="ör. ajan kurcalama girişimi tespit edildi" style="width:100%;padding:6px 9px;font-size:12px">
+              </label>
+              <button class="btn sm" id="rt-run" type="button">Test Et</button>
+            </div>
+            <div id="rt-result"></div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🔎 Retro-Hunt / Arama</h2>
+            <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">geçmiş olaylar</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Mevcut tespit kurallarını GEÇMİŞ olaylara uygula ("yeni göstergeyle eski olayları tara — zaten vurulduk mu?") ya da olay geçmişinde alan/zaman filtreli arama yap. Salt-okunur.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint)">Mod
+                <select id="hunt-mode" style="padding:6px 9px;font-size:12px">
+                  <option value="rules">Kurallarla tara (retro)</option>
+                  <option value="query">Alan araması</option>
+                </select>
+              </label>
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);flex:1;min-width:200px">Mesaj içerir
+                <input id="hunt-msg" placeholder="ör. mimikatz (query modu)" style="width:100%;padding:6px 9px;font-size:12px">
+              </label>
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint)">Kategori
+                <input id="hunt-cat" list="rt-cats" placeholder="hepsi" style="width:150px;padding:6px 9px;font-size:12px">
+              </label>
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint)">Önem
+                <input id="hunt-sev" placeholder="hepsi" style="width:110px;padding:6px 9px;font-size:12px">
+              </label>
+              <button class="btn sm" id="hunt-run" type="button">🔎 Tara</button>
+            </div>
+            <div id="hunt-result"></div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🧩 Olay Korelasyonu (Incident)</h2>
+            <span class="sp"></span><span id="inc-count" class="count">0</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">İlişkili tespitler tek bir incident'e gruplanır (aynı cihaz+kural penceresinde) — yinelenen alarmlar bastırılır. Tekrar sayısı ve son-görülme izlenir.</p>
+            <div class="tbl-wrap"><table><thead><tr><th>Son görülme</th><th>Cihaz</th><th>Kural</th><th>Önem</th><th>Tekrar</th><th>Örnek</th></tr></thead>
+              <tbody id="inc-body"></tbody></table></div>
+            <div id="inc-empty" class="empty" style="padding:12px">Henüz korelasyonlu olay yok.</div>
+            <div id="inc-timeline" style="display:none;margin-top:10px;border-top:1px solid var(--line);padding-top:8px"></div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security">
+          <div class="head"><h2>🧭 MITRE Taktik Dağılımı <span class="count" id="tac-count">0</span></h2>
+            <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">son olaylardan</span></div>
+          <div class="body">
+            <div id="tac-grid" style="display:flex;flex-direction:column;gap:6px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="toasts"></div>
+
+<script nonce="__CSP_NONCE__">
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ================= TEMA & GÖRÜNÜM (dark/light + vurgu rengi) =================
+  // Not: Tek <script> (CSP nonce) modeli gereği tüm bu mantık bu IIFE içindedir.
+  var THEME_KEY = "xdr_theme", ACCENT_KEY = "xdr_accent";
+  var docEl = document.documentElement;
+  var ACCENTS = [
+    { name:"Gök Mavisi", hex:"#38bdf8" },
+    { name:"Mavi",       hex:"#3b82f6" },
+    { name:"Zümrüt",     hex:"#10b981" },
+    { name:"Mor",        hex:"#8b5cf6" },
+    { name:"Kehribar",   hex:"#f59e0b" },
+    { name:"Gül",        hex:"#f43f5e" }
+  ];
+  function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+  function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+  function lsDel(k){ try { localStorage.removeItem(k); } catch(e){} }
+  function hexToRgb(h){
+    h = String(h||"").trim().replace(/^#/,"");
+    if(h.length===3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    if(!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+    var n = parseInt(h,16);
+    return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
+  }
+  function clampByte(x){ x=Math.round(x); return x<0?0:(x>255?255:x); }
+  function darken(hex,f){
+    var c=hexToRgb(hex); if(!c) return hex;
+    return "rgb("+clampByte(c.r*(1-f))+","+clampByte(c.g*(1-f))+","+clampByte(c.b*(1-f))+")";
+  }
+  function relLum(c){ // WCAG göreli parlaklık (0=siyah .. 1=beyaz)
+    var a=[c.r,c.g,c.b].map(function(v){ v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055,2.4); });
+    return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
+  }
+  // Vurgu rengini uygula: --accent + türev token'lar (her iki temada da geçerli).
+  function applyAccent(hex){
+    var c=hexToRgb(hex); if(!c){ clearAccent(); return; }
+    docEl.style.setProperty("--accent", hex);
+    docEl.style.setProperty("--accent2", darken(hex,0.16));
+    // Yarı saydam türev: panel üzerinde birleşerek koyu/açık temaya kendiliğinden uyar.
+    docEl.style.setProperty("--accent-dim", "rgba("+c.r+","+c.g+","+c.b+",.15)");
+    docEl.style.setProperty("--accent-glow", "rgba("+c.r+","+c.g+","+c.b+",.22)");
+    // Vurgu düğmesi metni: parlak vurguda koyu, koyu vurguda beyaz.
+    docEl.style.setProperty("--accent-ink", relLum(c) > 0.45 ? "#04121c" : "#ffffff");
+  }
+  function clearAccent(){
+    ["--accent","--accent2","--accent-dim","--accent-glow","--accent-ink"].forEach(function(p){
+      docEl.style.removeProperty(p);
+    });
+  }
+  function currentAccent(){ return lsGet(ACCENT_KEY); }
+  function storedMode(){ var m=lsGet(THEME_KEY); return (m==="light"||m==="dark") ? m : "auto"; }
+  function applyThemeMode(mode){
+    if(mode==="light"||mode==="dark") docEl.setAttribute("data-theme", mode);
+    else docEl.removeAttribute("data-theme"); // otomatik → OS tercihi
+  }
+  function effectiveTheme(){
+    var attr=docEl.getAttribute("data-theme");
+    if(attr==="light"||attr==="dark") return attr;
+    try { return (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark"; }
+    catch(e){ return "dark"; }
+  }
+  // --- ERKEN UYGULA: FOUC'u en aza indir (script gövde sonunda olsa da) ---
+  applyThemeMode(storedMode());
+  (function(){ var a=currentAccent(); if(a) applyAccent(a); })();
+
+  function updateThemeToggleIcon(){
+    var btn=$("theme-toggle"); if(!btn) return;
+    var eff=effectiveTheme();
+    btn.textContent = eff==="dark" ? "☀️" : "🌙";
+    btn.title = eff==="dark" ? "Açık temaya geç" : "Koyu temaya geç";
+    btn.setAttribute("aria-label", btn.title);
+  }
+  function updateThemeSeg(){
+    var m=storedMode();
+    ["theme-auto","theme-light","theme-dark"].forEach(function(id){
+      var el=$(id); if(!el) return;
+      var on = el.getAttribute("data-mode")===m;
+      el.className = on ? "on" : "";
+      el.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+  function setThemeMode(mode){
+    if(mode==="auto") lsDel(THEME_KEY); else lsSet(THEME_KEY, mode);
+    applyThemeMode(mode); updateThemeSeg(); updateThemeToggleIcon();
+  }
+  function renderSwatches(){
+    var wrap=$("accent-swatches"), custom=$("accent-custom");
+    if(!wrap || !custom) return;
+    Array.prototype.slice.call(wrap.querySelectorAll(".swatch:not(.custom)")).forEach(function(n){ n.remove(); });
+    var cur=(currentAccent()||"").toLowerCase();
+    ACCENTS.forEach(function(a){
+      var b=document.createElement("button");
+      b.type="button";
+      b.className="swatch"+(cur===a.hex.toLowerCase() ? " on" : "");
+      b.style.background=a.hex; b.title=a.name; b.setAttribute("aria-label","Vurgu rengi: "+a.name);
+      b.addEventListener("click", function(){ selectAccent(a.hex); });
+      wrap.insertBefore(b, custom);
+    });
+    var isPreset=ACCENTS.some(function(a){ return a.hex.toLowerCase()===cur; });
+    custom.className="swatch custom"+((cur && !isPreset) ? " on" : "");
+    var p=$("accent-picker");
+    if(p && /^#[0-9a-fA-F]{6}$/.test(cur)) p.value=cur;
+  }
+  function selectAccent(hex){ lsSet(ACCENT_KEY, hex); applyAccent(hex); renderSwatches(); }
+  function resetAccent(){ lsDel(ACCENT_KEY); clearAccent(); renderSwatches(); }
+  function closeSettings(){
+    var p=$("settings-panel"), b=$("settings-btn");
+    if(p) p.classList.remove("show");
+    if(b) b.setAttribute("aria-expanded","false");
+    document.removeEventListener("mousedown", onOutsideSettings, true);
+    document.removeEventListener("keydown", onEscSettings, true);
+  }
+  function openSettings(){
+    var p=$("settings-panel"), b=$("settings-btn");
+    if(p) p.classList.add("show");
+    if(b) b.setAttribute("aria-expanded","true");
+    document.addEventListener("mousedown", onOutsideSettings, true);
+    document.addEventListener("keydown", onEscSettings, true);
+  }
+  function onOutsideSettings(e){
+    var b=$("settings-btn"); if(!b) return;
+    if(!b.parentNode.contains(e.target)) closeSettings();
+  }
+  function onEscSettings(e){ if(e.key==="Escape"){ closeSettings(); var b=$("settings-btn"); if(b) b.focus(); } }
+  function setupAppearance(){
+    updateThemeToggleIcon(); updateThemeSeg(); renderSwatches();
+    var tt=$("theme-toggle");
+    if(tt) tt.addEventListener("click", function(){
+      setThemeMode(effectiveTheme()==="dark" ? "light" : "dark");
+    });
+    var sb=$("settings-btn");
+    if(sb) sb.addEventListener("click", function(){
+      var p=$("settings-panel");
+      if(p && p.classList.contains("show")) closeSettings(); else openSettings();
+    });
+    ["theme-auto","theme-light","theme-dark"].forEach(function(id){
+      var el=$(id); if(el) el.addEventListener("click", function(){ setThemeMode(this.getAttribute("data-mode")); });
+    });
+    var picker=$("accent-picker");
+    if(picker){
+      picker.addEventListener("input", function(){ selectAccent(this.value); });
+      // Native renk seçici, kapsayan düğmenin toggle mantığını tetiklemesin.
+      picker.addEventListener("click", function(e){ e.stopPropagation(); });
+    }
+    var reset=$("accent-reset");
+    if(reset) reset.addEventListener("click", resetAccent);
+    // Otomatik moddayken OS teması değişirse ikon/segment güncel kalsın.
+    try {
+      var mq=window.matchMedia("(prefers-color-scheme: light)");
+      var onMq=function(){ if(storedMode()==="auto") updateThemeToggleIcon(); };
+      if(mq.addEventListener) mq.addEventListener("change", onMq);
+      else if(mq.addListener) mq.addListener(onMq);
+    } catch(e){}
+  }
+  // ================= /TEMA & GÖRÜNÜM =================
+
+  var state = { token:"", email:"", devices:[], events:[], sel:null, sevFilter:"", catFilter:"", actFilter:"", pendingOnly:false, auto:true, timer:null,
+    evtOpen:{}, tokens:[], admins:[], policies:[], devSearch:"", devFilter:"",
+    streamOn:false, streamCtrl:null, streamRetry:null, polOpen:{}, polRules:{}, audSearch:"" };
+
+  // ---------- API ----------
+  function api(path, method, body) {
+    var opt = { method: method || "GET", headers: {} };
+    if (state.token) opt.headers["Authorization"] = "Bearer " + state.token;
+    if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+    return fetch(path, opt).then(function (res) {
+      return res.json().catch(function(){ return {}; }).then(function (data) {
+        if (res.status === 401) { sessionExpired(); throw new Error(data.error || "Oturum süresi doldu"); }
+        if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+        return data;
+      });
+    });
+  }
+
+  function sessionExpired(){
+    if(!state.token) return;
+    stopAuto(); stopStream(); state.token=""; state.sel=null;
+    try { sessionStorage.removeItem("xdr_tok"); sessionStorage.removeItem("xdr_email"); } catch(e){}
+    $("app").style.display="none"; $("login").style.display="grid";
+    $("l-err").textContent="Oturum süresi doldu — tekrar giriş yapın.";
+  }
+  function selName(){
+    var d=state.devices.filter(function(x){return x.id===state.sel;})[0];
+    return d ? (d.hostname || d.id) : state.sel;
+  }
+
+  // ---------- helpers ----------
+  // esc, HTML-özel karakterleri kaçırır (XSS koruması). innerHTML'e giren
+  // saldırgan-kontrollü veriler (hostname, olay mesajı, hedef adı vb.) MUTLAKA
+  // bundan geçmelidir — ör. ele geçirilmiş bir ajan '<img src=x onerror=...>'
+  // gönderebilir.
+  function esc(s){
+    if(s == null) return "";
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+    });
+  }
+  function cell(text, cls){ var td=document.createElement("td"); td.textContent=esc(text); if(cls) td.className=cls; return td; }
+  // filterChip: tıkla-süz için erişilebilir chip (klavye ile de kullanılabilir).
+  // role=button + tabindex ile odaklanabilir; Enter/Space tıklamayı tetikler;
+  // aria-pressed etkin filtreyi ekran okuyuculara bildirir.
+  function filterChip(text, active, title, handler){
+    var c=document.createElement("span");
+    c.className="chip"; c.textContent=text||"-";
+    c.style.cursor="pointer"; c.title=title;
+    c.setAttribute("role","button"); c.tabIndex=0;
+    c.setAttribute("aria-pressed", active?"true":"false");
+    if(active){ c.style.background="var(--accent-dim)"; c.style.color="var(--accent)"; }
+    c.onclick=function(ev){ if(ev) ev.stopPropagation(); handler(); };
+    c.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); ev.stopPropagation(); handler(); } };
+    return c;
+  }
+  function relTime(iso){
+    if(!iso) return "-";
+    var t=new Date(iso).getTime(); if(isNaN(t)) return "-";
+    var s=Math.max(0,Math.round((Date.now()-t)/1000));
+    if(s<10) return "az önce"; if(s<60) return s+" sn önce";
+    var m=Math.round(s/60); if(m<60) return m+" dk önce";
+    var h=Math.round(m/60); if(h<24) return h+" sa önce";
+    return Math.round(h/24)+" gün önce";
+  }
+  function isOnline(d){ var t=new Date(d.last_seen).getTime(); return !isNaN(t) && (Date.now()-t) < 30000; }
+  function toast(title, detail, kind){
+    var el=document.createElement("div"); el.className="toast "+(kind||"");
+    var t=document.createElement("div"); t.className="t"; t.textContent=title; el.appendChild(t);
+    if(detail){ var d=document.createElement("div"); d.className="d"; d.textContent=detail; el.appendChild(d); }
+    $("toasts").appendChild(el);
+    setTimeout(function(){ el.style.opacity="0"; el.style.transition="opacity .3s"; setTimeout(function(){ el.remove(); },300); }, 3200);
+  }
+  function showOut(id,msg,kind){ var el=$(id); el.textContent=msg; el.className="out show "+(kind||""); }
+  function csvCell(v){ v = v==null ? "" : String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+  function downloadCSV(filename, headers, rows){
+    var lines=[headers.map(csvCell).join(",")];
+    rows.forEach(function(r){ lines.push(r.map(csvCell).join(",")); });
+    var blob=new Blob(["﻿"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});
+    var url=URL.createObjectURL(blob), a=document.createElement("a");
+    a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); },0);
+    toast("CSV indirildi",filename+" · "+rows.length+" satır","ok");
+  }
+  // fmtBytes, bayt sayısını okunabilir biçime çevirir.
+  function fmtBytes(n){
+    n=n||0; if(n<1024) return n+" B";
+    if(n<1048576) return (n/1024).toFixed(1)+" KB";
+    return (n/1048576).toFixed(1)+" MB";
+  }
+  // downloadArtifact, kimlik doğrulamalı GET ile artefakt içeriğini indirir
+  // (Bearer başlığı gerektiğinden düz <a href> yerine fetch→blob).
+  function downloadArtifact(id, path){
+    var name=(path||"artifact").replace(/^.*[\\/]/,"")||"artifact";
+    fetch("/api/artifacts/"+encodeURIComponent(id)+"/download",{headers:{Authorization:"Bearer "+state.token}})
+      .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.blob(); })
+      .then(function(blob){
+        var url=URL.createObjectURL(blob), a=document.createElement("a");
+        a.href=url; a.download=name; document.body.appendChild(a); a.click();
+        setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); },0);
+        toast("Artefakt indirildi",name,"ok");
+      }).catch(function(e){ toast("İndirme başarısız",e.message,"err"); });
+  }
+  function downloadJSON(filename, obj){
+    var blob=new Blob([JSON.stringify(obj,null,2)],{type:"application/json;charset=utf-8"});
+    var url=URL.createObjectURL(blob), a=document.createElement("a");
+    a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); },0);
+    toast("JSON indirildi",filename,"ok");
+  }
+  // exportPosture: tespit duruşunu (bilinen teknikler + eşleşen kurallar + kapsam
+  // boşlukları) tek bir JSON raporu olarak dışa aktarır — SOC dokümantasyonu /
+  // uyumluluk kanıtı için. /api/mitre/coverage + /api/detections/rules birleştirir.
+  function exportPosture(){
+    Promise.all([api("/api/mitre/coverage"), api("/api/detections/rules")]).then(function(res){
+      var techs=(res[0]&&res[0].techniques)||[];
+      var rules=(res[1]&&res[1].rules)||[];
+      var byTech={};
+      rules.forEach(function(rl){ var id=rl.technique&&rl.technique.id; if(id){ (byTech[id]=byTech[id]||[]).push({id:rl.id,name:rl.name,severity:rl.severity}); } });
+      var gaps=0;
+      var coverage=techs.map(function(t){
+        var rs=byTech[t.id]||[]; if(!rs.length) gaps++;
+        return {technique:t.id, name:t.name, tactic:t.tactic, rule_count:rs.length, covered:rs.length>0, rules:rs};
+      });
+      downloadJSON("tespit-durusu-"+new Date().toISOString().slice(0,10)+".json", {
+        generated_at:new Date().toISOString(), exported_by:state.email,
+        technique_count:techs.length, rule_count:rules.length, coverage_gaps:gaps, coverage:coverage
+      });
+    }).catch(function(e){ toast("Dışa aktarım başarısız",e.message,"err"); });
+  }
+  function exportDevices(){
+    var q=(state.devSearch||"").trim().toLowerCase();
+    var list=(state.devices||[]).filter(function(d){
+      if(!q) return true;
+      return (d.hostname||"").toLowerCase().indexOf(q)>=0 || (d.mac||"").toLowerCase().indexOf(q)>=0 ||
+             (d.os_version||"").toLowerCase().indexOf(q)>=0 || (d.os_platform||"").toLowerCase().indexOf(q)>=0 ||
+             (d.tags||[]).some(function(t){ return t.toLowerCase().indexOf(q)>=0; });
+    });
+    var lc=latestCompliance(); // cihaz uyum durumunu (olaylardan) CSV'ye ekle
+    downloadCSV("cihazlar-"+new Date().toISOString().slice(0,10)+".csv",
+      ["hostname","mac","durum","os","os_platform","ajan_surumu","etiketler","son_gorulme","disk_sifreleme","guvenlik_duvari"],
+      list.map(function(d){ return [d.hostname||"", d.mac||"", d.status||"", d.os_version||"",
+        d.os_platform||"", d.agent_version||"", (d.tags||[]).join("|"), d.last_seen||"",
+        lc.enc[d.id]||"", lc.fw[d.id]||""]; }));
+  }
+  function exportEvents(){
+    // Ekranda görünenle aynı süzgeçler (önem + kategori) uygulanır.
+    var list=state.events.filter(function(e){
+      if(state.catFilter && e.category!==state.catFilter) return false;
+      if(!state.sevFilter) return true;
+      if(state.sevFilter==="CRITICAL") return e.severity==="CRITICAL";
+      return e.severity==="CRITICAL"||e.severity==="HIGH";
+    });
+    downloadCSV("olaylar-"+new Date().toISOString().slice(0,10)+".csv",
+      ["zaman","cihaz","kategori","onem","mesaj","triyaj","triyaj_yapan","ayrinti"],
+      list.map(function(e){ return [e.created_at, deviceName(e.device_id), e.category, e.severity, e.message,
+        e.ack_status||"", e.ack_by||"", e.details!=null?JSON.stringify(e.details):""]; }));
+  }
+  function exportAudit(){
+    downloadCSV("denetim-izi-"+new Date().toISOString().slice(0,10)+".csv",
+      ["zaman","yonetici","eylem","hedef_tur","hedef_id"],
+      filteredAudit().map(function(a){ return [a.created_at, a.admin_email, a.action, a.target_type, a.target_id]; }));
+  }
+
+  // ---------- rendering ----------
+  function renderStats(){
+    var s=state.summary, total, online, quar, disc=0, crit=0;
+    if(s){
+      total=s.devices_total; online=s.devices_online; quar=s.devices_quarantined;
+      var sev=s.events_by_severity||{}, cat=s.events_by_category||{};
+      disc=cat["NETWORK_DISCOVERY"]||0; crit=(sev.HIGH||0)+(sev.CRITICAL||0);
+    } else {
+      total=state.devices.length;
+      online=state.devices.filter(isOnline).length;
+      quar=state.devices.filter(function(d){return d.status==="QUARANTINED";}).length;
+      state.events.forEach(function(e){
+        if(e.category==="NETWORK_DISCOVERY") disc++;
+        if(e.severity==="CRITICAL"||e.severity==="HIGH") crit++;
+      });
+    }
+    // Bekleyen alarm: çözülmemiş (RESOLVED değil) yüksek-önem olay sayısı — SOC
+    // açık-alarm yükü. İstemci-taraflı (yüklü olaylardan).
+    var pendingAlerts=0;
+    (state.events||[]).forEach(function(e){
+      if((e.severity==="CRITICAL"||e.severity==="HIGH") && e.ack_status!=="RESOLVED") pendingAlerts++;
+    });
+    var tiles=[
+      {k:"Toplam cihaz", v:total, cls:""},
+      {k:"Çevrimiçi", v:online+" <small>/ "+total+"</small>", cls:online?"good":""},
+      {k:"Ağ keşfi (olay)", v:disc, cls:disc?"warn":""},
+      {k:"Kritik / yüksek olay", v:crit, cls:crit?"crit":""}
+    ];
+    if(pendingAlerts>0) tiles.push({k:"Bekleyen alarm", v:pendingAlerts, cls:"crit"});
+    if(quar>0) tiles.push({k:"Karantinada", v:quar, cls:"crit"});
+    // Uyumsuz cihaz KPI'ı: sunucu-taraflı filo-geneli sayımı (doğru, 200-olay
+    // penceresiyle sınırlı değil) tercih et; yoksa istemci-taraflı hesaba düş.
+    // Yalnız >0 ise göster (dikkat çekici).
+    var nonComp=(s && typeof s.non_compliant_devices==="number") ? s.non_compliant_devices : nonCompliantCount();
+    if(nonComp>0) tiles.push({k:"Uyumsuz cihaz", v:nonComp, cls:"crit"});
+    $("stats").innerHTML = tiles.map(function(t){
+      return '<div class="stat '+t.cls+'"><div class="k">'+t.k+'</div><div class="v">'+t.v+'</div></div>';
+    }).join("");
+  }
+
+  var SEV_ORDER=["CRITICAL","HIGH","MEDIUM","LOW","INFO"];
+  var SEV_COLOR={CRITICAL:"var(--crit)",HIGH:"var(--warn)",MEDIUM:"var(--med)",LOW:"var(--accent)",INFO:"var(--faint)"};
+  // classifyTactic, olayı MITRE ATT&CK taktiğine eşler (sunucu mitre.Classify'ın
+  // client yansıması — olaylar teknik taşımadığından burada sınıflandırılır).
+  function classifyTactic(cat, msg){
+    var m=(msg||"").toLowerCase();
+    if(cat==="NETWORK_DISCOVERY") return "Discovery";
+    if(cat==="POLICY_VIOLATION") return "Execution";
+    if(cat==="SECURITY"){
+      if(m.indexOf("güncelleme")>=0) return "Initial Access";
+      if(m.indexOf("script")>=0) return "Execution";
+      return "Defense Evasion"; // anomali/kurcalama/karantina/diğer
+    }
+    return null; // SYSTEM/AGENT_UPDATE → taktik yok
+  }
+  function renderTactics(){
+    var box=$("tac-grid"); if(!box) return;
+    var counts={};
+    (state.events||[]).forEach(function(e){
+      var t=classifyTactic(e.category, e.message);
+      if(t) counts[t]=(counts[t]||0)+1;
+    });
+    var items=Object.keys(counts).map(function(k){ return [k,counts[k]]; }).sort(function(a,b){ return b[1]-a[1]; });
+    var total=items.reduce(function(s,x){ return s+x[1]; },0);
+    $("tac-count").textContent=items.length;
+    box.innerHTML = items.length ? "" : "<div class='empty' style='padding:8px'>Sınıflandırılabilir olay yok.</div>";
+    items.forEach(function(x){
+      var pct=total?Math.round(x[1]*100/total):0;
+      var row=document.createElement("div");
+      row.innerHTML="<div style='display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px'>"+
+        "<span>"+esc(x[0])+"</span><span class='mono' style='color:var(--muted)'>"+x[1]+" (%"+pct+")</span></div>"+
+        "<div style='height:7px;border-radius:4px;background:var(--panel2);overflow:hidden'>"+
+        "<div style='height:100%;width:"+pct+"%;background:var(--warn)'></div></div>";
+      box.appendChild(row);
+    });
+  }
+  function renderOSInventory(){
+    var box=$("osinv"); if(!box) return;
+    var m=(state.summary&&state.summary.devices_by_os)||{};
+    var items=Object.keys(m).map(function(k){ return [k,m[k]]; }).sort(function(a,b){ return b[1]-a[1]; });
+    var total=items.reduce(function(s,x){ return s+x[1]; },0);
+    $("osinv-count").textContent=items.length;
+    if(!items.length){ box.innerHTML="<div class='empty' style='padding:8px'>Kayıtlı cihaz yok.</div>"; return; }
+    box.innerHTML="";
+    items.forEach(function(x){
+      var pct=total?Math.round(x[1]*100/total):0;
+      var row=document.createElement("div");
+      row.innerHTML="<div style='display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px'>"+
+        "<span>"+esc(x[0])+"</span><span class='mono' style='color:var(--muted)'>"+x[1]+" (%"+pct+")</span></div>"+
+        "<div style='height:7px;border-radius:4px;background:var(--panel2);overflow:hidden'>"+
+        "<div style='height:100%;width:"+pct+"%;background:var(--accent)'></div></div>";
+      box.appendChild(row);
+    });
+  }
+  // deviceName: device_id'yi (varsa) çözülmüş hostname'e eşler; bilinmiyorsa
+  // kısaltılmış id döner. Hostname şifreli saklandığından eşleme istemci-taraflı
+  // yüklü cihaz listesinden yapılır (SQL join yok).
+  function deviceName(id){
+    if(!id) return "—";
+    var d=state.devices.filter(function(x){ return x.id===id; })[0];
+    if(d && d.hostname) return d.hostname;
+    return id.length>12 ? (id.slice(0,8)+"…") : id;
+  }
+  // latestCompliance: yüklü olaylardan cihaz başına EN SON disk_encryption ve
+  // firewall durumunu çıkarır (olaylar yeniden-eskiye sıralı → ilk görülen en
+  // güncel). Uyum kartı + "uyumsuz cihaz" KPI'ı için tek kaynak (drift önler).
+  function latestCompliance(){
+    var enc={}, fw={};
+    (state.events||[]).forEach(function(e){
+      var id=e.device_id; if(!id || !e.details) return;
+      if(enc[id]===undefined && typeof e.details.disk_encryption==="string") enc[id]=e.details.disk_encryption;
+      if(fw[id]===undefined && typeof e.details.firewall==="string") fw[id]=e.details.firewall;
+    });
+    return {enc:enc, fw:fw};
+  }
+  // nonCompliantCount: uyum verisinden en son durumu "off" olan benzersiz cihaz
+  // sayısı (herhangi bir boyutta).
+  function nonCompliantCount(){
+    var c=latestCompliance(), s={};
+    Object.keys(c.enc).forEach(function(id){ if(c.enc[id]==="off") s[id]=1; });
+    Object.keys(c.fw).forEach(function(id){ if(c.fw[id]==="off") s[id]=1; });
+    return Object.keys(s).length;
+  }
+  // renderTopDevices: son olayları cihaza göre gruplayıp en çok olay üreten
+  // cihazları (kritik/yüksek vurgulu) gösterir — gürültülü/şüpheli uç triyajı.
+  function renderTopDevices(){
+    var box=$("topdev"); if(!box) return;
+    var counts={}, crit={};
+    (state.events||[]).forEach(function(e){
+      var id=e.device_id; if(!id) return;
+      counts[id]=(counts[id]||0)+1;
+      if(e.severity==="CRITICAL"||e.severity==="HIGH") crit[id]=(crit[id]||0)+1;
+    });
+    var items=Object.keys(counts).map(function(id){ return {id:id,n:counts[id],c:crit[id]||0}; })
+      .sort(function(a,b){ return b.n-a.n; }).slice(0,8);
+    $("topdev-count").textContent=items.length;
+    $("topdev-empty").style.display=items.length?"none":"block";
+    box.innerHTML="";
+    var max=items.length?items[0].n:0;
+    items.forEach(function(x){
+      var pct=max?Math.round(x.n*100/max):0;
+      var row=document.createElement("div");
+      row.className="click"; row.style.cursor="pointer"; row.title="Bu cihazı seç";
+      row.onclick=function(){ setView("devices"); selectDevice(x.id); };
+      var critBadge=x.c>0?" <span class='sev HIGH' style='font-size:10px'>"+x.c+" yük/krit</span>":"";
+      row.innerHTML="<div style='display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px'>"+
+        "<span>"+esc(deviceName(x.id))+critBadge+"</span><span class='mono' style='color:var(--muted)'>"+x.n+" olay</span></div>"+
+        "<div style='height:7px;border-radius:4px;background:var(--panel2);overflow:hidden'>"+
+        "<div style='height:100%;width:"+pct+"%;background:"+(x.c>0?"var(--bad,#f43f5e)":"var(--accent)")+"'></div></div>";
+      box.appendChild(row);
+    });
+  }
+  // renderCompliance: her cihazın EN SON disk_encryption durumunu olay
+  // akışından bulur (olaylar yeniden-eskiye sıralı → cihaz başına ilk görülen
+  // en günceldir) ve filo uyum özetini çıkarır (şifreli / KAPALI / bilinmiyor).
+  // Ajanın periyodik uyum olaylarını (COMPLIANCE) filo görünürlüğüne çevirir.
+  function renderComplianceCard(){
+    var box=$("enc-summary"); if(!box) return;
+    var lc=latestCompliance(), enc=lc.enc, fw=lc.fw; // device_id → en son durum
+    // Uyum verisi olan tüm cihazlar (herhangi bir boyutta).
+    var idSet={}; Object.keys(enc).forEach(function(id){idSet[id]=1;}); Object.keys(fw).forEach(function(id){idSet[id]=1;});
+    var ids=Object.keys(idSet);
+    $("enc-count").textContent=ids.length;
+    $("enc-empty").style.display=ids.length?"none":"block";
+    if(!ids.length){ box.innerHTML=""; $("enc-noncompliant").innerHTML=""; return; }
+    function tally(m){ var r={on:0,off:0,unk:0,offDevs:[]};
+      ids.forEach(function(id){ var s=m[id];
+        if(s==="on") r.on++; else if(s==="off"){ r.off++; r.offDevs.push(id); } else r.unk++; });
+      return r; }
+    var e=tally(enc), f=tally(fw);
+    function row(label,t){
+      function seg(n,color,txt){ return "<span style='color:"+color+";font-weight:600'>"+n+"</span> <span style='color:var(--faint);font-size:11px'>"+txt+"</span>"; }
+      return "<div style='flex:1;min-width:200px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 11px'>"+
+        "<div style='font-size:11px;color:var(--faint);margin-bottom:4px'>"+label+"</div>"+
+        "<div style='display:flex;gap:14px;font-size:14px'>"+seg(t.on,"var(--ok,#10b981)","açık")+seg(t.off,"var(--bad,#f43f5e)","kapalı")+seg(t.unk,"var(--muted)","bilinmiyor")+"</div></div>";
+    }
+    box.innerHTML=row("🔒 Disk şifreleme",e)+row("🧱 Güvenlik duvarı",f);
+    // Uyumsuz cihazlar: herhangi bir boyutta "off". Hangi boyutların ihlal olduğunu belirt.
+    var problems={};
+    e.offDevs.forEach(function(id){ (problems[id]=problems[id]||[]).push("şifreleme"); });
+    f.offDevs.forEach(function(id){ (problems[id]=problems[id]||[]).push("güvenlik duvarı"); });
+    var pids=Object.keys(problems);
+    var nc=$("enc-noncompliant");
+    if(pids.length){
+      nc.innerHTML="<div class='lbl' style='margin:8px 0 6px;color:var(--bad,#f43f5e)'>⚠ Uyumsuz cihazlar</div>"+
+        pids.map(function(id){
+          return "<div class='mini click' style='cursor:pointer;padding:3px 0' data-encdev='"+esc(id)+"'>• "+esc(deviceName(id))+
+            " <span style='color:var(--bad,#f43f5e)'>("+problems[id].join(", ")+" kapalı)</span></div>";
+        }).join("");
+      Array.prototype.forEach.call(nc.querySelectorAll("[data-encdev]"),function(el){
+        el.onclick=function(){ setView("devices"); selectDevice(el.getAttribute("data-encdev")); };
+      });
+    } else { nc.innerHTML="<div class='mini' style='margin-top:8px;color:var(--ok,#10b981)'>✓ Tüm bilinen cihazlar uyumlu.</div>"; }
+  }
+  function renderSeverity(){
+    var s=state.summary, card=$("sevcard");
+    var sev=(s&&s.events_by_severity)||null;
+    var total=0; if(sev) SEV_ORDER.forEach(function(k){ total+=sev[k]||0; });
+    if(!sev || total===0){ card.style.display="none"; return; }
+    card.style.display="block";
+    $("sev-total").textContent=total;
+    if(s.since) $("sev-window").textContent="pencere başlangıcı: "+new Date(s.since).toLocaleString();
+    var bar=$("sevbar"); bar.innerHTML="";
+    var leg=$("sevlegend"); leg.innerHTML="";
+    SEV_ORDER.forEach(function(k){
+      var n=sev[k]||0; if(n===0) return;
+      var seg=document.createElement("div");
+      seg.style.cssText="flex:"+n+" 0 0;background:"+SEV_COLOR[k]+";min-width:2px";
+      seg.title=k+": "+n+" ("+Math.round(n*100/total)+"%)";
+      bar.appendChild(seg);
+      var l=document.createElement("span");
+      l.style.cssText="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)";
+      l.innerHTML="<span style='width:9px;height:9px;border-radius:2px;background:"+SEV_COLOR[k]+"'></span>"+k+" <b style='color:var(--ink)'>"+n+"</b>";
+      leg.appendChild(l);
+    });
+  }
+  function renderDevices(){
+    var body=$("dev-body"); body.innerHTML="";
+    var q=state.devSearch.trim().toLowerCase();
+    var f=state.devFilter;
+    var list=state.devices.filter(function(d){
+      if(f){
+        var isQ=d.status==="QUARANTINED", on=isOnline(d);
+        if(f==="quarantine" && !isQ) return false;
+        if(f==="online" && (isQ || !on)) return false;
+        if(f==="offline" && (isQ || on)) return false;
+      }
+      if(!q) return true;
+      return (d.hostname||"").toLowerCase().indexOf(q)>=0 || (d.mac||"").toLowerCase().indexOf(q)>=0 ||
+             (d.os_version||"").toLowerCase().indexOf(q)>=0 || (d.os_platform||"").toLowerCase().indexOf(q)>=0 ||
+             (d.tags||[]).some(function(t){ return t.toLowerCase().indexOf(q)>=0; });
+    });
+    $("dev-count").textContent=list.length + (f?(" · "+f):"");
+    $("dev-empty").style.display = list.length ? "none" : "block";
+    if((q||f) && list.length===0){ $("dev-empty").textContent="Bu süzgeçle eşleşen cihaz yok."; }
+    else { $("dev-empty").textContent="Henüz kayıtlı cihaz yok. Sağdan bir enrollment token üretip ajanı kurun."; }
+    list.forEach(function(d){
+      var tr=document.createElement("tr"); tr.className="click"; if(state.sel===d.id) tr.className+=" sel";
+      var st=document.createElement("td");
+      var online=isOnline(d), q=d.status==="QUARANTINED";
+      var pill=document.createElement("span");
+      pill.className="pill "+(q?"q":(online?"on":"offl"));
+      pill.textContent = q?"KARANTİNA":(online?"ÇEVRİMİÇİ":"ÇEVRİMDIŞI");
+      st.appendChild(pill); tr.appendChild(st);
+      var hostTd=document.createElement("td");
+      var hn=document.createElement("div"); hn.textContent=d.hostname||"-"; hostTd.appendChild(hn);
+      if(d.tags && d.tags.length){
+        var tw=document.createElement("div"); tw.style.cssText="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px";
+        d.tags.slice(0,6).forEach(function(t){
+          var c=document.createElement("span"); c.textContent=t;
+          c.style.cssText="background:var(--accent-dim);color:var(--accent);border:1px solid var(--line2);border-radius:8px;padding:1px 6px;font-size:10px";
+          tw.appendChild(c);
+        });
+        hostTd.appendChild(tw);
+      }
+      tr.appendChild(hostTd);
+      tr.appendChild(cell(d.mac||"-","mono"));
+      tr.appendChild(cell(d.os_version||d.os_platform||"-"));
+      tr.appendChild(cell(d.agent_version||"-","mono"));
+      tr.appendChild(cell(relTime(d.last_seen)));
+      tr.onclick=function(){ selectDevice(d.id); };
+      body.appendChild(tr);
+    });
+  }
+
+  function renderEvents(){
+    var body=$("evt-body"); body.innerHTML="";
+    var list=state.events.filter(function(e){
+      if(state.pendingOnly && e.ack_status==="RESOLVED") return false;
+      if(state.catFilter && e.category!==state.catFilter) return false;
+      if(!state.sevFilter) return true;
+      if(state.sevFilter==="CRITICAL") return e.severity==="CRITICAL";
+      return e.severity==="CRITICAL"||e.severity==="HIGH";
+    });
+    $("evt-count").textContent=list.length + (state.catFilter?(" · "+state.catFilter):"") + (state.pendingOnly?" · bekleyen":"");
+    $("evt-empty").style.display = list.length ? "none" : "block";
+    list.forEach(function(e){
+      var hasDet = e.details != null && JSON.stringify(e.details) !== "null" && JSON.stringify(e.details) !== "{}";
+      var open = state.evtOpen[e.id];
+      var tr=document.createElement("tr");
+      tr.className="click"; tr.title="Ayrıntı / triyaj için tıklayın";
+      tr.appendChild(cell(relTime(e.created_at)));
+      var c=document.createElement("td");
+      var cat=e.category||"-";
+      c.appendChild(filterChip(cat, state.catFilter===e.category, "Bu kategoriye göre süz",
+        function(){ state.catFilter=(state.catFilter===e.category?"":e.category); renderEvents(); }));
+      tr.appendChild(c);
+      var sv=document.createElement("td"); var s=document.createElement("span");
+      s.className="sev "+(e.severity||""); s.textContent=e.severity||"-"; sv.appendChild(s); tr.appendChild(sv);
+      var msg=cell((open?"▾ ":"▸ ")+(e.message||"-")); msg.style.whiteSpace="normal";
+      if(e.ack_status){ msg.appendChild(ackBadge(e)); }
+      tr.appendChild(msg);
+      tr.onclick=function(){ state.evtOpen[e.id]=!state.evtOpen[e.id]; renderEvents(); };
+      body.appendChild(tr);
+      if(open){
+        var dr=document.createElement("tr"); var dtd=document.createElement("td");
+        dtd.colSpan=4; dtd.style.background="var(--panel2)";
+        if(e.device_id){
+          var dv=document.createElement("div");
+          dv.style.cssText="font-size:11.5px;color:var(--muted);margin-bottom:6px";
+          dv.innerHTML="Cihaz: <b>"+esc(deviceName(e.device_id))+"</b>";
+          dtd.appendChild(dv);
+        }
+        if(e.ack_status){
+          var st=document.createElement("div"); st.style.cssText="font-size:11.5px;color:var(--muted);margin-bottom:6px";
+          st.innerHTML="Triyaj: <b>"+(e.ack_status==="RESOLVED"?"Çözüldü":"İnceleniyor")+"</b>"+
+            (e.ack_by?(" · "+esc(e.ack_by)):"")+(e.ack_at?(" · "+esc(relTime(e.ack_at))):"");
+          dtd.appendChild(st);
+        }
+        if(e.ack_assignee||e.ack_note){
+          var cs=document.createElement("div"); cs.style.cssText="font-size:11.5px;color:var(--muted);margin-bottom:6px";
+          cs.innerHTML="Vaka:"+(e.ack_assignee?(" 👤 <b>"+esc(e.ack_assignee)+"</b>"):"")+
+            (e.ack_note?(" · 📝 "+esc(e.ack_note)):"");
+          dtd.appendChild(cs);
+        }
+        if(hasDet){
+          var pre=document.createElement("pre");
+          pre.style.cssText="margin:0;font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto";
+          try { pre.textContent=JSON.stringify(e.details,null,2); } catch(x){ pre.textContent=String(e.details); }
+          dtd.appendChild(pre);
+        }
+        // Triyaj + test eylemleri.
+        var acts=document.createElement("div"); acts.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px";
+        var ab=mkEvtBtn(e.ack_status==="ACKNOWLEDGED"?"◔ İnceleniyor":"İncelendi işaretle",
+          "Bu olayı 'inceleniyor' (ACKNOWLEDGED) olarak işaretle", function(){ ackEvent(e.id,"ACKNOWLEDGED"); });
+        var rb=mkEvtBtn(e.ack_status==="RESOLVED"?"✓ Çözüldü":"Çözüldü işaretle",
+          "Bu olayı 'kapatıldı' (RESOLVED) olarak işaretle", function(){ ackEvent(e.id,"RESOLVED"); });
+        acts.appendChild(ab); acts.appendChild(rb);
+        // İçine satır-içi vaka editörünün açılacağı kapsayıcı (aşağıya eklenir).
+        var caseHolder=document.createElement("div");
+        caseHolder.style.cssText="margin-top:8px;display:none";
+        acts.appendChild(mkEvtBtn("👤 Vaka ata / not",
+          "Bu olaya sorumlu (assignee) ve serbest-metin not ata", function(){ toggleCaseForm(e, caseHolder); }));
+        if(hasDet){
+          acts.appendChild(mkEvtBtn("🧪 Kurallara karşı test et",
+            "Güvenlik → Kural Test Aracı'na bu olayı taşır", function(){ testEventAgainstRules(e); }));
+        }
+        dtd.appendChild(acts);
+        dtd.appendChild(caseHolder);
+        dr.appendChild(dtd); body.appendChild(dr);
+      }
+    });
+  }
+  // ackBadge: olay satırında triyaj durumu rozeti (inceleniyor / kapatıldı).
+  function ackBadge(e){
+    var b=document.createElement("span"); var resolved=e.ack_status==="RESOLVED";
+    b.textContent=resolved?"✓ kapatıldı":"◔ inceleniyor";
+    b.style.cssText="margin-left:8px;font-size:10px;padding:1px 7px;border-radius:8px;"+
+      (resolved?"background:var(--ok-dim,#0d2a1e);color:var(--ok,#10b981)":"background:var(--accent-dim);color:var(--accent)");
+    if(e.ack_by) b.title=e.ack_status+" — "+e.ack_by;
+    return b;
+  }
+  // mkEvtBtn: olay-detay panelinde küçük eylem düğmesi (tıklama olay-satırına sızmaz).
+  function mkEvtBtn(text, title, fn){
+    var b=document.createElement("button"); b.className="btn ghost sm"; b.type="button";
+    b.textContent=text; b.title=title;
+    b.onclick=function(ev){ ev.stopPropagation(); fn(); };
+    return b;
+  }
+  // ackEvent: olayı ACKNOWLEDGED/RESOLVED işaretler (OPERATOR+; VIEWER 403 → uyarı).
+  function ackEvent(id, status){
+    var path="/api/events/"+encodeURIComponent(id)+"/"+(status==="RESOLVED"?"resolve":"ack");
+    api(path,"POST",{}).then(function(){
+      toast(status==="RESOLVED"?"Olay çözüldü olarak işaretlendi":"Olay incelendi olarak işaretlendi","","ok");
+      refresh();
+    }).catch(function(e){ toast("Triyaj başarısız",e.message,"err"); });
+  }
+  // toggleCaseForm: olay-detay panelinde satır-içi vaka editörünü açar/kapatır
+  // (sorumlu + serbest-metin not) — vaka/olay yönetimi (OPERATOR+).
+  function toggleCaseForm(e, holder){
+    if(holder.style.display!=="none"){ holder.style.display="none"; return; }
+    holder.innerHTML="";
+    var wrap=document.createElement("div");
+    wrap.style.cssText="display:flex;flex-direction:column;gap:6px;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:8px;max-width:440px";
+    var lbl=document.createElement("div");
+    lbl.style.cssText="font-size:11px;color:var(--muted)";
+    lbl.textContent="Vaka ataması — sorumlu analist ve not (OPERATOR+; denetim izine yazılır).";
+    var ai=document.createElement("input");
+    ai.type="text"; ai.maxLength=200; ai.value=e.ack_assignee||"";
+    ai.placeholder="Sorumlu (assignee) — e-posta/ad";
+    ai.style.cssText="padding:6px 10px;font-size:12px";
+    var ta=document.createElement("textarea");
+    ta.rows=3; ta.maxLength=2000; ta.value=e.ack_note||"";
+    ta.placeholder="Vaka notu — kısa açıklama";
+    ta.style.cssText="padding:6px 10px;font-size:12px;font-family:inherit;resize:vertical";
+    var row=document.createElement("div"); row.style.cssText="display:flex;gap:6px";
+    var save=document.createElement("button"); save.className="btn sm"; save.type="button"; save.textContent="Kaydet";
+    var cancel=document.createElement("button"); cancel.className="btn ghost sm"; cancel.type="button"; cancel.textContent="İptal";
+    save.onclick=function(){ submitCase(e.id, ai.value.trim(), ta.value.trim(), holder); };
+    cancel.onclick=function(){ holder.style.display="none"; };
+    row.appendChild(save); row.appendChild(cancel);
+    wrap.appendChild(lbl); wrap.appendChild(ai); wrap.appendChild(ta); wrap.appendChild(row);
+    holder.appendChild(wrap); holder.style.display="block"; ai.focus();
+  }
+  // submitCase: vaka atamasını kaydeder (OPERATOR+; VIEWER 403 → uyarı).
+  function submitCase(id, assignee, note, holder){
+    api("/api/events/"+encodeURIComponent(id)+"/case","POST",{assignee:assignee,note:note}).then(function(){
+      toast("Vaka güncellendi","","ok"); holder.style.display="none"; refresh();
+    }).catch(function(x){ toast("Vaka güncelleme başarısız",x.message,"err"); });
+  }
+
+  function selectDevice(id){
+    state.sel = (state.sel===id) ? null : id;
+    var d = state.devices.filter(function(x){return x.id===id;})[0];
+    var head=$("sel-head");
+    if(state.sel && d){
+      head.className="sel-head";
+      head.innerHTML="Seçili: <b>"+esc(d.hostname||d.id)+"</b> &nbsp;<span class='mono' style='color:var(--faint)'>"+esc(d.id)+"</span>";
+    } else {
+      head.className="sel-head sel-none";
+      head.textContent="Bir cihaz seçmek için tablodan satıra tıklayın.";
+    }
+    document.querySelectorAll("[data-act]").forEach(function(b){
+      var needsSel = ["quarantine","release","diagnostics","revoke","exportData","eraseData","assignPolicy","setTags","collectFile","lock","restart","wipe"].indexOf(b.dataset.act)>=0;
+      if(needsSel) b.disabled = !state.sel;
+      var cfp=$("cf-path"); if(cfp) cfp.disabled = !state.sel;
+    });
+    renderTags(d);
+    var det=$("dev-detail");
+    if(state.sel){ loadDetail(state.sel); } else { det.className="detail"; det.innerHTML=""; }
+    renderDevices();
+  }
+
+  function renderTags(d){
+    var box=$("dev-tags"), inp=$("tag-input");
+    box.innerHTML="";
+    var tags=(d&&d.tags)||[];
+    if(!state.sel){ inp.value=""; return; }
+    inp.value=tags.join(", ");
+    tags.forEach(function(t){
+      var chip=document.createElement("span");
+      chip.textContent=t;
+      chip.style.cssText="background:var(--accent-dim);color:var(--accent);border:1px solid var(--line2);border-radius:10px;padding:2px 8px;font-size:11px";
+      box.appendChild(chip);
+    });
+  }
+
+  // ---------- refresh loop ----------
+  function setLive(ok){
+    var el=$("live"); el.className="live"+(ok?"":" off");
+    var mode = state.streamOn ? "akış" : "yenileme";
+    $("live-txt").textContent = ok ? ("canlı ("+mode+") · "+new Date().toLocaleTimeString()) : "bağlantı yok";
+  }
+  function soft(p){ return p.catch(function(){ return {}; }); }
+  // loadPendingWipes: çift-kontrol bekleyen WIPE taleplerini listeler; her biri için
+  // Onayla (farklı ADMIN) + İptal düğmesi. Boşsa bölüm gizlenir. VIEWER'da 403 → gizli.
+  function loadPendingWipes(){
+    var box=$("pending-wipes"), list=$("pending-wipes-list"); if(!box||!list) return;
+    return api("/api/devices/pending-wipes").then(function(r){
+      var pw=(r&&r.pending_wipes)||[];
+      list.innerHTML="";
+      if(!pw.length){ box.style.display="none"; return; }
+      box.style.display="block";
+      pw.forEach(function(w){
+        var row=document.createElement("div");
+        row.style.cssText="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 8px;background:var(--panel2);border:1px solid var(--crit);border-radius:8px";
+        var info=document.createElement("div"); info.style.cssText="flex:1;font-size:11.5px";
+        info.innerHTML="<b>"+esc(deviceName(w.device_id))+"</b> · talep: "+esc(w.requested_by||"?")+
+          (w.reason?(" · <span style='color:var(--muted)'>"+esc(w.reason)+"</span>"):"");
+        var ap=document.createElement("button"); ap.className="btn danger sm"; ap.type="button"; ap.textContent="✅ Onayla (WIPE)";
+        ap.title="Farklı bir ADMIN olarak onayla → WIPE kuyruğa girer (kendi talebinizi onaylayamazsınız)";
+        ap.onclick=function(){ approveWipe(w.device_id); };
+        var cn=document.createElement("button"); cn.className="btn ghost sm"; cn.type="button"; cn.textContent="İptal";
+        cn.onclick=function(){ cancelWipe(w.device_id); };
+        row.appendChild(info); row.appendChild(ap); row.appendChild(cn);
+        list.appendChild(row);
+      });
+    }).catch(function(){ box.style.display="none"; }); // VIEWER/yetkisiz: sessizce gizle
+  }
+  function approveWipe(id){
+    if(!confirm("⚠ Bu WIPE talebini ONAYLIYORSUNUZ — cihazın VERİSİ SİLİNECEK (geri alınamaz). Devam?")) return;
+    api("/api/devices/"+encodeURIComponent(id)+"/wipe/approve","POST",{}).then(function(){
+      toast("WIPE onaylandı — kuyruğa girdi",deviceName(id),"err"); refresh();
+    }).catch(function(e){ toast("Onay başarısız",e.message,"err"); });
+  }
+  function cancelWipe(id){
+    api("/api/devices/"+encodeURIComponent(id)+"/wipe/cancel","POST",{}).then(function(){
+      toast("WIPE talebi iptal edildi",deviceName(id),"ok"); refresh();
+    }).catch(function(e){ toast("İptal başarısız",e.message,"err"); });
+  }
+
+  function refresh(){
+    return Promise.all([
+      api("/api/devices?limit=500"),
+      api("/api/events?limit=200"),
+      soft(api("/api/summary")),
+      soft(api("/api/audit?limit=100")),
+      soft(api("/api/enrollment-tokens?limit=100")),
+      soft(api("/api/admins")),
+      soft(api("/api/policies?limit=200"))
+    ]).then(function(r){
+      state.devices = r[0].devices || [];
+      state.events = r[1].events || [];
+      state.summary = (r[2] && r[2].summary) || null;
+      state.audit = (r[3] && r[3].audit) || [];
+      state.tokens = (r[4] && r[4].tokens) || [];
+      if(r[5] && r[5].admins) state.admins = r[5].admins;
+      state.policies = (r[6] && r[6].policies) || [];
+      renderStats(); renderSeverity(); renderOSInventory(); renderTopDevices(); renderComplianceCard(); renderTactics(); renderDevices(); renderEvents(); renderAudit();
+      renderTokens(); renderAdmins(); renderPolicies(); setLive(true);
+      loadActivity(); loadPendingWipes(); loadIncidents(); loadCoverage();
+      loadRisk(); loadFrameworks(); loadTrends(); loadUeba();
+      if(state.sel) loadDetail(state.sel);
+    }).catch(function(e){ setLive(false); });
+  }
+  function filteredAudit(){
+    var q=(state.audSearch||"").trim().toLowerCase();
+    var af=state.actFilter||"";
+    var a=state.audit||[];
+    return a.filter(function(x){
+      if(af && (x.action||"")!==af) return false;
+      if(!q) return true;
+      return ((x.admin_email||"")+" "+(x.action||"")+" "+(x.target_type||"")+" "+(x.target_id||""))
+        .toLowerCase().indexOf(q)>=0;
+    });
+  }
+  function renderAudit(){
+    var body=$("aud-body"); body.innerHTML="";
+    var a=filteredAudit();
+    $("aud-count").textContent=a.length + (state.actFilter?(" · "+state.actFilter):"");
+    $("aud-empty").style.display=a.length?"none":"block";
+    if(((state.audSearch||"").trim()||state.actFilter) && a.length===0){ $("aud-empty").textContent="Eşleşen kayıt yok."; }
+    else { $("aud-empty").textContent="Kayıt yok."; }
+    a.forEach(function(x){
+      var tr=document.createElement("tr");
+      tr.appendChild(cell(relTime(x.created_at)));
+      tr.appendChild(cell(x.admin_email||"—"));
+      var ac=document.createElement("td");
+      ac.appendChild(filterChip(x.action||"-", state.actFilter===x.action, "Bu eyleme göre süz",
+        function(){ state.actFilter=(state.actFilter===x.action?"":x.action); renderAudit(); }));
+      tr.appendChild(ac);
+      tr.appendChild(cell((x.target_type||"")+(x.target_id?(" · "+x.target_id):""),"mono"));
+      body.appendChild(tr);
+    });
+  }
+  function roleBadge(role){
+    var s=document.createElement("span"); s.className="chip"; s.textContent=role||"-";
+    if(role==="ADMIN") s.style.cssText="color:var(--accent);border-color:var(--accent-dim)";
+    else if(role==="VIEWER") s.style.color="var(--faint)";
+    return s;
+  }
+  function renderTokens(){
+    var body=$("tok-body"); body.innerHTML="";
+    var list=(state.tokens||[]).filter(function(t){ return !t.used; });
+    $("tok-count").textContent=list.length;
+    $("tok-empty").style.display=list.length?"none":"block";
+    list.forEach(function(t){
+      var tr=document.createElement("tr");
+      tr.appendChild(cell((t.id||"").slice(0,8)+"…","mono"));
+      tr.appendChild(cell(t.created_by_email||"—"));
+      var stTd=document.createElement("td"); var p=document.createElement("span");
+      var expd = t.expires_at && new Date(t.expires_at).getTime() < Date.now();
+      p.className="pill "+(expd?"offl":"on"); p.textContent=expd?"SÜRESİ DOLDU":"AKTİF";
+      stTd.appendChild(p); tr.appendChild(stTd);
+      var actTd=document.createElement("td");
+      var b=document.createElement("button"); b.className="btn danger sm"; b.textContent="İptal";
+      b.onclick=function(){
+        if(!confirm("Bu enrollment token iptal edilecek — bir daha kullanılamaz. Onaylıyor musunuz?")) return;
+        api("/api/enrollment-tokens/"+encodeURIComponent(t.id)+"/revoke","POST",{}).then(function(){
+          toast("Token iptal edildi",null,"warn"); loadTokens();
+        }).catch(function(e){ toast("İptal başarısız",e.message,"err"); });
+      };
+      actTd.appendChild(b); tr.appendChild(actTd);
+      body.appendChild(tr);
+    });
+  }
+  function loadTokens(){
+    return api("/api/enrollment-tokens?limit=100").then(function(r){
+      state.tokens=r.tokens||[]; renderTokens();
+    }).catch(function(){});
+  }
+  function renderAdmins(){
+    var body=$("adm-body"); body.innerHTML="";
+    var a=state.admins||[];
+    $("adm-count").textContent=a.length;
+    $("adm-empty").style.display=a.length?"none":"block";
+    a.forEach(function(x){
+      var tr=document.createElement("tr");
+      tr.appendChild(cell(x.email||"—"));
+      var rTd=document.createElement("td"); rTd.appendChild(roleBadge(x.role)); tr.appendChild(rTd);
+      var stTd=document.createElement("td"); var p=document.createElement("span");
+      p.className="pill "+(x.active?"on":"offl"); p.textContent=x.active?"AKTİF":"PASİF";
+      stTd.appendChild(p); tr.appendChild(stTd);
+      var actTd=document.createElement("td"); actTd.style.whiteSpace="nowrap";
+      var self = x.email===state.email;
+      var sel=document.createElement("select");
+      sel.style.cssText="width:auto;padding:3px 6px;font-size:11px;display:inline-block";
+      ["VIEWER","OPERATOR","ADMIN"].forEach(function(rn){
+        var o=document.createElement("option"); o.value=rn; o.textContent=rn; if(rn===x.role) o.selected=true; sel.appendChild(o);
+      });
+      sel.title = self ? "Kendi rolünüzü değiştiremezsiniz" : "Rolü değiştir";
+      sel.disabled = self;
+      sel.onchange=function(){
+        api("/api/admins/"+encodeURIComponent(x.id)+"/role","POST",{role:sel.value}).then(function(){
+          toast("Rol güncellendi",x.email+" → "+sel.value,"ok"); loadAdmins();
+        }).catch(function(e){ toast("Rol değişmedi",e.message,"err"); loadAdmins(); });
+      };
+      actTd.appendChild(sel);
+      if(x.active && !self){
+        var b=document.createElement("button"); b.className="btn ghost sm"; b.textContent="Pasifleştir";
+        b.style.marginLeft="6px";
+        b.onclick=function(){
+          if(!confirm("“"+x.email+"” yöneticisi devre dışı bırakılacak (giriş yapamaz). Onaylıyor musunuz?")) return;
+          api("/api/admins/"+encodeURIComponent(x.id)+"/deactivate","POST",{}).then(function(){
+            toast("Yönetici pasifleştirildi",x.email,"warn"); loadAdmins();
+          }).catch(function(e){ toast("İşlem başarısız",e.message,"err"); });
+        };
+        actTd.appendChild(b);
+      }
+      tr.appendChild(actTd);
+      body.appendChild(tr);
+    });
+  }
+  function loadAdmins(){
+    return api("/api/admins").then(function(r){
+      state.admins=r.admins||[]; renderAdmins();
+    }).catch(function(e){
+      $("adm-empty").textContent="Yönetici listesi görüntülenemedi ("+e.message+").";
+      $("adm-empty").style.display="block";
+    });
+  }
+  function loadMitre(){
+    // Kapsam boşluğu analizi: bilinen her ATT&CK tekniği için etkin tespit
+    // kuralı sayısını hesapla; kuralı olmayan teknikler "boşluk" (blind spot).
+    return Promise.all([api("/api/mitre/coverage"), api("/api/detections/rules").catch(function(){return {rules:[]};})])
+      .then(function(res){
+      var t=(res[0]&&res[0].techniques)||[];
+      var rules=(res[1]&&res[1].rules)||[];
+      var ruleCount={}; // teknik id → kural sayısı
+      rules.forEach(function(rl){ var id=rl.technique&&rl.technique.id; if(id){ ruleCount[id]=(ruleCount[id]||0)+1; } });
+      var body=$("mitre-body"); body.innerHTML="";
+      $("mitre-count").textContent=t.length;
+      $("mitre-empty").style.display=t.length?"none":"block";
+      var gaps=0;
+      t.forEach(function(x){
+        var n=ruleCount[x.id]||0; if(n===0) gaps++;
+        var tr=document.createElement("tr");
+        var cov = n>0
+          ? "<span class='sev LOW' title='"+n+" etkin kural'>✓ "+n+" kural</span>"
+          : "<span class='sev HIGH' title='Bu teknik için etkin tespit kuralı yok — kapsam boşluğu'>⚠ boşluk</span>";
+        tr.innerHTML="<td><b>"+esc(x.id)+"</b></td><td>"+esc(x.name)+"</td><td>"+esc(x.tactic)+"</td><td>"+cov+"</td>";
+        body.appendChild(tr);
+      });
+      var gapEl=$("mitre-gap");
+      if(gaps>0){ gapEl.textContent=gaps+" boşluk"; gapEl.style.display=""; gapEl.style.color="var(--bad,#f43f5e)"; }
+      else { gapEl.textContent="tam kapsam"; gapEl.style.display=""; gapEl.style.color="var(--ok,#10b981)"; }
+    }).catch(function(e){ $("mitre-empty").textContent="ATT&CK kapsamı yüklenemedi ("+e.message+")."; });
+  }
+  function featRow(label, on, detail){
+    var d=document.createElement("div");
+    d.style.cssText="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:9px";
+    var badge=on
+      ? "<span style='background:var(--ok-dim);color:var(--ok);border:1px solid var(--line2);border-radius:8px;padding:2px 9px;font-size:11px;font-weight:600'>ETKİN</span>"
+      : "<span style='background:var(--panel);color:var(--faint);border:1px solid var(--line);border-radius:8px;padding:2px 9px;font-size:11px'>kapalı</span>";
+    d.innerHTML="<span style='font-size:12.5px'>"+esc(label)+(detail?" <span style='color:var(--faint)'>"+esc(detail)+"</span>":"")+"</span>"+badge;
+    return d;
+  }
+  function loadFeatures(){
+    var box=$("feat-grid"); if(!box) return;
+    return api("/api/features").then(function(r){
+      var f=(r&&r.features)||{}; box.innerHTML="";
+      box.appendChild(featRow("SOC dış uyarı (webhook)", !!f.alerting_enabled, f.alerting_enabled?("biçim: "+(f.alert_format||"json")):""));
+      box.appendChild(featRow("Otomatik müdahale (SOAR)", !!f.auto_response_enabled));
+      box.appendChild(featRow("Tehdit istihbaratı (IoC)", (f.ioc_indicators||0)>0, (f.ioc_indicators||0)+" gösterge"));
+      box.appendChild(featRow("Tespit kuralları", (f.detection_rules||0)>0, (f.detection_rules||0)+" kural"));
+      box.appendChild(featRow("Prometheus /metrics", !!f.metrics_enabled));
+      box.appendChild(featRow("Kalıcı depo (PostgreSQL)", !!f.persistence, f.persistence?"":"bellek-içi demo"));
+      box.appendChild(featRow("Yatay ölçekleme (çok-düğüm)", !!f.cluster_enabled, f.cluster_enabled?"LISTEN/NOTIFY fan-out":"tek düğüm"));
+      box.appendChild(featRow("Yapısal loglama (JSON)", (f.log_format==="json"), "biçim: "+(f.log_format||"text")));
+      // Sertifika geçerliliği: kalan gün > 30 ise sağlıklı; azsa/süresi dolmuşsa uyarı.
+      var cd=(typeof f.cert_expiry_days==="number")?f.cert_expiry_days:9999;
+      box.appendChild(featRow("Sertifika geçerliliği (CA/sunucu)", cd>30,
+        cd>=9000?"—":(cd<0?("SÜRESİ DOLDU — "+(-cd)+" gün önce!"):(cd+" gün kaldı"+(cd<=30?" — yenileyin":"")))));
+    }).catch(function(){ box.innerHTML="<div class='empty' style='padding:10px'>Bu görünüm yalnız ADMIN rolüne açıktır.</div>"; });
+  }
+  function renderEventRate(ingested){
+    var chart=$("act-chart"); if(!chart) return;
+    if(state.evtRate===undefined){ state.evtRate=[]; state.evtLastIngested=null; }
+    if(state.evtLastIngested!==null){
+      var delta=Math.max(0, ingested-state.evtLastIngested);
+      state.evtRate.push(delta);
+      if(state.evtRate.length>40) state.evtRate.shift();
+    }
+    state.evtLastIngested=ingested;
+    var arr=state.evtRate, max=Math.max(1, Math.max.apply(null, arr.length?arr:[0]));
+    chart.innerHTML="";
+    if(!arr.length){ chart.innerHTML="<div class='mini' style='color:var(--faint)'>veri toplanıyor…</div>"; return; }
+    arr.forEach(function(v){
+      var b=document.createElement("div");
+      var h=Math.max(2, Math.round(v*100/max));
+      b.style.cssText="flex:1;min-width:3px;height:"+h+"%;border-radius:2px 2px 0 0;background:"+(v>0?"var(--accent)":"var(--line2)");
+      b.title=v+" olay";
+      chart.appendChild(b);
+    });
+  }
+  function loadActivity(){
+    return api("/api/activity").then(function(r){
+      var c=(r&&r.counters)||{}, box=$("act-grid"); if(!box) return;
+      renderEventRate(c.events_ingested||0);
+      var up=(r&&r.uptime_seconds)||0, h=Math.floor(up/3600), m=Math.floor((up%3600)/60);
+      var utEl=$("act-uptime"); if(utEl) utEl.textContent=(h+"s "+m+"dk");
+      var items=[
+        ["Tespit","detections","var(--accent)"],
+        ["Uyarı","alerts_raised","var(--warn)"],
+        ["Oto-karantina","auto_quarantine","var(--crit)"],
+        ["IoC eşleşme","ioc_hits","var(--crit)"],
+        ["Olay (alınan)","events_ingested","var(--muted)"],
+        ["Giriş (başarısız)","login_failure","var(--warn)"]
+      ];
+      // Yatay ölçekleme (#10): küme fan-out sayaçlarını YALNIZCA trafik varken göster
+      // (tek-düğüm konsolunu kalabalıklaştırma). Fallback>0 DB NOTIFY sorununa işaret
+      // eder, bu yüzden kritik renkle vurgulanır.
+      if(((c.cluster_received||0)+(c.cluster_published||0)+(c.cluster_fallback||0))>0){
+        items.push(["Küme fan-out (alınan)","cluster_received","var(--accent)"]);
+        if((c.cluster_fallback||0)>0) items.push(["Küme fallback (DB uyarı)","cluster_fallback","var(--crit)"]);
+      }
+      // Yeni güvenlik sinyalleri: yalnız >0 iken göster (gürültüyü azalt).
+      if((c.chain_fired||0)>0) items.push(["Saldırı zinciri (çok-sinyal)","chain_fired","var(--crit)"]);
+      if((c.lateral_movement||0)>0) items.push(["Yanal hareket","lateral_movement","var(--crit)"]);
+      if((c.login_lockouts||0)>0) items.push(["Kaba-kuvvet kilidi","login_lockouts","var(--crit)"]);
+      if((c.saved_search_hits||0)>0) items.push(["Kayıtlı-arama eşleşme","saved_search_hits","var(--warn)"]);
+      if((c.alerts_suppressed||0)>0) items.push(["Bastırılan alarm","alerts_suppressed","var(--muted)"]);
+      box.innerHTML="";
+      items.forEach(function(it){
+        var d=document.createElement("div");
+        d.style.cssText="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px";
+        d.innerHTML="<div style='font-size:11.5px;color:var(--muted)'>"+esc(it[0])+"</div>"+
+          "<div style='font-size:24px;font-weight:700;font-family:var(--mono);color:"+it[2]+"'>"+(c[it[1]]||0)+"</div>";
+        box.appendChild(d);
+      });
+    }).catch(function(){});
+  }
+  function loadDetections(){
+    return api("/api/detections/rules").then(function(r){
+      var rules=(r&&r.rules)||[]; var body=$("det-body"); body.innerHTML="";
+      $("det-count").textContent=rules.length;
+      $("det-empty").style.display=rules.length?"none":"block";
+      rules.forEach(function(x){
+        var tech=(x.technique&&x.technique.id)?(x.technique.id):"";
+        var tr=document.createElement("tr");
+        tr.innerHTML="<td><b>"+esc(x.id)+"</b></td><td>"+esc(x.name)+"</td><td>"+esc(x.severity)+"</td><td>"+esc(tech)+"</td>";
+        body.appendChild(tr);
+      });
+    }).catch(function(e){ $("det-empty").textContent="Tespit kuralları yüklenemedi ("+e.message+")."; });
+  }
+  // loadVulnerabilities: /api/vulnerabilities — zafiyetli cihazları ve CVE
+  // bulgularını gösterir (envanter × CVE veri kümesi). Sonuç HTML esc()'ten geçer.
+  function loadVulnerabilities(){
+    return api("/api/vulnerabilities").then(function(r){
+      var devs=(r&&r.devices)||[]; var body=$("vuln-body"); body.innerHTML="";
+      $("vuln-count").textContent=devs.length;
+      $("vuln-empty").style.display=devs.length?"none":"block";
+      if(!devs.length){
+        $("vuln-empty").textContent=(r&&r.dataset_size)?("✓ "+r.dataset_size+" CVE tarandı — eşleşen zafiyet yok."):"Zafiyet veri kümesi yüklü değil (KUT_VULN_FILE).";
+        return;
+      }
+      devs.forEach(function(d){
+        var wrap=document.createElement("div");
+        wrap.style.cssText="margin-bottom:10px;padding:8px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:9px";
+        var head="<div class='click' style='cursor:pointer;display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px' data-vdev='"+esc(d.device_id)+"'>"+
+          "<b>"+esc(d.hostname||d.device_id)+"</b><span class='mono' style='color:var(--bad,#f43f5e)'>"+(d.findings||[]).length+" CVE</span></div>";
+        var rows=(d.findings||[]).map(function(f){
+          return "<div class='mini' style='display:flex;gap:8px;padding:2px 0'>"+
+            "<span class='sev "+esc(f.severity)+"' style='font-size:10px'>"+esc(f.severity)+"</span>"+
+            "<span class='mono'>"+esc(f.cve)+"</span>"+
+            "<span style='flex:1;color:var(--muted)'>"+esc(f.package)+(f.fixed_in?(" → <span style='color:var(--ok,#10b981)'>"+esc(f.fixed_in)+"</span>"):"")+"</span></div>";
+        }).join("");
+        wrap.innerHTML=head+rows;
+        body.appendChild(wrap);
+      });
+      Array.prototype.forEach.call(body.querySelectorAll("[data-vdev]"),function(el){
+        el.onclick=function(){ setView("devices"); selectDevice(el.getAttribute("data-vdev")); };
+      });
+    }).catch(function(e){ $("vuln-empty").style.display="block"; $("vuln-empty").textContent="Zafiyetler yüklenemedi ("+e.message+")."; });
+  }
+  // testRule: örnek olayı /api/detections/test'e gönderip eşleşen kuralları
+  // gösterir (kuru çalıştırma). Sonuç kullanıcı-görünür HTML olduğundan tüm
+  // kural alanları esc()'ten geçer.
+  function testRule(){
+    var cat=($("rt-cat").value||"").trim(), msg=($("rt-msg").value||"").trim();
+    var out=$("rt-result");
+    if(!cat && !msg){ out.innerHTML='<p class="hint" style="margin:0">Kategori veya mesaj girin.</p>'; return; }
+    out.innerHTML='<p class="hint" style="margin:0">Değerlendiriliyor…</p>';
+    api("/api/detections/test","POST",{category:cat,message:msg}).then(function(r){
+      var m=(r&&r.matches)||[];
+      if(!m.length){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">✓ Eşleşen kural yok — bu olay hiçbir tespiti tetiklemez.</p>'; return; }
+      var rows=m.map(function(x){
+        var tech=(x.technique&&x.technique.id)?(x.technique.id):"";
+        return "<tr><td><b>"+esc(x.rule_id)+"</b></td><td>"+esc(x.rule_name)+"</td>"+
+          "<td><span class='sev "+esc(x.severity)+"'>"+esc(x.severity)+"</span></td><td class='mono'>"+esc(tech)+"</td></tr>";
+      }).join("");
+      out.innerHTML='<p class="hint" style="margin:0 0 8px">⚡ '+m.length+' kural tetiklenir:</p>'+
+        '<div class="tbl-wrap"><table><thead><tr><th>ID</th><th>Ad</th><th>Önem</th><th>Teknik</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Test başarısız: '+esc(e.message)+'</p>'; });
+  }
+  // loadCoverage: filo koruma-kapsamı + ajan sürüm dağılımı ("kim korunuyor?").
+  // Sonuç kullanıcı-görünür HTML olduğundan sürüm adları esc()'ten geçer.
+  function loadCoverage(){
+    var sum=$("cov-summary"), vers=$("cov-versions"), pctEl=$("cov-pct"); if(!sum) return;
+    return api("/api/coverage").then(function(c){
+      var pct=c.coverage_pct||0, total=c.total||0;
+      if(pctEl) pctEl.textContent="%"+pct;
+      var col = pct>=90?"var(--ok,#10b981)":(pct>=70?"var(--warn)":"var(--crit)");
+      sum.innerHTML="<span style='font-size:22px;font-weight:700;color:"+col+"'>%"+pct+"</span> kapsam · "+
+        "<b>"+(c.online||0)+"</b> çevrimiçi · <b>"+(c.stale||0)+"</b> sessiz/eski · "+total+" toplam · "+
+        "<b>"+(c.version_count||0)+"</b> farklı sürüm";
+      var bv=c.by_agent_version||{}, keys=Object.keys(bv).sort(function(a,b){return bv[b]-bv[a];});
+      vers.innerHTML = keys.length ? keys.map(function(k){
+        var n=bv[k], w=total?Math.round(n*100/total):0;
+        return "<div style='display:flex;align-items:center;gap:8px;font-size:12px'>"+
+          "<span class='mono' style='min-width:110px'>"+esc(k)+"</span>"+
+          "<span style='flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden'><span style='display:block;height:100%;width:"+w+"%;background:var(--accent)'></span></span>"+
+          "<span class='mono' style='color:var(--muted)'>"+n+"</span></div>";
+      }).join("") : "<span class='hint'>veri yok</span>";
+    }).catch(function(){ if(pctEl) pctEl.textContent="—"; });
+  }
+  // riskDur: saniyeyi okunabilir süreye çevirir (MTTD/MTTR özeti için).
+  function riskDur(s){ if(s<60) return s+"sn"; if(s<3600) return Math.round(s/60)+"dk"; return (s/3600).toFixed(1)+"sa"; }
+  // loadRisk: çok-faktörlü filo riski + en riskli cihazlar. Sonuç kullanıcı-görünür
+  // HTML olduğundan tüm alanlar esc()'ten geçer.
+  function loadRisk(){
+    var s=$("risk-summary"), d=$("risk-devices"), sc=$("risk-score"); if(!s) return;
+    return api("/api/risk").then(function(r){
+      var score=r.fleet_score||0, band=r.fleet_band||"INFO";
+      if(sc) sc.textContent=score;
+      var col=score>=80?"var(--crit)":(score>=60?"var(--warn)":"var(--ok,#10b981)");
+      var b=r.bands||{};
+      s.innerHTML="<span style='font-size:22px;font-weight:700;color:"+col+"'>"+score+"</span> / 100 · <span class='sev "+esc(band)+"'>"+esc(band)+"</span> · "+
+        Object.keys(b).map(function(k){return esc(k)+":"+b[k];}).join(" · ");
+      var devs=(r.devices||[]).filter(function(x){return (x.score||0)>0;}).slice(0,5);
+      d.innerHTML = devs.length ? devs.map(function(x){
+        return "<div style='display:flex;align-items:center;gap:8px;font-size:12px'>"+
+          "<span style='min-width:130px'>"+esc(deviceName(x.device_id||x.hostname||""))+"</span>"+
+          "<span class='sev "+esc(x.band||"")+"'>"+(x.score||0)+"</span>"+
+          "<span class='hint' style='flex:1'>"+esc((x.drivers||[]).slice(0,2).join("; "))+"</span></div>";
+      }).join("") : "<span class='hint'>risk sürücüsü yok</span>";
+    }).catch(function(){ if(sc) sc.textContent="—"; });
+  }
+  // loadFrameworks: filo duruşunu uyum çerçevelerine (CIS/NIST/ISO/KVKK) eşler.
+  function loadFrameworks(){
+    var el=$("fw-list"); if(!el) return;
+    return api("/api/compliance/frameworks").then(function(r){
+      var fws=(r&&r.frameworks)||[];
+      el.innerHTML = fws.length ? fws.map(function(f){
+        var p=f.score_pct||0, col=p>=90?"var(--ok,#10b981)":(p>=70?"var(--warn)":"var(--crit)");
+        return "<div style='display:flex;align-items:center;gap:8px;font-size:12px'>"+
+          "<span style='min-width:130px'>"+esc(f.framework||"")+"</span>"+
+          "<span style='flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden'><span style='display:block;height:100%;width:"+p+"%;background:"+col+"'></span></span>"+
+          "<span class='mono' style='color:var(--muted)'>%"+p+"</span></div>";
+      }).join("") : "<span class='hint'>veri yok</span>";
+    }).catch(function(){});
+  }
+  // loadTrends: MTTD (tespit gecikmesi) + MTTR (yanıt süresi) 7 günlük özeti.
+  function loadTrends(){
+    var el=$("trend-summary"); if(!el) return;
+    return api("/api/metrics/trends?days=7").then(function(r){
+      var mttd=Math.round(r.mttd_seconds||0), mttr=Math.round(r.mttr_seconds||0);
+      el.textContent="MTTD ~"+riskDur(mttd)+" ("+(r.detect_n||0)+" örnek) · MTTR ~"+riskDur(mttr)+" ("+(r.respond_n||0)+" örnek) · son "+(r.window_days||7)+" gün";
+    }).catch(function(){ el.textContent="—"; });
+  }
+  // loadUeba: ayrıcalıklı-kullanıcı (yönetici) davranış anomalileri (UEBA). Bulgu
+  // varsa gösterir; yoksa "anomali yok". Sonuç kullanıcı-görünür → esc().
+  function loadUeba(){
+    var el=$("ueba-summary"); if(!el) return;
+    return api("/api/ueba/admins").then(function(r){
+      var f=(r&&r.findings)||[], profs=(r&&r.profiles)||[];
+      if(!f.length){ el.innerHTML="<span class='hint'>✓ "+profs.length+" yönetici · anomali yok</span>"; return; }
+      el.innerHTML=f.map(function(x){
+        return "<div style='display:flex;align-items:baseline;gap:8px;font-size:12px'>"+
+          "<span class='sev "+esc(x.severity||"")+"'>"+esc(x.severity||"")+"</span>"+
+          "<span style='min-width:120px'>"+esc(x.admin||"")+"</span>"+
+          "<span class='hint' style='flex:1'>"+esc(x.reason||"")+"</span></div>";
+      }).join("");
+    }).catch(function(){ el.innerHTML="<span class='hint'>—</span>"; });
+  }
+  // loadIncidents: korelasyonla gruplanmış olayları (incident) yükler. Sonuç
+  // kullanıcı-görünür HTML olduğundan tüm alanlar esc()'ten geçer.
+  function loadIncidents(){
+    var body=$("inc-body"), empty=$("inc-empty"), cnt=$("inc-count"); if(!body) return;
+    return api("/api/incidents").then(function(r){
+      var inc=(r&&r.incidents)||[]; body.innerHTML="";
+      if(cnt) cnt.textContent=inc.length;
+      if(empty) empty.style.display=inc.length?"none":"block";
+      inc.forEach(function(x){
+        var tr=document.createElement("tr");
+        tr.innerHTML="<td class='mono' style='font-size:11px'>"+esc(relTime(x.last_seen))+"</td>"+
+          "<td>"+esc(deviceName(x.device_id||""))+"</td>"+
+          "<td class='mono' style='font-size:11px'>"+esc(x.rule_id||"")+(x.technique?(" · "+esc(x.technique)):"")+"</td>"+
+          "<td><span class='sev "+esc(x.severity||"")+"'>"+esc(x.severity||"")+"</span></td>"+
+          "<td class='mono'>"+(x.count||1)+(x.count>1?" ×":"")+"</td>"+
+          "<td>"+esc(x.sample_message||"")+"</td>";
+        // Satıra tıklayınca incident zaman çizelgesini (olay yeniden-yapılanması) göster.
+        if(x.id){
+          tr.style.cursor="pointer";
+          tr.title="Zaman çizelgesini göster";
+          tr.onclick=function(){ loadIncidentTimeline(x.id); };
+        }
+        body.appendChild(tr);
+      });
+    }).catch(function(){ if(empty){ empty.style.display="block"; empty.textContent="Yüklenemedi."; } });
+  }
+  // loadIncidentTimeline: bir incident'i oluşturan olayları kronolojik gösterir
+  // (IR araştırması). Sonuç kullanıcı-görünür HTML olduğundan tüm alanlar esc()'ten geçer.
+  function loadIncidentTimeline(iid){
+    var el=$("inc-timeline"); if(!el) return;
+    el.style.display="block";
+    el.innerHTML="<p class='hint' style='margin:0'>Zaman çizelgesi yükleniyor…</p>";
+    api("/api/incidents/"+encodeURIComponent(iid)+"/timeline").then(function(r){
+      var inc=(r&&r.incident)||{}, evs=(r&&r.events)||[];
+      var head="<div style='display:flex;justify-content:space-between;align-items:baseline'>"+
+        "<b>Zaman çizelgesi — "+esc(deviceName(inc.device_id||""))+" · "+esc(inc.rule_id||"")+"</b>"+
+        "<span class='click' data-inc-close='1' style='cursor:pointer;color:var(--muted)'>✕ kapat</span></div>";
+      var rows=evs.length ? evs.map(function(e){
+        return "<div class='mini' style='display:flex;gap:8px;align-items:baseline;padding:3px 0;border-bottom:1px solid var(--line)'>"+
+          "<span class='mono' style='color:var(--faint);min-width:120px'>"+esc(relTime(e.occurred_at||e.created_at||""))+"</span>"+
+          sevDot(e.severity)+"<span class='mono' style='color:var(--muted);min-width:90px'>"+esc(e.category||"")+"</span>"+
+          "<span style='flex:1'>"+esc(e.message||"")+"</span></div>";
+      }).join("") : "<div class='mini'>— pencere içinde ilişkili olay yok</div>";
+      el.innerHTML=head+"<div style='max-height:260px;overflow:auto;margin-top:6px'>"+rows+"</div>";
+      var cl=el.querySelector("[data-inc-close]"); if(cl) cl.onclick=function(){ el.style.display="none"; el.innerHTML=""; };
+    }).catch(function(){ el.innerHTML="<p class='hint' style='margin:0;color:var(--crit)'>Zaman çizelgesi yüklenemedi.</p>"; });
+  }
+  // runHunt: retro-hunt / arama. "rules" modu mevcut tespit motorunu geçmiş
+  // olaylara uygular; "query" modu alan-filtreli arama yapar. Sonuçlar kullanıcı-
+  // görünür HTML olduğundan tüm alanlar esc()'ten geçer.
+  function runHunt(){
+    var mode=$("hunt-mode").value, out=$("hunt-result");
+    var body={mode:mode, message_contains:($("hunt-msg").value||"").trim(),
+      category:($("hunt-cat").value||"").trim(), severity:($("hunt-sev").value||"").trim(), limit:500};
+    out.innerHTML='<p class="hint" style="margin:0">Taranıyor…</p>';
+    api("/api/hunt","POST",body).then(function(r){
+      var hits=(r&&r.hits)||[], scanned=(r&&r.scanned)||0;
+      if(!hits.length){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">✓ '+scanned+' olay tarandı — eşleşme yok.</p>'; return; }
+      var rows=hits.map(function(h){
+        var e=h.event||{}, m=(h.matched||[]).join(", ");
+        return "<tr><td class='mono' style='font-size:11px'>"+esc(relTime(e.created_at||e.occurred_at||""))+"</td>"+
+          "<td>"+esc(deviceName(e.device_id||""))+"</td>"+
+          "<td><span class='sev "+esc(e.severity||"")+"'>"+esc(e.severity||"")+"</span></td>"+
+          "<td>"+esc(e.message||"")+"</td>"+
+          (mode==="rules"?("<td class='mono' style='color:var(--accent)'>"+esc(m)+"</td>"):"")+"</tr>";
+      }).join("");
+      var techHdr = mode==="rules" ? "<th>Eşleşen kural</th>" : "";
+      out.innerHTML='<p class="hint" style="margin:0 0 8px">⚡ '+hits.length+' isabet / '+scanned+' olay tarandı'+
+        (mode==="rules"?" (geçmiş olaylara mevcut kurallar uygulandı)":"")+':</p>'+
+        '<div class="tbl-wrap"><table><thead><tr><th>Zaman</th><th>Cihaz</th><th>Önem</th><th>Mesaj</th>'+techHdr+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+    }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Tarama başarısız: '+esc(e.message)+'</p>'; });
+  }
+  // testEventAgainstRules: gerçek bir olayı Kural Test Aracı'na taşır — Güvenlik
+  // görünümüne geçer, kategori/mesajı doldurur, testi çalıştırır ve aracı görünür
+  // kılar. Olaylar akışını tespit motoruna bağlar (bu olay hangi kuralları tetikler?).
+  function testEventAgainstRules(e){
+    setView("security");
+    $("rt-cat").value=e.category||"";
+    $("rt-msg").value=e.message||"";
+    testRule();
+    var card=$("rt-run"); if(card && card.scrollIntoView) card.scrollIntoView({block:"center"});
+  }
+  // searchSoftware: filo-geneli yazılım araması (/api/software?q=). Sonuç
+  // kullanıcı-görünür HTML olduğundan tüm alanlar esc()'ten geçer. Cihaz satırı
+  // tıklanınca o cihaz seçilir.
+  function searchSoftware(){
+    var q=($("sw-q").value||"").trim(), out=$("sw-result");
+    if(!q){ out.innerHTML='<p class="hint" style="margin:0">Arama terimi girin.</p>'; return; }
+    out.innerHTML='<p class="hint" style="margin:0">Aranıyor…</p>';
+    api("/api/software?q="+encodeURIComponent(q)).then(function(r){
+      var m=(r&&r.matches)||[];
+      $("sw-count").textContent=m.length;
+      if(!m.length){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">"'+esc(q)+'" hiçbir cihazda bulunamadı.</p>'; return; }
+      out.innerHTML='<p class="hint" style="margin:0 0 8px">⚡ '+m.length+' cihazda bulundu:</p>'+
+        '<div class="tbl-wrap"><table><thead><tr><th>Cihaz</th><th>Eşleşen paket(ler)</th></tr></thead><tbody>'+
+        m.map(function(d){
+          var pkgs=(d.matches||[]).map(esc).join(", ");
+          return "<tr class='click' data-swdev='"+esc(d.device_id)+"' title='Bu cihazı seç'><td>"+esc(d.hostname||d.device_id)+"</td><td>"+pkgs+"</td></tr>";
+        }).join("")+'</tbody></table></div>';
+      Array.prototype.forEach.call(out.querySelectorAll("[data-swdev]"),function(tr){
+        tr.style.cursor="pointer";
+        tr.onclick=function(){ selectDevice(tr.getAttribute("data-swdev")); };
+      });
+    }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Arama başarısız: '+esc(e.message)+'</p>'; });
+  }
+  function renderPolicies(){
+    var body=$("pol-body"); body.innerHTML="";
+    var p=state.policies||[];
+    $("pol-count").textContent=p.length;
+    $("pol-empty").style.display=p.length?"none":"block";
+    // "Politika Ata" + "Toplu İşlem" dropdown'larını güncelle (seçimi koru).
+    ["a-pol","bulk-pol"].forEach(function(selId){
+      var sel=$(selId); if(!sel) return; var cur=sel.value;
+      sel.innerHTML='<option value="">— politika seç —</option>';
+      p.forEach(function(x){
+        var o=document.createElement("option"); o.value=x.id;
+        o.textContent=(x.name||x.id)+" ("+(x.version||"")+")"; sel.appendChild(o);
+      });
+      sel.value=cur;
+    });
+    p.forEach(function(x){
+      var open=state.polOpen[x.id];
+      var tr=document.createElement("tr"); tr.className="click"; tr.title="Kurallar için tıklayın";
+      tr.appendChild(cell((open?"▾ ":"▸ ")+(x.name||"—")));
+      var vTd=document.createElement("td"); var vs=document.createElement("span");
+      vs.className="mono"; vs.textContent=x.version||"—"; vs.title=x.version||"";
+      vs.style.cssText="display:inline-block;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom";
+      vTd.appendChild(vs); tr.appendChild(vTd);
+      tr.appendChild(cell(x.rule_count));
+      tr.appendChild(cell(x.device_count));
+      var actTd=document.createElement("td");
+      var b=document.createElement("button"); b.className="btn ghost sm"; b.textContent="Kural ekle";
+      b.title="Bu politikayı kural editörüne yükle";
+      b.onclick=function(ev){ ev.stopPropagation(); $("r-pol").value=x.id; $("r-target").focus();
+        toast("Politika seçildi",(x.name||x.id)+" — kural ekleyin","ok"); };
+      actTd.appendChild(b); tr.appendChild(actTd);
+      tr.onclick=function(){ state.polOpen[x.id]=!state.polOpen[x.id]; renderPolicies(); };
+      body.appendChild(tr);
+      if(open){
+        var dr=document.createElement("tr"); var dtd=document.createElement("td");
+        dtd.colSpan=5; dtd.style.background="var(--panel2)"; dtd.id="polrules-"+x.id;
+        var cached=state.polRules[x.id];
+        if(cached){ dtd.innerHTML=policyRulesHTML(cached); }
+        else { dtd.innerHTML="<div class='mini'>kurallar yükleniyor…</div>"; loadPolicyRules(x.id); }
+        dr.appendChild(dtd); body.appendChild(dr);
+      }
+    });
+  }
+  function policyRulesHTML(rules){
+    if(!rules.length) return "<div class='mini'>— kural yok</div>";
+    return rules.map(function(u){
+      var when = u.type==="APP_TIME_BLOCK" ? (" · "+esc(u.start)+"–"+esc(u.end)) : "";
+      return "<div class='mini' style='padding:3px 0'><span class='chip'>"+esc(u.type)+"</span> "+esc(u.target)+when+"</div>";
+    }).join("");
+  }
+  function loadPolicyRules(id){
+    api("/api/policies/"+encodeURIComponent(id)+"/rules").then(function(r){
+      state.polRules[id]=r.rules||[];
+      var cell=document.getElementById("polrules-"+id);
+      if(cell) cell.innerHTML=policyRulesHTML(state.polRules[id]);
+    }).catch(function(){
+      var cell=document.getElementById("polrules-"+id);
+      if(cell) cell.innerHTML="<div class='mini'>kurallar okunamadı</div>";
+    });
+  }
+  function loadPolicies(){
+    return api("/api/policies?limit=200").then(function(r){
+      state.policies=r.policies||[]; renderPolicies();
+    }).catch(function(){});
+  }
+  function sevDot(sev){ return "<span class='sev "+esc(sev)+"' style='font-size:11px'>"+esc(sev||"-")+"</span>"; }
+  function loadDetail(id){
+    Promise.all([
+      api("/api/devices/"+encodeURIComponent(id)),
+      soft(api("/api/events?device_id="+encodeURIComponent(id)+"&limit=15")),
+      soft(api("/api/devices/"+encodeURIComponent(id)+"/artifacts")),
+      soft(api("/api/devices/"+encodeURIComponent(id)+"/attack-story?limit=200")),
+      soft(api("/api/devices/"+encodeURIComponent(id)+"/graph?limit=200"))
+    ]).then(function(res){
+      if(state.sel!==id) return; // seçim değiştiyse eski yanıtı yazma
+      var d=res[0].device_detail; if(!d) return;
+      var el=$("dev-detail"); el.className="detail show";
+      var certs=(d.certs||[]).map(function(c){ return "<div class='mini'>#"+esc(c.serial)+" · "+(c.revoked?"⛔ İPTAL":"✓ geçerli")+"</div>"; }).join("")||"<div class='mini'>—</div>";
+      var cmds=(d.commands||[]).map(function(c){ return "<div class='mini'>"+esc(c.type)+" · "+(c.delivered_at?"teslim":"bekliyor")+"</div>"; }).join("")||"<div class='mini'>—</div>";
+      var evs=(res[1]&&res[1].events)||[];
+      var evHtml=evs.length ? evs.map(function(e){
+        return "<div class='mini' style='display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--line)'>"+
+          "<span style='color:var(--faint);min-width:62px'>"+esc(relTime(e.created_at))+"</span>"+
+          sevDot(e.severity)+"<span style='color:var(--ink);flex:1'>"+esc(e.message||"-")+"</span></div>";
+      }).join("") : "<div class='mini'>— bu cihaz için olay yok</div>";
+      var dev=d.device||{};
+      var sysLine=esc(dev.os_platform||"-")+(dev.os_version?" · "+esc(dev.os_version):"")+" · ajan "+esc(dev.agent_version||"-");
+      // Ağ keşfi: NETWORK_DISCOVERY olaylarının Details'inden komşu (ip/mac) listesi.
+      var neigh={};
+      evs.forEach(function(e){
+        if(e.category!=="NETWORK_DISCOVERY" || !e.details) return;
+        var dt=e.details, key=(dt.mac||dt.ip||"");
+        if(key) neigh[key]={ip:dt.ip||"", mac:dt.mac||"", authorized:dt.authorized};
+      });
+      var nk=Object.keys(neigh);
+      var neighHtml = nk.length ? nk.map(function(k){ var n=neigh[k];
+        return "<div class='mini' style='display:flex;gap:8px'><span class='mono' style='min-width:112px'>"+esc(n.ip||"-")+"</span>"+
+          "<span class='mono' style='color:var(--muted);flex:1'>"+esc(n.mac||"-")+"</span>"+
+          (n.authorized===false?"<span style='color:var(--warn)'>YETKİSİZ</span>":"")+"</div>";
+      }).join("") : "";
+      // Uyum durumu: yüklenen olaylardan en son disk_encryption + firewall.
+      var cEnc, cFw;
+      evs.forEach(function(e){ if(!e.details) return;
+        if(cEnc===undefined && typeof e.details.disk_encryption==="string") cEnc=e.details.disk_encryption;
+        if(cFw===undefined && typeof e.details.firewall==="string") cFw=e.details.firewall; });
+      function encBadge(s){ if(s===undefined) return "<span style='color:var(--faint)'>—</span>";
+        var c=s==="on"?"var(--ok,#10b981)":(s==="off"?"var(--bad,#f43f5e)":"var(--muted)");
+        return "<span style='color:"+c+";font-weight:600'>"+esc(s)+"</span>"; }
+      var compHtml = (cEnc!==undefined||cFw!==undefined) ?
+        ("<div class='mini'>Disk şifreleme: "+encBadge(cEnc)+" &nbsp;·&nbsp; Güvenlik duvarı: "+encBadge(cFw)+"</div>") : "";
+      // Kaynak kullanımı: en son kaynak olayından bellek/disk/uptime.
+      // (değişken adı 'res' DEĞİL — dış .then(res) parametresiyle çakışmasın.)
+      var resUse;
+      evs.forEach(function(e){ if(resUse===undefined && e.details && typeof e.details.mem_used_pct==="number") resUse=e.details; });
+      function usageBar(label, pct, detail){
+        var c = pct>=90?"var(--bad,#f43f5e)":(pct>=75?"var(--warn,#f59e0b)":"var(--accent)");
+        return "<div style='margin-bottom:6px'><div style='display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:2px'>"+
+          "<span>"+label+"</span><span class='mono' style='color:var(--muted)'>%"+pct+(detail?(" · "+detail):"")+"</span></div>"+
+          "<div style='height:7px;border-radius:4px;background:var(--panel2);overflow:hidden'><div style='height:100%;width:"+Math.min(pct,100)+"%;background:"+c+"'></div></div></div>";
+      }
+      var resHtml="";
+      if(resUse){
+        resHtml=usageBar("Bellek", resUse.mem_used_pct||0, (resUse.mem_total_mb?(Math.round(resUse.mem_total_mb/1024)+" GB"):""))+
+          usageBar("Disk", resUse.disk_used_pct||0, (resUse.disk_total_gb?(resUse.disk_total_gb+" GB"):""))+
+          "<div class='mini' style='color:var(--faint)'>Uptime: "+(resUse.uptime_hours||0)+" saat</div>";
+      }
+      // Yazılım envanteri: en son envanter olayından paket listesi (MDM varlık).
+      var sw, swCount=0;
+      evs.forEach(function(e){ if(sw===undefined && e.details && Array.isArray(e.details.software)){ sw=e.details.software; swCount=e.details.software_count||e.details.software.length; } });
+      var swHtml="";
+      if(sw && sw.length){
+        var shown=sw.slice(0,60).map(function(n){ return "<div class='mini' style='padding:1px 0'>"+esc(n)+"</div>"; }).join("");
+        var moreN=swCount-Math.min(sw.length,60);
+        swHtml="<div style='max-height:200px;overflow:auto'>"+shown+"</div>"+
+          (moreN>0?("<div class='mini' style='color:var(--faint)'>… ve "+moreN+" tane daha</div>"):"");
+      }
+      // Saldırı hikâyesi (kill-chain): aşama rozetleri + son adımlar.
+      var story=res[3]||{}, stages=(story.stages)||[], steps=(story.steps)||[];
+      var storyHtml="";
+      if(stages.length){
+        var badges=stages.map(function(s){ return "<span class='mono' style='font-size:10.5px;padding:1px 6px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)'>"+esc(s)+"</span>"; }).join(" ");
+        var lastSteps=steps.slice(-6).map(function(st){
+          return "<div class='mini' style='display:flex;gap:8px;align-items:baseline;padding:2px 0'>"+
+            sevDot(st.severity)+"<span class='mono' style='color:var(--faint);min-width:70px'>"+esc(st.stage||"")+"</span>"+
+            "<span style='flex:1'>"+esc(st.message||"")+"</span></div>";
+        }).join("");
+        storyHtml="<div style='display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px'>"+badges+"</div>"+lastSteps+
+          (story.max_severity?("<div class='mini' style='color:var(--faint);margin-top:4px'>en yüksek önem: "+esc(story.max_severity)+"</div>"):"");
+      }
+      // İlişkili varlıklar (varlık grafı): süreç/alan adı/IP/dosya düğümleri (türe göre).
+      var graph=res[4]||{}, gnodes=(graph.nodes)||[], byType={};
+      gnodes.forEach(function(n){ if(!n||n.type==="device") return; (byType[n.type]=byType[n.type]||[]).push(n.label||""); });
+      var gTypes=Object.keys(byType);
+      var graphHtml = gTypes.length ? gTypes.map(function(t){
+        var vals=byType[t];
+        return "<div class='mini' style='padding:2px 0'><span class='mono' style='color:var(--faint);min-width:64px;display:inline-block'>"+esc(t)+"</span> "+
+          vals.slice(0,10).map(esc).join(", ")+(vals.length>10?(" <span style='color:var(--faint)'>… +"+(vals.length-10)+"</span>"):"")+"</div>";
+      }).join("") : "";
+      // Toplanan artefaktlar (adli/IR): indirilebilir dosya listesi.
+      var arts=(res[2]&&res[2].artifacts)||[];
+      var artHtml="";
+      if(arts.length){
+        artHtml=arts.map(function(a){
+          return "<div class='mini' style='display:flex;gap:8px;align-items:baseline;padding:3px 0'>"+
+            "<span class='click' style='cursor:pointer;color:var(--accent)' data-artdl='"+esc(a.id)+"' data-artname='"+esc(a.path)+"'>⬇</span>"+
+            "<span style='flex:1;word-break:break-all'>"+esc(a.path)+"</span>"+
+            "<span class='mono' style='color:var(--faint)'>"+fmtBytes(a.size)+"</span></div>";
+        }).join("");
+      }
+      el.innerHTML =
+        "<h4>Sistem</h4><div class='mini'>"+sysLine+"</div>"+
+        (resHtml?("<h4>Kaynak kullanımı</h4>"+resHtml):"")+
+        (compHtml?("<h4>Uyum durumu</h4>"+compHtml):"")+
+        (storyHtml?("<h4>Saldırı hikâyesi (kill-chain)</h4>"+storyHtml):"")+
+        (graphHtml?("<h4>İlişkili varlıklar (graf)</h4>"+graphHtml):"")+
+        (swHtml?("<h4>Yüklü yazılım ("+swCount+")</h4>"+swHtml):"")+
+        (neighHtml?("<h4>Ağ keşfi — komşular ("+nk.length+")</h4>"+neighHtml):"")+
+        (artHtml?("<h4>Toplanan dosyalar ("+arts.length+")</h4>"+artHtml):"")+
+        "<h4>Atanmış politika</h4><div class='mini'>"+(d.assigned_policy_id?(esc(d.assigned_policy_id)+" ("+esc(d.assigned_policy_version)+")"):"— yok")+"</div>"+
+        "<h4>Son olaylar ("+evs.length+")</h4>"+evHtml+
+        "<h4>Sertifikalar</h4>"+certs+
+        "<h4>Komut geçmişi</h4>"+cmds;
+      Array.prototype.forEach.call(el.querySelectorAll("[data-artdl]"),function(a){
+        a.onclick=function(){ downloadArtifact(a.getAttribute("data-artdl"), a.getAttribute("data-artname")); };
+      });
+      if(d.assigned_policy_id){ if(!$("r-pol").value) $("r-pol").value=d.assigned_policy_id; if(!$("a-pol").value) $("a-pol").value=d.assigned_policy_id; }
+    }).catch(function(){});
+  }
+  // SSE aktifken güvenlik ağı olarak seyrek (15 sn), değilse sık (5 sn) yenile.
+  function startAuto(){ stopAuto(); state.timer=setInterval(refresh, state.streamOn?15000:5000); }
+  function stopAuto(){ if(state.timer){ clearInterval(state.timer); state.timer=null; } }
+
+  // ---------- canlı akış (SSE) ----------
+  var refreshDebounce=null;
+  function scheduleRefresh(){
+    if(refreshDebounce) return;
+    refreshDebounce=setTimeout(function(){ refreshDebounce=null; refresh(); }, 700);
+  }
+  function startStream(){
+    if(!window.fetch || !window.ReadableStream || !state.token) return;
+    stopStream();
+    var ctrl = new AbortController(); state.streamCtrl = ctrl;
+    fetch("/api/stream", { headers:{ Authorization:"Bearer "+state.token }, signal:ctrl.signal })
+      .then(function(res){
+        if(res.status===401){ sessionExpired(); return; }
+        if(!res.ok || !res.body){ throw new Error("akış yok"); }
+        state.streamOn=true; startAuto(); setLive(true);
+        var reader=res.body.getReader(), dec=new TextDecoder(), buf="";
+        function pump(){
+          return reader.read().then(function(r){
+            if(r.done){ throw new Error("akış kapandı"); }
+            buf += dec.decode(r.value,{stream:true});
+            var frames=buf.split("\n\n"); buf=frames.pop();
+            frames.forEach(function(f){
+              var dataLine=f.split("\n").filter(function(l){ return l.indexOf("data:")===0; })[0];
+              if(dataLine){ onNotice(dataLine.slice(5).trim()); }
+            });
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function(){
+        // Akış koptu/başlamadı: yalnız yenilemeye düş, kısa süre sonra tekrar dene.
+        if(state.streamOn){ state.streamOn=false; startAuto(); }
+        if(state.token && state.auto){ clearTimeout(state.streamRetry);
+          state.streamRetry=setTimeout(startStream, 5000); }
+      });
+  }
+  function onNotice(json){
+    var n; try{ n=JSON.parse(json); }catch(e){ n=null; }
+    if(n && n.type==="event" && (n.severity==="CRITICAL"||n.severity==="HIGH")){
+      toast("Yeni "+n.severity+" olay", n.message||"", n.severity==="CRITICAL"?"err":"warn");
+    }
+    setLive(true);
+    scheduleRefresh(); // hafif tetik → veriyi tazele
+  }
+  function stopStream(){
+    state.streamOn=false;
+    clearTimeout(state.streamRetry);
+    if(state.streamCtrl){ try{ state.streamCtrl.abort(); }catch(e){} state.streamCtrl=null; }
+  }
+
+  // ---------- actions ----------
+  var actions = {
+    token: function(){ return api("/api/enrollment-tokens","POST",{}).then(function(d){
+      showOut("o-token","Token (bir kez): "+d.enrollment_token,"ok"); toast("Enrollment token üretildi","Kopyalayıp ajan kurulumunda kullanın","ok"); loadTokens(); }); },
+    loadTokens: function(){ return loadTokens(); },
+    loadAdmins: function(){ return loadAdmins(); },
+    mfaEnroll: function(){
+      return api("/api/mfa/enroll","POST",{}).then(function(d){
+        $("mfa-secret").textContent=d.secret;
+        $("mfa-uri").textContent=d.otpauth_uri;
+        $("mfa-setup").style.display="block";
+        $("mfa-status").textContent="kurulum bekliyor";
+        showOut("o-mfa","Sırrı authenticator'a ekleyip üretilen kodla etkinleştirin.","ok"); }); },
+    mfaActivate: function(){
+      var code=$("mfa-code").value.trim();
+      if(code.length!==6){ showOut("o-mfa","6 haneli kodu girin.","err"); return Promise.resolve(); }
+      return api("/api/mfa/activate","POST",{code:code}).then(function(){
+        $("mfa-setup").style.display="none"; $("mfa-disable").style.display="block";
+        $("mfa-status").textContent="etkin ✓"; $("mfa-code").value="";
+        showOut("o-mfa","2FA etkinleştirildi. Bir sonraki girişte kod istenecek.","ok");
+        toast("2FA etkin","Hesabınız iki adımlı doğrulama ile korunuyor","ok"); }); },
+    mfaDisable: function(){
+      var code=$("mfa-dcode").value.trim();
+      if(!confirm("İki adımlı doğrulama kapatılacak. Onaylıyor musunuz?")) return Promise.resolve();
+      return api("/api/mfa/disable","POST",{code:code}).then(function(){
+        $("mfa-disable").style.display="none"; $("mfa-status").textContent="kapalı"; $("mfa-dcode").value="";
+        showOut("o-mfa","2FA kapatıldı.","ok"); toast("2FA kapatıldı",null,"warn"); }); },
+    createAdmin: function(){
+      var email=$("ad-email").value.trim(), pass=$("ad-pass").value, role=$("ad-role").value;
+      if(!email || pass.length<8){ showOut("o-adm","Geçerli e-posta ve en az 8 karakter parola girin.","err"); return Promise.resolve(); }
+      return api("/api/admins","POST",{email:email,password:pass,role:role}).then(function(d){
+        showOut("o-adm","Yönetici oluşturuldu · ID: "+d.admin_id,"ok"); toast("Yönetici oluşturuldu",email+" ("+role+")","ok");
+        $("ad-email").value=""; $("ad-pass").value=""; loadAdmins(); }); },
+    loadPolicies: function(){ return loadPolicies(); },
+    createPolicy: function(){ return api("/api/policies","POST",{name:$("p-name").value,version:$("p-ver").value}).then(function(d){
+      showOut("o-pol","Oluşturuldu · Politika ID: "+d.policy_id,"ok"); toast("Politika oluşturuldu",d.policy_id,"ok");
+      $("p-name").value=""; $("p-ver").value=""; loadPolicies(); }); },
+    quarantine: function(){
+      if(!confirm("“"+selName()+"” cihazı KARANTİNAYA alınacak (yalnız C2 ile haberleşebilir). Onaylıyor musunuz?")) return Promise.resolve();
+      return api("/api/devices/quarantine","POST",{device_id:state.sel}).then(function(){
+        showOut("o-dev","Karantina komutu kuyruğa alındı.","ok"); toast("Karantinaya alındı","Komut ajana teslim edilecek","warn"); }); },
+    release: function(){ return api("/api/devices/release","POST",{device_id:state.sel}).then(function(){
+      showOut("o-dev","Serbest bırakma komutu kuyruğa alındı.","ok"); toast("Serbest bırakıldı",null,"ok"); }); },
+    diagnostics: function(){ return api("/api/devices/collect-diagnostics","POST",{device_id:state.sel}).then(function(){
+      showOut("o-dev","Tanılama toplama komutu kuyruğa alındı — ajan sonraki bağlantıda uygular.","ok");
+      toast("Tanılama istendi",selName(),"ok"); if(state.sel) loadDetail(state.sel); }); },
+    lock: function(){ return api("/api/devices/"+encodeURIComponent(state.sel)+"/lock","POST",{}).then(function(){
+      showOut("o-dev","Kilitleme komutu kuyruğa alındı.","ok"); toast("Ekran kilitleme istendi",selName(),"ok"); }); },
+    restart: function(){
+      if(!confirm("“"+selName()+"” cihazı YENİDEN BAŞLATILACAK. Onaylıyor musunuz?")) return Promise.resolve();
+      return api("/api/devices/"+encodeURIComponent(state.sel)+"/restart","POST",{}).then(function(){
+        showOut("o-dev","Yeniden başlatma komutu kuyruğa alındı.","ok"); toast("Yeniden başlatma istendi",selName(),"warn"); }); },
+    wipe: function(){
+      if(!confirm("⚠ “"+selName()+"” cihazının VERİSİ SİLİNECEK (yıkıcı, ADMIN yetkisi). Emin misiniz?")) return Promise.resolve();
+      return api("/api/devices/"+encodeURIComponent(state.sel)+"/wipe","POST",{}).then(function(r){
+        if(r&&r.status==="wipe_pending_approval"){
+          showOut("o-dev","WIPE TALEBİ kaydedildi — çift-kontrol açık: FARKLI bir ADMIN 'Bekleyen WIPE' bölümünden onaylamadıkça veri SİLİNMEZ (dört-göz).","warn");
+          toast("WIPE onay bekliyor",selName(),"warn"); loadPendingWipes();
+        } else {
+          showOut("o-dev","Veri silme komutu kuyruğa alındı (ADMIN + denetim izi).","ok"); toast("Veri silme istendi",selName(),"err");
+        }
+      }); },
+    collectFile: function(){
+      var path=($("cf-path").value||"").trim();
+      if(!path){ showOut("o-dev","Toplanacak dosya yolunu girin.","err"); return Promise.resolve(); }
+      return api("/api/devices/"+encodeURIComponent(state.sel)+"/collect-file","POST",{path:path}).then(function(){
+        showOut("o-dev","Dosya toplama komutu kuyruğa alındı: "+esc(path)+" — ajan yükledikten sonra 'Toplanan dosyalar'da görünür.","ok");
+        toast("Dosya toplama istendi",path,"ok"); }); },
+    revoke: function(){
+      if(!confirm("“"+selName()+"” cihazının sertifikası İPTAL edilecek. Bu GERİ ALINAMAZ — cihaz yeniden kaydolana kadar bağlanamaz. Onaylıyor musunuz?")) return Promise.resolve();
+      return api("/api/devices/revoke","POST",{device_id:state.sel}).then(function(){
+        showOut("o-dev","Sertifika iptal edildi (sonraki bağlantıda reddedilir).","ok"); toast("Sertifika iptal edildi",null,"err"); }); },
+    exportData: function(){
+      var id=state.sel;
+      return fetch("/api/devices/"+encodeURIComponent(id)+"/export",{headers:{Authorization:"Bearer "+state.token}})
+        .then(function(res){
+          if(res.status===403){ throw new Error("yetki yetersiz (ADMIN gerekir)"); }
+          if(!res.ok){ return res.json().catch(function(){return{};}).then(function(d){ throw new Error(d.error||("HTTP "+res.status)); }); }
+          return res.blob();
+        }).then(function(blob){
+          var url=URL.createObjectURL(blob), a=document.createElement("a");
+          a.href=url; a.download="kvkk-export-"+id+".json"; document.body.appendChild(a); a.click();
+          setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); },0);
+          showOut("o-dev","KVKK veri paketi indirildi (kvkk-export-"+id+".json).","ok");
+          toast("Veri dışa aktarıldı",selName(),"ok");
+        }); },
+    eraseData: function(){
+      if(!confirm("KVKK VERİ SİLME — “"+selName()+"” cihazının tüm olay/telemetri verisi SİLİNECEK ve sertifikaları iptal edilecek. Bu GERİ ALINAMAZ. Denetim izi (işleme kaydı) korunur. Onaylıyor musunuz?")) return Promise.resolve();
+      return api("/api/devices/"+encodeURIComponent(state.sel)+"/erase","POST",{}).then(function(d){
+        showOut("o-dev","Silindi — olay: "+(d.events_deleted||0)+", komut: "+(d.commands_deleted||0)+", iptal edilen sertifika: "+(d.certs_revoked||0)+".","ok");
+        toast("KVKK veri silme uygulandı",(d.events_deleted||0)+" olay silindi","warn");
+        if(state.sel) loadDetail(state.sel); refresh(); }); },
+    assignPolicy: function(){
+      if(!$("a-pol").value){ showOut("o-dev","Listeden bir politika seçin.","err"); return Promise.resolve(); }
+      return api("/api/policies/assign","POST",{device_id:state.sel,policy_id:$("a-pol").value}).then(function(){
+        showOut("o-dev","Politika atandı (ajana anında iletilir).","ok"); toast("Politika atandı","Anlık push gönderildi","ok"); }); },
+    reportHTML: function(){
+      return fetch("/api/report",{headers:{Authorization:"Bearer "+state.token}}).then(function(r){
+        if(!r.ok) throw new Error("HTTP "+r.status); return r.blob();
+      }).then(function(b){
+        var url=URL.createObjectURL(b); window.open(url,"_blank");
+        setTimeout(function(){ URL.revokeObjectURL(url); },30000); toast("Rapor üretildi","","ok");
+      }).catch(function(e){ toast("Rapor başarısız",e.message,"err"); }); },
+    reportCSV: function(){
+      return fetch("/api/report?format=csv",{headers:{Authorization:"Bearer "+state.token}}).then(function(r){
+        if(!r.ok) throw new Error("HTTP "+r.status); return r.blob();
+      }).then(function(b){
+        var url=URL.createObjectURL(b), a=document.createElement("a");
+        a.href=url; a.download="kut-report.csv"; document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url); toast("CSV indirildi","","ok");
+      }).catch(function(e){ toast("CSV başarısız",e.message,"err"); }); },
+    reportExecMD: function(){
+      return fetch("/api/report?format=md&kind=executive",{headers:{Authorization:"Bearer "+state.token}}).then(function(r){
+        if(!r.ok) throw new Error("HTTP "+r.status); return r.blob();
+      }).then(function(b){
+        var url=URL.createObjectURL(b), a=document.createElement("a");
+        a.href=url; a.download="kut-executive-report.md"; document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url); toast("Yönetici raporu (MD) indirildi","","ok");
+      }).catch(function(e){ toast("Rapor başarısız",e.message,"err"); }); },
+    bulkBody: function(){
+      var tag=$("bulk-tag").value.trim(), action=$("bulk-action").value;
+      if(!tag){ showOut("o-bulk","Etiket girin.","err"); return null; }
+      var body={tag:tag, action:action};
+      if(action==="assign-policy"){
+        if(!$("bulk-pol").value){ showOut("o-bulk","Politika seçin.","err"); return null; }
+        body.policy_id=$("bulk-pol").value;
+      }
+      return body;
+    },
+    bulkPreview: function(){
+      var body=actions.bulkBody(); if(!body) return Promise.resolve();
+      body.dry_run=true;
+      return api("/api/devices/bulk","POST",body).then(function(d){
+        var devs=(d.devices||[]).map(function(x){ return esc(x.hostname||x.id); }).join(", ");
+        showOut("o-bulk","👁 Önizleme: "+(d.matched||0)+" cihaz etkilenecek"+(devs?(" — "+devs):"")+". (Uygulanmadı.)","ok");
+      }).catch(function(e){ showOut("o-bulk","Önizleme başarısız: "+esc(e.message),"err"); }); },
+    bulkApply: function(){
+      var body=actions.bulkBody(); if(!body) return Promise.resolve();
+      var labels={"collect-diagnostics":"tanılama toplama","quarantine":"karantina","release":"serbest bırakma","assign-policy":"politika atama"};
+      if(!confirm("“"+body.tag+"” etiketli TÜM cihazlara "+(labels[body.action]||body.action)+" uygulanacak. Önce 👁 Önizle önerilir. Onaylıyor musunuz?")) return Promise.resolve();
+      return api("/api/devices/bulk","POST",body).then(function(d){
+        showOut("o-bulk",(d.matched||0)+" cihaz eşleşti, "+(d.applied||0)+" uygulandı.","ok");
+        toast("Toplu işlem uygulandı",body.tag+" → "+(d.applied||0)+"/"+(d.matched||0)+" cihaz","ok"); refresh();
+      }).catch(function(e){
+        // 409: parti çok büyük → açık onayla tekrar dene.
+        if(/parti çok büyük|too large|409/.test(e.message)){
+          if(confirm("Parti çok büyük (kazara filo-geneli eylem koruması). Yine de UYGULA?")){
+            body.confirm=true;
+            return api("/api/devices/bulk","POST",body).then(function(d){
+              showOut("o-bulk",(d.matched||0)+" cihaz eşleşti, "+(d.applied||0)+" uygulandı (onaylı).","ok"); refresh(); });
+          }
+          return;
+        }
+        showOut("o-bulk","Toplu işlem başarısız: "+esc(e.message),"err");
+      }); },
+    setTags: function(){
+      if(!state.sel){ return Promise.resolve(); }
+      var tags=$("tag-input").value.split(",").map(function(s){return s.trim();}).filter(function(s){return s;});
+      return api("/api/devices/"+encodeURIComponent(state.sel)+"/tags","POST",{tags:tags}).then(function(d){
+        showOut("o-dev","Etiketler kaydedildi: "+((d.tags||[]).join(", ")||"—"),"ok");
+        toast("Etiketler güncellendi",null,"ok");
+        refresh().then(function(){ renderTags(state.devices.filter(function(x){return x.id===state.sel;})[0]); }); }); },
+    addRule: function(){
+      var pol=$("r-pol").value; if(!pol){ showOut("o-rule","Politika ID girin.","err"); return Promise.resolve(); }
+      var type=$("r-type").value, body={type:type, target:$("r-target").value};
+      if(type==="APP_TIME_BLOCK"){ body.start=$("r-start").value; body.end=$("r-end").value; body.active_days=[1,2,3,4,5]; }
+      return api("/api/policies/"+encodeURIComponent(pol)+"/rules","POST",body).then(function(){
+        showOut("o-rule","Kural eklendi — atanmış cihazlara anında iletildi.","ok"); toast("Kural eklendi","Sürüm yükseltildi + push","ok"); state.polRules={}; loadPolicies(); }); }
+  };
+  function bindActions(){
+    document.querySelectorAll("[data-act]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var fn=actions[btn.dataset.act]; if(!fn) return;
+        var out = ["quarantine","release","diagnostics","revoke","exportData","eraseData","assignPolicy"].indexOf(btn.dataset.act)>=0 ? "o-dev"
+                : btn.dataset.act==="token" ? "o-token"
+                : btn.dataset.act==="createAdmin" ? "o-adm"
+                : btn.dataset.act==="addRule" ? "o-rule" : "o-pol";
+        fn().catch(function(e){ showOut(out, e.message, "err"); toast("İşlem başarısız", e.message, "err"); });
+      });
+    });
+  }
+
+  // ---------- login ----------
+  function doLogin(){
+    $("l-err").textContent="";
+    var body={email:$("l-email").value,password:$("l-pass").value};
+    var code=$("l-code").value.trim();
+    if(code) body.code=code;
+    api("/api/login","POST",body).then(function(d){
+      if(d && d.mfa_required){
+        // 2FA etkin: kod alanını göster ve odakla.
+        $("l-mfa-row").style.display="block";
+        $("l-err").textContent="İki adımlı doğrulama etkin — authenticator kodunu girin.";
+        $("l-code").focus();
+        return;
+      }
+      enterApp(d.token, $("l-email").value);
+    }).catch(function(e){ $("l-err").textContent=e.message; });
+  }
+  function enterApp(token, email){
+    state.token=token; state.email=email;
+    try { sessionStorage.setItem("xdr_tok", token); sessionStorage.setItem("xdr_email", email); } catch(e){}
+    $("who").textContent=email;
+    $("login").style.display="none"; $("app").style.display="grid";
+    loadMitre();
+    loadDetections();
+    loadVulnerabilities();
+    loadActivity();
+    loadFeatures();
+    refresh().then(function(){ startAuto(); startStream(); });
+  }
+
+  // ---------- sidebar navigation (görünüm geçişi) ----------
+  var NAV_TITLES={ overview:"Genel Bakış", devices:"Cihazlar", policies:"Politika & Kayıt", security:"Güvenlik", admin:"Yönetim" };
+  function setView(v, fromHash){
+    if(!NAV_TITLES[v]) v="overview";
+    var m=document.querySelector("main"); if(m) m.setAttribute("data-active",v);
+    var pt=$("page-title"); if(pt) pt.textContent=NAV_TITLES[v];
+    document.querySelectorAll(".nav-item[data-nav]").forEach(function(b){ b.classList.toggle("active", b.dataset.nav===v); });
+    try{ localStorage.setItem("xdr_view",v); }catch(e){}
+    // Paylaşılabilir/yer-imlenebilir derin bağlantı: URL hash'ini bölüme eşle.
+    if(!fromHash && ("#"+v)!==location.hash){ try{ history.replaceState(null,"","#"+v); }catch(e){ location.hash=v; } }
+  }
+  document.querySelectorAll(".nav-item[data-nav]").forEach(function(b){
+    b.addEventListener("click",function(){ setView(b.dataset.nav); });
+  });
+  // Tarayıcı geri/ileri ve elle hash değişimi bölümü değiştirir.
+  window.addEventListener("hashchange",function(){ var h=location.hash.replace(/^#/,""); if(NAV_TITLES[h]) setView(h,true); });
+  (function(){
+    var h=location.hash.replace(/^#/,""), v;
+    if(NAV_TITLES[h]) v=h; else { try{ v=localStorage.getItem("xdr_view"); }catch(e){} }
+    setView(v||"overview", true);
+  })();
+
+  // ---------- wire ----------
+  $("l-btn").onclick=doLogin;
+  $("l-pass").addEventListener("keydown",function(e){ if(e.key==="Enter") doLogin(); });
+  $("l-code").addEventListener("keydown",function(e){ if(e.key==="Enter") doLogin(); });
+  $("logout").onclick=function(){ stopAuto(); stopStream(); state.token=""; state.sel=null;
+    try { sessionStorage.removeItem("xdr_tok"); sessionStorage.removeItem("xdr_email"); } catch(e){}
+    $("app").style.display="none"; $("login").style.display="grid"; $("l-pass").value="";
+    $("l-code").value=""; $("l-mfa-row").style.display="none"; };
+  $("dev-refresh").onclick=refresh; $("evt-refresh").onclick=refresh;
+  $("dev-csv").onclick=exportDevices;
+  $("dev-search").addEventListener("input",function(){ state.devSearch=this.value; renderDevices(); });
+  $("evt-csv").onclick=exportEvents; $("aud-csv").onclick=exportAudit;
+  $("feat-refresh").onclick=loadFeatures;
+  $("vuln-refresh").onclick=loadVulnerabilities;
+  $("bulk-action").addEventListener("change",function(){ $("bulk-pol-wrap").style.display=(this.value==="assign-policy")?"block":"none"; });
+  $("aud-verify").onclick=function(){
+    api("/api/audit/verify").then(function(r){
+      if(r && r.valid){ toast("Denetim izi bütünlüğü DOĞRULANDI","Hash-zinciri kesintisiz (kurcalama yok)","ok"); }
+      else { toast("Denetim izi bütünlüğü BOZUK","Zincir doğrulanamadı: "+((r&&r.error)||"bilinmeyen"),"err"); }
+    }).catch(function(e){ toast("Doğrulama başarısız",e.message,"err"); });
+  };
+  $("posture-csv").onclick=exportPosture;
+  $("rt-run").onclick=testRule;
+  $("hunt-run").onclick=runHunt;
+  $("evt-pending").onclick=function(){ state.pendingOnly=!state.pendingOnly; this.className="btn ghost sm"+(state.pendingOnly?" on":""); renderEvents(); };
+  $("sw-run").onclick=searchSoftware;
+  $("sw-q").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); searchSoftware(); } });
+  $("rt-msg").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); testRule(); } });
+  $("rf-on").onclick=function(){ state.auto=true; $("rf-on").className="on"; $("rf-off").className=""; startAuto(); startStream(); refresh(); };
+  $("rf-off").onclick=function(){ state.auto=false; $("rf-on").className=""; $("rf-off").className="on"; stopAuto(); stopStream(); setLive(true); $("live-txt").textContent="duraklatıldı"; };
+  document.querySelectorAll("#sevfilter button").forEach(function(b){
+    b.onclick=function(){ document.querySelectorAll("#sevfilter button").forEach(function(x){x.className="";}); b.className="on";
+      state.sevFilter=b.dataset.sev; renderEvents(); };
+  });
+  document.querySelectorAll("#devfilter button").forEach(function(b){
+    b.onclick=function(){ document.querySelectorAll("#devfilter button").forEach(function(x){x.className="";}); b.className="on";
+      state.devFilter=b.dataset.status; renderDevices(); };
+  });
+  $("aud-refresh").onclick=refresh;
+  $("aud-search").addEventListener("input",function(){ state.audSearch=this.value; renderAudit(); });
+  $("r-type").onchange=function(){ $("r-times").style.display = this.value==="APP_TIME_BLOCK" ? "flex" : "none"; };
+  bindActions();
+  setupAppearance();
+
+  // KVKK aydınlatma metnini yükle (public, giriş öncesi).
+  fetch("/api/notice").then(function(r){ return r.json(); }).then(function(d){
+    if(d && d.notice) $("notice-text").textContent=d.notice;
+  }).catch(function(){});
+
+  // Sayfa yenilendiğinde oturumu geri yükle (token geçersizse 401 → login).
+  try {
+    var savedTok = sessionStorage.getItem("xdr_tok");
+    if (savedTok) enterApp(savedTok, sessionStorage.getItem("xdr_email") || "");
+  } catch(e){}
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,197 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Tekrar-üretilebilir toolchain: tek kaynak. Go ve kod-üreteçleri SABİT sürüme
+# pinlenir (release.yml ile aynı değerler) — "@latest" sürüklenmesi yok.
+env:
+  GO_VERSION: "1.27.0"
+  PROTOC_GEN_GO_VERSION: "v1.36.11"      # google.golang.org/protobuf runtime ile eşleşir
+  PROTOC_GEN_GO_GRPC_VERSION: "v1.6.2"
+  GOVULNCHECK_VERSION: "v1.8.0"          # tarayıcı binary'si pinli; zafiyet DB'si (vuln.go.dev) tarama anında taze çekilir
+  GOSEC_VERSION: "v2.29.0"               # statik güvenlik analizi (bloklayıcı, HIGH+HIGH)
+  GITLEAKS_VERSION: "v8.18.4"            # sır taraması (bloklayıcı); modül yolu zricethezav/gitleaks
+
+jobs:
+  test:
+    name: Vet + Test + Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # Proto kodunu üret (gen/ commit edilmez; buf ile üretilir).
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: protoc-gen eklentileri
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
+      - name: Proto üret
+        run: make proto
+
+      - name: gofmt kontrolü
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Biçimsiz dosyalar (gofmt -w ile düzeltin):"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      # -race: eşzamanlı kod (eventbus pub/sub, cluster fan-out, memstore/collector
+      # kilitleri) veri yarışına karşı doğrulanır. CGO gerektirir; ubuntu-latest'te
+      # gcc mevcuttur. Yerel Windows geliştirme hostunda cgo/gcc yoksa `go test ./...`
+      # (yarışsız) çalıştırın.
+      - name: go test (-race)
+        run: go test -race ./...
+
+      - name: Uçtan uca smoke test
+        run: bash scripts/smoke-test.sh
+
+  db-test:
+    name: DB yolu (PostgreSQL)
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kut
+          POSTGRES_PASSWORD: kut
+          POSTGRES_DB: kut
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kut"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: protoc-gen eklentileri
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
+      - name: Proto üret
+        run: make proto
+      # smoke-test.sh, KUT_DATABASE_URL görünce şemayı yükler, admin tohumlar ve
+      # tüm zinciri GERÇEK PostgreSQL'e karşı çalıştırır (pgx yolu). psql'i apt ile
+      # kurmak yerine postgres SERVİS KONTEYNERİNDEKİ psql'i docker-exec ile kullanır
+      # (apt bağımlılığı yok — runner apt aynalarına dayanıklı).
+      - name: DB uçtan uca smoke test
+        env:
+          KUT_DATABASE_URL: postgres://kut:kut@localhost:5432/kut?sslmode=disable
+        run: |
+          PGCID="$(docker ps --filter ancestor=postgres:16 --format '{{.ID}}' | head -1)"
+          if [ -z "$PGCID" ]; then echo "postgres servis konteyneri bulunamadı"; exit 1; fi
+          export PSQL="docker exec -i $PGCID psql"
+          bash scripts/smoke-test.sh
+
+  security:
+    name: Güvenlik (govulncheck + fuzz + SBOM)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: protoc-gen eklentileri
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
+      - name: Proto üret
+        run: make proto
+
+      # Bağımlılık zafiyet taraması (bilinen CVE'ler). Bulgu → job kırmızı.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+      # Kritik ayrıştırıcıların kısa fuzz taraması (panik regresyon kalkanı).
+      - name: Fuzz (kısa)
+        run: FUZZTIME=15s bash scripts/fuzz.sh
+
+      # SBOM üretimi (CycloneDX) — tedarik zinciri şeffaflığı. Artifact olarak yüklenir.
+      - name: SBOM (Syft)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          format: cyclonedx-json
+          output-file: sbom.cyclonedx.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom
+          path: sbom.cyclonedx.json
+          if-no-files-found: warn
+
+      # Statik güvenlik analizi (gosec) — HIGH önem + HIGH güven bulguları job'ı
+      # KIRAR (bloklayıcı gate). Deneysel taint kuralları (G70x) FP-ağır olduğundan
+      # ve tek doğrulanmış G123 (kasıtlı mTLS iptal kontrolü, bkz. grpc/server.go)
+      # dışlanır; _demo geliştirme aracı taranmaz. Sürüm tekrar-üretilebilir pinli.
+      - name: gosec (bloklayıcı, HIGH+HIGH)
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@${{ env.GOSEC_VERSION }}
+          "$(go env GOPATH)/bin/gosec" -quiet -severity=high -confidence=high \
+            -exclude=G701,G702,G703,G704,G705,G706,G123 -exclude-dir=_demo ./...
+
+      # Sır taraması (gitleaks) — kaynakta sızmış kimlik-bilgisi/anahtar arar; bulgu
+      # job'ı KIRAR (bloklayıcı gate). Demo/geliştirme yapıtları (_demo/) .gitleaks.toml
+      # allowlist'indedir. Modül yolu zricethezav/gitleaks'tir (gitleaks/gitleaks değil
+      # — aksi halde kurulum sessizce başarısız olurdu). Sürüm pinli.
+      - name: gitleaks (sır taraması, bloklayıcı)
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@${{ env.GITLEAKS_VERSION }}
+          "$(go env GOPATH)/bin/gitleaks" detect --no-git --source . --config .gitleaks.toml --redact --exit-code 1
+
+  release:
+    name: Çapraz derleme (release)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: protoc-gen eklentileri
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
+      - name: Proto üret
+        run: make proto
+      - name: Release ikilileri
+        run: bash scripts/build-release.sh "${GITHUB_REF_NAME}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kut-binaries
+          path: dist/
+          if-no-files-found: error
