@@ -1,0 +1,79 @@
+[
+  {
+    "id": "KUT-EX-0001",
+    "name": "Brute-force: tekrarlı oturum başarısızlığı",
+    "category": "SECURITY",
+    "contains": ["oturum başarısız"],
+    "severity": "HIGH",
+    "technique": { "id": "T1110", "name": "Brute Force", "tactic": "Credential Access" },
+    "threshold": { "count": 5, "seconds": 60, "track": "device" },
+    "author": "KUT SOC",
+    "version": "1.0.0",
+    "references": ["https://attack.mitre.org/techniques/T1110/"]
+  },
+  {
+    "id": "KUT-EX-0002",
+    "name": "İndir-çalıştır zinciri (PowerShell)",
+    "category": "PROCESS",
+    "sequence": ["powershell", "downloadstring", "invoke"],
+    "severity": "HIGH",
+    "technique": { "id": "T1059", "name": "Command and Scripting Interpreter", "tactic": "Execution" },
+    "author": "KUT SOC",
+    "version": "1.0.0"
+  },
+  {
+    "id": "KUT-EX-0003",
+    "name": "certutil ile araç indirme (yakınlık)",
+    "category": "PROCESS",
+    "sequence": ["certutil", "urlcache"],
+    "within_bytes": 40,
+    "severity": "HIGH",
+    "technique": { "id": "T1105", "name": "Ingress Tool Transfer", "tactic": "Command and Control" },
+    "author": "KUT SOC",
+    "version": "1.0.0"
+  },
+  {
+    "id": "KUT-EX-0004",
+    "name": "İmzasız PowerShell yürütmesi (dışlamalı)",
+    "category": "PROCESS",
+    "contains": ["powershell"],
+    "absent": ["-signed", "signaturestatus=valid"],
+    "severity": "MEDIUM",
+    "technique": { "id": "T1059", "name": "Command and Scripting Interpreter", "tactic": "Execution" },
+    "author": "KUT SOC",
+    "version": "1.0.0"
+  },
+  {
+    "id": "KUT-EX-0010",
+    "name": "Aşama-1: iç ağ keşfi (bit kurar)",
+    "category": "SECURITY",
+    "contains": ["yanal hareket"],
+    "severity": "LOW",
+    "technique": { "id": "T1046", "name": "Network Service Discovery", "tactic": "Discovery" },
+    "bits": { "set": ["recon_seen"], "ttl_seconds": 3600, "track": "device" },
+    "author": "KUT SOC",
+    "version": "1.0.0"
+  },
+  {
+    "id": "KUT-EX-0011",
+    "name": "Aşama-2: kimlik dökümü (yalnız keşif sonrası kritik)",
+    "category": "SECURITY",
+    "contains": ["kimlik dökümü"],
+    "severity": "CRITICAL",
+    "technique": { "id": "T1003", "name": "OS Credential Dumping", "tactic": "Credential Access" },
+    "bits": { "require": ["recon_seen"], "set": ["creddump_seen"], "track": "device" },
+    "author": "KUT SOC",
+    "version": "1.0.0"
+  },
+  {
+    "id": "KUT-EX-0012",
+    "name": "Karantina önerisi (zaten ele alınmadıysa)",
+    "category": "SECURITY",
+    "contains": ["kimlik dökümü"],
+    "severity": "HIGH",
+    "technique": { "id": "T1003", "name": "OS Credential Dumping", "tactic": "Credential Access" },
+    "bits": { "require": ["creddump_seen"], "require_not": ["handled"], "set": ["handled"], "ttl_seconds": 1800, "track": "device" },
+    "author": "KUT SOC",
+    "version": "1.0.0"
+  }
+]

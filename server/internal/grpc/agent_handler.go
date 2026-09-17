@@ -1,0 +1,706 @@
+package grpc
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	kutv1 "kut.corp/suite/gen/kut/v1"
+	"kut.corp/suite/server/internal/aibrain"
+	"kut.corp/suite/server/internal/correlate"
+	"kut.corp/suite/server/internal/detbits"
+	"kut.corp/suite/server/internal/detect"
+	"kut.corp/suite/server/internal/entitygraph"
+	"kut.corp/suite/server/internal/ioc"
+	"kut.corp/suite/server/internal/metrics"
+	"kut.corp/suite/server/internal/mitre"
+	"kut.corp/suite/server/internal/model"
+	"kut.corp/suite/server/internal/notify"
+	"kut.corp/suite/server/internal/response"
+	"kut.corp/suite/server/internal/rollout"
+	"kut.corp/suite/server/internal/threshold"
+)
+
+// DeviceRegistry, cihaz durumu ve politika sürümü için sunucu-tarafı depolamadır.
+type DeviceRegistry interface {
+	// TouchHeartbeat, last_seen ve metrikleri günceller; cihazın SUNUCUDAKI
+	// geçerli politika sürümünü döner.
+	TouchHeartbeat(ctx context.Context, deviceID, agentVersion, osVersion string, at time.Time) (currentPolicyVersion string, err error)
+	// PendingCommands, cihaz için bekleyen komutları döner (karantina vb.).
+	PendingCommands(ctx context.Context, deviceID string) ([]*kutv1.Command, error)
+	// AckCommands, ajanın heartbeat'te bildirdiği (yürütmeyi tamamladığı) komutları
+	// ONAYLANMIŞ işaretler — en-az-bir-kez teslimde yeniden-teslimi durdurur.
+	AckCommands(ctx context.Context, deviceID string, commandIDs []string) error
+	// RecordAgentBinary, ajanın bildirdiği ikili SHA-256'sını kaydeder ve KURCALAMA
+	// sinyali döner: saklı hash boş değilse, SÜRÜM değişmediği hâlde hash değişmişse
+	// (takas/yamalanmış ikili) tampered=true. hash boşsa (öz-tasdik yok) no-op.
+	RecordAgentBinary(ctx context.Context, deviceID, version, hash string) (tampered bool, err error)
+}
+
+// EventSink, gelen olayları kalıcılaştırır ve kabul edilen son sırayı döner.
+type EventSink interface {
+	SaveEvents(ctx context.Context, deviceID string, evs []model.Event) (lastAccepted uint64, err error)
+}
+
+// PolicyProvider, cihaza atanmış geçerli politika paketini üretir.
+type PolicyProvider interface {
+	// CurrentPolicy, cihazın geçerli politika paketini döner. Cihaza politika
+	// atanmamışsa (nil, nil) döner.
+	CurrentPolicy(ctx context.Context, deviceID string) (*kutv1.PolicyBundle, error)
+}
+
+// UpdateProvider, cihaz için geçerli OTA güncelleme manifestosunu döner.
+type UpdateProvider interface {
+	// LatestUpdate, platforma uygun en güncel sürümü döner. Güncelleme yoksa
+	// (nil, nil). Dönen manifesto İMZALIDIR (imza DB'de saklanır).
+	LatestUpdate(ctx context.Context, deviceID, currentAgentVersion, platform string) (*kutv1.UpdateManifest, error)
+}
+
+// PolicyNotifier, açık politika akışlarını politika değişince uyandırır.
+type PolicyNotifier interface {
+	Subscribe(deviceID string) (<-chan struct{}, func())
+}
+
+// noopNotifier, notifier verilmediğinde kullanılır: hiç bildirim üretmez, akış
+// yalnız ilk paketi gönderip istemci kapatana dek bekler.
+type noopNotifier struct{}
+
+func (noopNotifier) Subscribe(string) (<-chan struct{}, func()) {
+	return make(chan struct{}), func() {}
+}
+
+// AdminNotifier, ajan-kaynaklı değişiklikleri admin konsoluna (SSE) iletmek için
+// yayınlanır. nil verilmezse noop kullanılır; SSE bağımlılığı zorunlu değildir.
+type AdminNotifier interface {
+	PublishEvent(deviceID, severity, message string)
+	PublishDevice(deviceID string)
+}
+
+// noopAdminNotifier, admin notifier verilmediğinde kullanılır.
+type noopAdminNotifier struct{}
+
+func (noopAdminNotifier) PublishEvent(string, string, string) {}
+func (noopAdminNotifier) PublishDevice(string)                {}
+
+// noopAlerter, dış uyarı yapılandırılmadığında kullanılır (hiçbir şey yapmaz).
+type noopAlerter struct{}
+
+func (noopAlerter) Notify(notify.Alert) {}
+
+// AutoResponder, kritik olaylara otomatik müdahale eder (ör. karantina). nil ise
+// noop kullanılır (otomatik müdahale kapalı).
+type AutoResponder interface {
+	AutoQuarantine(ctx context.Context, deviceID, reason string) error
+}
+
+// noopResponder, otomatik müdahale yapılandırılmadığında kullanılır.
+type noopResponder struct{}
+
+func (noopResponder) AutoQuarantine(context.Context, string, string) error { return nil }
+
+// AgentHandler, AgentService gRPC sunucusunu uygular.
+type AgentHandler struct {
+	kutv1.UnimplementedAgentServiceServer
+	devices    DeviceRegistry
+	events     EventSink
+	policies   PolicyProvider
+	updates    UpdateProvider
+	notifier   PolicyNotifier
+	admin      AdminNotifier
+	alerter    notify.Notifier
+	responder  AutoResponder
+	detector   atomic.Pointer[detect.Engine] // tespit motoru (canlı hot-reload için atomik)
+	correlator *correlate.Correlator         // olay korelasyonu (nil = gruplama/bastırma yok)
+	chain      *correlate.ChainDetector      // çok-sinyal korelasyon (nil = kapalı)
+	threshold  *threshold.Gate               // tekrar-eşiği kapısı (kural bazlı brute-force/tarama)
+	detbits    *detbits.Store                // çok-aşamalı tespit durum bitleri (flowbits/xbits)
+	iocSet     atomic.Pointer[ioc.Set]       // tehdit istihbaratı göstergeleri (nil = kapalı; canlı hot-reload için atomik)
+	artifacts  ArtifactSink                  // adli/IR dosya toplama deposu
+	graph      *entitygraph.Graph            // varlık/tehdit grafı — olaylardan kenar besler (nil = kapalı)
+	seqModel   *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli — canlı öğrenir (nil = kapalı)
+	now        func() time.Time
+}
+
+// SetEntityGraph, varlık/tehdit grafını bağlar. Bağlıysa ProcessEvent, olaylardan
+// (DNS→alan, bağlantı→IP) cihaz-merkezli kenarlar besler (pivot/hunting temeli).
+func (h *AgentHandler) SetEntityGraph(g *entitygraph.Graph) { h.graph = g }
+
+// SetSeqModel, süreç-zinciri sekans nadirlik modelini bağlar. Bağlıysa PROCESS
+// olaylarındaki soyağacı (root→leaf) taban çizgisi olarak PASİF öğrenilir; skorlama
+// analist tarafından salt-okunur sorgulanır (otomatik alarm yok → gürültü yok).
+func (h *AgentHandler) SetSeqModel(m *aibrain.SeqModel) { h.seqModel = m }
+
+// observeGraph, bir olayın yapılandırılmış Details alanlarından varlık grafına
+// güvenilir kenarlar ekler: DNS olayı → cihaz→alan (Resolved), ağ bağlantısı →
+// cihaz→IP (Connected). Bilinmeyen/eksik alanlar sessizce atlanır (best-effort).
+func (h *AgentHandler) observeGraph(deviceID string, e model.Event) {
+	if (h.graph == nil && h.seqModel == nil) || deviceID == "" || e.Details == "" {
+		return
+	}
+	var d map[string]any
+	if json.Unmarshal([]byte(e.Details), &d) != nil {
+		return
+	}
+	if h.graph != nil {
+		dev := entitygraph.Node{Kind: entitygraph.Device, ID: deviceID}
+		if s, ok := d["domain"].(string); ok && s != "" {
+			h.graph.Observe(dev, entitygraph.Node{Kind: entitygraph.Domain, ID: s}, entitygraph.Resolved, e.OccurredAt)
+		}
+		if s, ok := d["remote_ip"].(string); ok && s != "" {
+			h.graph.Observe(dev, entitygraph.Node{Kind: entitygraph.IP, ID: s}, entitygraph.Connected, e.OccurredAt)
+		}
+	}
+	// Süreç soyağacı: PROCESS olayının process + parent_chain (en yakın ata önce).
+	// Grafa ChildOf (çocuk→ebeveyn) kenarları — "bu süreç neyi başlattı?" (Sources) /
+	// "ebeveyni ne?" (Targets) pivotları. Ayrıca root→leaf zinciri sekans nadirlik
+	// modeline PASİF öğrenilir (taban çizgisi; skorlama analistçe salt-okunur sorgulanır).
+	proc, ok := d["process"].(string)
+	if !ok || proc == "" {
+		return
+	}
+	chainRaw, ok := d["parent_chain"].([]any)
+	if !ok {
+		return
+	}
+	ancestors := make([]string, 0, len(chainRaw)) // en yakın ata önce
+	child := proc
+	for _, pa := range chainRaw {
+		parent, ok := pa.(string)
+		if !ok || parent == "" {
+			continue
+		}
+		if h.graph != nil {
+			h.graph.Observe(
+				entitygraph.Node{Kind: entitygraph.Process, ID: child},
+				entitygraph.Node{Kind: entitygraph.Process, ID: parent},
+				entitygraph.ChildOf, e.OccurredAt)
+		}
+		ancestors = append(ancestors, parent)
+		child = parent
+	}
+	if h.seqModel != nil && len(ancestors) > 0 {
+		// root→leaf sıralı zinciri kur (ata→...→süreç) ve taban çizgisine öğren.
+		lineage := make([]string, 0, len(ancestors)+1)
+		for i := len(ancestors) - 1; i >= 0; i-- {
+			lineage = append(lineage, ancestors[i])
+		}
+		lineage = append(lineage, proc)
+		h.seqModel.Observe(lineage)
+	}
+}
+
+// ArtifactSink, ajanın topladığı dosya artefaktlarını saklar (adli/IR).
+type ArtifactSink interface {
+	SaveArtifact(ctx context.Context, deviceID, commandID, path, sha256 string, content []byte) (string, error)
+}
+
+type noopArtifactSink struct{}
+
+func (noopArtifactSink) SaveArtifact(context.Context, string, string, string, string, []byte) (string, error) {
+	return "", nil
+}
+
+// SetArtifactSink, dosya-toplama depolamasını etkinleştirir. Ayarlanmazsa
+// yüklenen artefaktlar sessizce yok sayılır (noop).
+func (h *AgentHandler) SetArtifactSink(a ArtifactSink) {
+	if a == nil {
+		a = noopArtifactSink{}
+	}
+	h.artifacts = a
+}
+
+// maxArtifactBytes, tek bir toplanan dosyanın üst sınırıdır (gRPC mesaj sınırı +
+// depolama şişmesi koruması). Bundan büyük yüklemeler reddedilir.
+const maxArtifactBytes = 3 << 20 // 3 MiB
+
+// UploadArtifact, ajanın COLLECT_FILE komutuyla topladığı dosyayı saklar. Kimlik
+// istemci sertifikasından; boyut ve SHA-256 doğrulanır.
+func (h *AgentHandler) UploadArtifact(ctx context.Context, req *kutv1.UploadArtifactRequest) (*kutv1.UploadArtifactResponse, error) {
+	deviceID, err := DeviceIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "kimlik doğrulanamadı")
+	}
+	content := req.GetContent()
+	if len(content) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "boş içerik")
+	}
+	if len(content) > maxArtifactBytes {
+		return nil, status.Errorf(codes.InvalidArgument, "dosya çok büyük (>%d bayt)", maxArtifactBytes)
+	}
+	sum := sha256.Sum256(content)
+	if got := hex.EncodeToString(sum[:]); req.GetSha256() != "" && got != req.GetSha256() {
+		return nil, status.Error(codes.InvalidArgument, "SHA-256 uyuşmuyor")
+	}
+	if _, err := h.artifacts.SaveArtifact(ctx, deviceID, req.GetCommandId(), req.GetPath(), hex.EncodeToString(sum[:]), content); err != nil {
+		return nil, status.Error(codes.Internal, "artefakt kaydedilemedi")
+	}
+	return &kutv1.UploadArtifactResponse{Ok: true}, nil
+}
+
+// SetIoCSet, tehdit istihbaratı (IoC) eşleştirmesini etkinleştirir/günceller. nil
+// ise kapalı. Atomik saklama sayesinde ingest yolu eşzamanlı okurken canlı olarak
+// (yeniden başlatmadan) güncellenebilir — hot-reload.
+func (h *AgentHandler) SetIoCSet(s *ioc.Set) { h.iocSet.Store(s) }
+
+// SetDetector, sunucu-taraflı tespit kural motorunu ayarlar/günceller. nil ise
+// yerleşik varsayılan kural seti kullanılır. Atomik saklama sayesinde ingest
+// yolu eşzamanlı değerlendirirken canlı (yeniden başlatmadan) güncellenebilir.
+func (h *AgentHandler) SetDetector(e *detect.Engine) {
+	if e == nil {
+		e = detect.NewEngine(nil)
+	}
+	h.detector.Store(e)
+}
+
+// SetCorrelator, olay korelasyonunu (incident gruplama + alarm-fırtınası bastırma)
+// etkinleştirir. nil ise her tespit ayrı alarm üretir (eski davranış).
+func (h *AgentHandler) SetCorrelator(c *correlate.Correlator) { h.correlator = c }
+
+// SetChainDetector, çok-sinyal (multi-signal) korelasyonu etkinleştirir: aynı
+// cihazda kısa pencerede birden çok FARKLI sinyal → yüksek-güvenli zincir uyarısı.
+func (h *AgentHandler) SetChainDetector(c *correlate.ChainDetector) { h.chain = c }
+
+// SetThresholdGate, kural-bazlı tekrar-eşiği kapısını ayarlar. nil verilirse
+// varsayılan (time.Now saatli) kapı kurulur — eşik tanımlı kurallar yine çalışır.
+// Eşik durumu motorun DIŞINDA tutulduğundan detektör hot-reload'ları sayacı bozmaz.
+func (h *AgentHandler) SetThresholdGate(g *threshold.Gate) {
+	if g == nil {
+		g = threshold.New(h.now)
+	}
+	h.threshold = g
+}
+
+// SetBitStore, çok-aşamalı tespit bit deposunu ayarlar. nil verilirse varsayılan
+// (time.Now saatli) depo kurulur. Bit durumu motor DIŞINDA tutulur — detektör
+// hot-reload'ları çok-aşamalı ilerlemeyi bozmaz.
+func (h *AgentHandler) SetBitStore(s *detbits.Store) {
+	if s == nil {
+		s = detbits.New(h.now)
+	}
+	h.detbits = s
+}
+
+// scopeKey, Track'e göre kapsam anahtarı üretir (eşik sayacı ve tespit bitleri
+// bu ortak kapsamlamayı paylaşır).
+func scopeKey(track, deviceID, tenantID string) string {
+	switch strings.ToLower(strings.TrimSpace(track)) {
+	case "tenant":
+		return "tenant:" + tenantID
+	case "global":
+		return "global"
+	default: // "device" veya "" → cihaz başına (uç-nokta için varsayılan)
+		return "device:" + deviceID
+	}
+}
+
+// SetAlerter, yüksek önem düzeyli olaylarda dış uyarı (webhook) gönderimini
+// etkinleştirir. nil ise noop kalır (uyarı gönderilmez).
+func (h *AgentHandler) SetAlerter(a notify.Notifier) {
+	if a == nil {
+		a = noopAlerter{}
+	}
+	h.alerter = a
+}
+
+// SetAutoResponder, kritik olaylara otomatik müdahaleyi (karantina) etkinleştirir.
+// nil ise noop kalır (otomatik müdahale kapalı — güvenli varsayılan).
+func (h *AgentHandler) SetAutoResponder(r AutoResponder) {
+	if r == nil {
+		r = noopResponder{}
+	}
+	h.responder = r
+}
+
+// SetAdminNotifier, admin-tarafı SSE yayınını etkinleştirir. nil ise noop kalır.
+func (h *AgentHandler) SetAdminNotifier(n AdminNotifier) {
+	if n == nil {
+		n = noopAdminNotifier{}
+	}
+	h.admin = n
+}
+
+// NewAgentHandler oluşturur. notifier nil ise anlık push devre dışıdır (akış
+// yalnız ilk paketi gönderir ve istemci kapatana dek açık kalır).
+func NewAgentHandler(devices DeviceRegistry, events EventSink, policies PolicyProvider, updates UpdateProvider, notifier PolicyNotifier) *AgentHandler {
+	if notifier == nil {
+		notifier = noopNotifier{}
+	}
+	h := &AgentHandler{devices: devices, events: events, policies: policies, updates: updates, notifier: notifier, admin: noopAdminNotifier{}, alerter: noopAlerter{}, responder: noopResponder{}, artifacts: noopArtifactSink{}, now: time.Now}
+	h.detector.Store(detect.NewEngine(nil)) // atomik alan literal'de saklanamaz; kurulumda varsayılan
+	h.threshold = threshold.New(h.now)      // eşik kapısı daima hazır (eşiksiz kurallar etkilenmez)
+	h.detbits = detbits.New(h.now)          // bit deposu daima hazır (bitsiz kurallar etkilenmez)
+	return h
+}
+
+// Heartbeat, yaşam sinyalini işler. Yanıt SUNUCU SAATİNİ taşır — ajan, politika
+// zaman pencerelerini bu çıpaya göre değerlendirir (inceleme #3).
+func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatRequest) (*kutv1.HeartbeatResponse, error) {
+	deviceID, err := DeviceIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "kimlik doğrulanamadı")
+	}
+	now := h.now()
+
+	agentVersion, osVersion := "", ""
+	if id := req.GetIdentity(); id != nil {
+		agentVersion = id.GetAgentVersion()
+		osVersion = id.GetOsVersion()
+	}
+
+	serverPolicyVersion, err := h.devices.TouchHeartbeat(ctx, deviceID, agentVersion, osVersion, now)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "heartbeat kaydedilemedi")
+	}
+	h.admin.PublishDevice(deviceID) // konsola canlı: cihaz görüldü
+
+	// Öz-tasdik (#4): ajanın ikili hash'i sürüm değişmeden değiştiyse (takas/yama)
+	// KRİTİK kurcalama olayı üret. Best-effort; heartbeat'i kesmez.
+	if bh := req.GetBinaryHash(); bh != "" {
+		if tampered, terr := h.devices.RecordAgentBinary(ctx, deviceID, agentVersion, bh); terr == nil && tampered {
+			ev := model.Event{
+				Category: "SECURITY", Severity: "CRITICAL",
+				Message:    "ajan ikilisi sürüm değişmeden değişti — olası kurcalama/takas (öz-tasdik)",
+				OccurredAt: now,
+				Details:    `{"self_attestation":true,"binary_hash":"` + bh + `","agent_version":"` + agentVersion + `"}`,
+			}
+			_, _ = h.events.SaveEvents(ctx, deviceID, []model.Event{ev})
+			h.admin.PublishEvent(deviceID, ev.Severity, ev.Message)
+			metrics.IncAlertRaised()
+			h.alerter.Notify(notify.Alert{
+				DeviceID: deviceID, Category: ev.Category, Severity: ev.Severity,
+				Message: ev.Message, OccurredAt: now,
+				TechniqueID: "T1554", TechniqueName: "Compromise Host Software Binary", Tactic: "Persistence",
+			})
+		}
+	}
+	// Ajanın onayladığı komutları (yürütmesi tamamlanan) işaretle — bunlar artık
+	// yeniden teslim edilmez. PendingCommands'tan ÖNCE yapılır ki bu heartbeat'te
+	// onaylanan bir komut yeniden gönderilmesin (best-effort; hata olay-alımını kesmez).
+	if acked := req.GetAckedCommandIds(); len(acked) > 0 {
+		_ = h.devices.AckCommands(ctx, deviceID, acked)
+	}
+	cmds, err := h.devices.PendingCommands(ctx, deviceID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "komutlar alınamadı")
+	}
+
+	return &kutv1.HeartbeatResponse{
+		ServerTime:            timestamppb.New(now),
+		PolicyUpdateAvailable: serverPolicyVersion != "" && serverPolicyVersion != req.GetCurrentPolicyVersion(),
+		PendingCommands:       cmds,
+	}, nil
+}
+
+// ReportEvents, olay akışını alır (store-and-forward), kalıcılaştırır ve kabul
+// edilen son sıra numarasını döner; ajan yalnız onaylananları tamponundan siler.
+func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer) error {
+	deviceID, err := DeviceIDFromContext(stream.Context())
+	if err != nil {
+		return status.Error(codes.Unauthenticated, "kimlik doğrulanamadı")
+	}
+
+	var lastAccepted uint64
+	autoTriggered := false // akış başına en çok bir kez otomatik karantina
+	for {
+		batch, err := stream.Recv()
+		if err == io.EOF {
+			return stream.SendAndClose(&kutv1.EventAck{LastAcceptedSequence: lastAccepted})
+		}
+		if err != nil {
+			return err
+		}
+		domainEvents := make([]model.Event, 0, len(batch.GetEvents()))
+		for _, e := range batch.GetEvents() {
+			domainEvents = append(domainEvents, model.Event{
+				Sequence:   e.GetSequence(),
+				Category:   dbCategory(e.GetCategory()),
+				Severity:   dbSeverity(e.GetSeverity()),
+				Message:    e.GetMessage(),
+				OccurredAt: e.GetOccurredAt().AsTime(),
+				Details:    detailsJSON(e.GetDetails()),
+			})
+		}
+		acc, err := h.events.SaveEvents(stream.Context(), deviceID, domainEvents)
+		if err != nil {
+			return status.Error(codes.Internal, "olaylar kaydedilemedi")
+		}
+		metrics.AddEventsIngested(len(domainEvents))
+		for _, e := range domainEvents {
+			h.ProcessEvent(stream.Context(), deviceID, e)
+		}
+		// Otomatik müdahale (SOAR): kritik olay geldiyse cihazı otomatik karantinaya
+		// al (akış başına bir kez; noop responder'da maliyetsiz). Hata olay-alımını
+		// KESMEZ (best-effort; komut kuyruğu kalıcıdır).
+		if !autoTriggered {
+			if reason, ok := response.ShouldTrigger(domainEvents); ok {
+				if err := h.responder.AutoQuarantine(stream.Context(), deviceID, reason); err == nil {
+					autoTriggered = true
+					metrics.IncAutoQuarantine()
+					h.admin.PublishDevice(deviceID) // konsol durumu tazelesin
+				}
+			}
+		}
+		if acc > lastAccepted {
+			lastAccepted = acc
+		}
+	}
+}
+
+// processEvent, tek bir olayı sunucu-taraflı tespit + alarm hattından geçirir:
+// konsol push → kural değerlendirme → çok-aşama bitleri (Require/RequireNot/Set) →
+// tekrar-eşiği → korelasyon → alarm/zincir → IoC. Hem gRPC ajan yolu (ReportEvents)
+// hem HTTP log-ingest yolu (adminapi.EventProcessor) BU metodu paylaşır; durumlu
+// bileşenler (threshold.Gate/detbits.Store/correlate) tek örnek olduğundan log ve
+// ajan olayları aynı pencereleri/sayaçları görür. ctx, çağıranın bağlamıdır (gRPC
+// akışı ya da HTTP isteği).
+func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e model.Event) {
+	h.admin.PublishEvent(deviceID, e.Severity, e.Message) // konsola canlı push
+	h.observeGraph(deviceID, e)                           // varlık/tehdit grafını besle (nil'de no-op)
+	// Sunucu-taraflı tespit: kural eşleşirse ADLANDIRILMIŞ, normalize önem
+	// düzeyli + MITRE bağlamlı uyarı üret (ham olayın yerine geçer). Eşleşme
+	// yoksa jenerik yol: ham önem düzeyi + MITRE sınıflandırması. Uyarı
+	// best-effort; eşik/filtre notifier içinde. noop notifier'da maliyetsiz.
+	if dets := h.detector.Load().Evaluate(e); len(dets) > 0 { // atomik Load: hot-reload ile yarışsız
+		metrics.AddDetections(len(dets))
+		for _, d := range dets {
+			// Çok-aşamalı tespit bitleri (opt-in, flowbits/xbits): önce
+			// ön-koşul (Require) — host'ta gerekli bitler kurulu değilse bu
+			// tespit alarma dönüşmez (aşama-2, aşama-1 görülmeden susar).
+			// Ön-koşul sağlanınca kuralın Set bitleri host'a yazılır (sonraki
+			// aşamalar için durum). Bitsiz kurallar bu daldan etkilenmez.
+			if d.Bits != nil && h.detbits != nil {
+				bscope := scopeKey(d.Bits.Track, deviceID, e.TenantID)
+				if len(d.Bits.Require) > 0 && !h.detbits.AllSet(bscope, d.Bits.Require) {
+					metrics.IncBitsGated()
+					continue
+				}
+				if len(d.Bits.RequireNot) > 0 && !h.detbits.NoneSet(bscope, d.Bits.RequireNot) {
+					metrics.IncBitsGated()
+					continue
+				}
+				if len(d.Bits.Set) > 0 {
+					ttl := time.Duration(d.Bits.TTLSeconds) * time.Second
+					for _, b := range d.Bits.Set {
+						h.detbits.Set(bscope, b, ttl)
+					}
+				}
+			}
+			// Tekrar-eşiği (opt-in): kural bir eşik tanımlıyorsa, tespit
+			// pencerede Count'a ULAŞMADAN alarma dönüşmez. Tek başarısız
+			// oturum/tarama denemesi susar; brute-force (çok tekrar) yakalanır.
+			// Eşiksiz kurallar bu daldan hiç etkilenmez (varsayılan davranış).
+			if d.Threshold != nil && d.Threshold.Count > 1 && h.threshold != nil {
+				scope := scopeKey(d.Threshold.Track, deviceID, e.TenantID)
+				win := time.Duration(d.Threshold.Seconds) * time.Second
+				if !h.threshold.Allow(d.RuleID, scope, d.Threshold.Count, win) {
+					metrics.IncThresholdGated()
+					continue
+				}
+			}
+			// Korelasyon: aynı cihaz+kural penceresindeki tekrarları tek
+			// incident'e katla ve YİNELENEN alarmı bastır (alarm-fırtınası).
+			if h.correlator != nil {
+				if _, suppress := h.correlator.Observe(ctx, deviceID, d.RuleID, d.Technique.ID, d.Severity, e.Message); suppress {
+					metrics.IncAlertSuppressed()
+					continue
+				}
+			}
+			metrics.IncAlertRaised()
+			h.alerter.Notify(notify.Alert{
+				DeviceID:      deviceID,
+				Category:      e.Category,
+				Severity:      d.Severity,
+				Message:       "[" + d.RuleName + "] " + e.Message,
+				OccurredAt:    e.OccurredAt,
+				TechniqueID:   d.Technique.ID,
+				TechniqueName: d.Technique.Name,
+				Tactic:        d.Technique.Tactic,
+			})
+			// Çok-sinyal korelasyon: farklı kill-chain sinyalleri birikirse
+			// yüksek-güvenli zincir uyarısı üret (tek tespitten daha güçlü kanıt).
+			if h.chain != nil {
+				sig := d.Technique.Tactic
+				if sig == "" {
+					sig = d.Technique.ID
+				}
+				if sig == "" {
+					sig = e.Category
+				}
+				if fired, signals := h.chain.Observe(deviceID, sig, e.OccurredAt); fired {
+					metrics.IncChainFired()
+					metrics.IncAlertRaised()
+					h.alerter.Notify(notify.Alert{
+						DeviceID:   deviceID,
+						Category:   "SECURITY",
+						Severity:   "CRITICAL",
+						Message:    "yüksek-güvenli saldırı zinciri (çok-sinyal): " + strings.Join(signals, " + "),
+						OccurredAt: e.OccurredAt,
+					})
+				}
+			}
+		}
+	} else {
+		al := notify.Alert{
+			DeviceID:   deviceID,
+			Category:   e.Category,
+			Severity:   e.Severity,
+			Message:    e.Message,
+			OccurredAt: e.OccurredAt,
+		}
+		if tq, ok := mitre.Classify(e.Category, e.Message); ok {
+			al.TechniqueID, al.TechniqueName, al.Tactic = tq.ID, tq.Name, tq.Tactic
+		}
+		metrics.IncAlertRaised()
+		h.alerter.Notify(al)
+	}
+	// Tehdit istihbaratı (IoC): olayın yapısal Details'i (ip/mac/process) veya
+	// mesajı bilinen-kötü bir göstergeyle eşleşirse KRİTİK uyarı (yüksek-güven).
+	// Atomik Load: eşzamanlı hot-reload (SetIoCSet) ile yarışsız.
+	if iocSet := h.iocSet.Load(); iocSet.Size() > 0 {
+		var dm map[string]any
+		if e.Details != "" {
+			_ = json.Unmarshal([]byte(e.Details), &dm)
+		}
+		if ti, ind, ok := iocSet.MatchIndicator(dm, e.Message); ok {
+			metrics.IncIocHit()
+			metrics.IncAlertRaised()
+			// Zenginleştirme: eşleşen göstergenin güven + kaynak bilgisini mesaja iliştir.
+			enrich := "IoC eşleşmesi [" + ti.Label + "] " + ind
+			if ti.Confidence != "" {
+				enrich += " (güven=" + ti.Confidence
+				if ti.Source != "" {
+					enrich += ", kaynak=" + ti.Source
+				}
+				enrich += ")"
+			}
+			h.alerter.Notify(notify.Alert{
+				DeviceID:      deviceID,
+				Category:      e.Category,
+				Severity:      "CRITICAL",
+				Message:       enrich + ": " + e.Message,
+				OccurredAt:    e.OccurredAt,
+				TechniqueID:   "T1071",
+				TechniqueName: "Application Layer Protocol",
+				Tactic:        "Command and Control",
+			})
+		}
+	}
+}
+
+// detailsJSON, proto Event.details (structpb.Struct) alanını kalıcılaştırılacak
+// JSON metnine çevirir. Ayrıntı yoksa (nil) boş string döner; böylece db katmanı
+// alanı NULL saklar. Serileştirme hatası olası değildir (structpb her zaman geçerli
+// JSON üretir), yine de güvenli tarafta boş string döneriz.
+func detailsJSON(d *structpb.Struct) string {
+	if d == nil {
+		return ""
+	}
+	b, err := protojson.Marshal(d)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// dbCategory, proto enum'unu DB event_category ENUM'una eşler
+// ("EVENT_CATEGORY_SECURITY" -> "SECURITY"). Belirsiz değer SYSTEM'e düşer.
+func dbCategory(c kutv1.EventCategory) string {
+	s := strings.TrimPrefix(c.String(), "EVENT_CATEGORY_")
+	if s == "" || s == "UNSPECIFIED" {
+		return "SYSTEM"
+	}
+	return s
+}
+
+// dbSeverity, proto enum'unu DB severity ENUM'una eşler. Belirsiz değer INFO'ya düşer.
+func dbSeverity(v kutv1.Severity) string {
+	s := strings.TrimPrefix(v.String(), "SEVERITY_")
+	if s == "" || s == "UNSPECIFIED" {
+		return "INFO"
+	}
+	return s
+}
+
+// StreamPolicies, UZUN-ÖMÜRLÜ bir akıştır: önce ajanın bildirdiği sürümden
+// farklıysa güncel paketi gönderir, sonra açık kalıp politika değiştikçe (admin
+// atama → Publish) yeni paketleri ANINDA iter. İstemci akışı kapatınca (ctx
+// iptal) döngü sonlanır.
+func (h *AgentHandler) StreamPolicies(req *kutv1.PolicySubscribeRequest, stream kutv1.AgentService_StreamPoliciesServer) error {
+	deviceID, err := DeviceIDFromContext(stream.Context())
+	if err != nil {
+		return status.Error(codes.Unauthenticated, "kimlik doğrulanamadı")
+	}
+	notify, cancel := h.notifier.Subscribe(deviceID)
+	defer cancel()
+	return streamPolicyLoop(stream.Context(), deviceID, req.GetCurrentPolicyVersion(),
+		h.policies, notify, stream.Send)
+}
+
+// streamPolicyLoop, transport'tan bağımsız push döngüsüdür (test edilebilir):
+// güncel paketi (sürüm değiştiyse) gönderir, sonra her bildirimde tekrar dener.
+func streamPolicyLoop(ctx context.Context, deviceID, currentVersion string,
+	provider PolicyProvider, notify <-chan struct{}, send func(*kutv1.PolicyBundle) error) error {
+
+	lastVer := currentVersion
+	sendIfNewer := func() error {
+		b, err := provider.CurrentPolicy(ctx, deviceID)
+		if err != nil {
+			return status.Error(codes.Internal, "politika alınamadı")
+		}
+		if b == nil || b.GetPolicyVersion() == lastVer {
+			return nil
+		}
+		if err := send(b); err != nil {
+			return err
+		}
+		lastVer = b.GetPolicyVersion()
+		return nil
+	}
+
+	if err := sendIfNewer(); err != nil {
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil // istemci kapattı; akışı nazikçe bitir
+		case <-notify:
+			if err := sendIfNewer(); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// CheckUpdate, OTA güncelleme manifestosunu döner. Manifesto İMZALIDIR; ajan
+// indirmeden önce imzayı gömülü public key ile doğrular (inceleme #4).
+func (h *AgentHandler) CheckUpdate(ctx context.Context, req *kutv1.UpdateCheckRequest) (*kutv1.UpdateManifest, error) {
+	deviceID, err := DeviceIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "kimlik doğrulanamadı")
+	}
+	id := req.GetIdentity()
+	m, err := h.updates.LatestUpdate(ctx, deviceID, id.GetAgentVersion(), id.GetOsPlatform())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "güncelleme sorgulanamadı")
+	}
+	if m == nil || !m.GetUpdateAvailable() {
+		return &kutv1.UpdateManifest{UpdateAvailable: false}, nil
+	}
+	// Kademeli dağıtım: cihaz bu sürümün rollout kohortunda değilse henüz sunma.
+	if !rollout.InCohort(deviceID, m.GetTargetVersion(), int(m.GetRolloutPercent())) {
+		return &kutv1.UpdateManifest{UpdateAvailable: false}, nil
+	}
+	return m, nil
+}

@@ -1,0 +1,11 @@
+# gitleaks yapılandırması — kaynak kodda sızmış kimlik-bilgisi/anahtar taraması.
+# Varsayılan kural kümesi genişletilir; yalnızca geliştirme/demo yapıtları
+# (üretim sırrı olmayan; PKI/agent-data/çıktı dizinleri) allowlist'e alınır.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Demo/geliştirme yapıtları — üretim sırrı değildir (yerel çalıştırma çıktısı)"
+paths = [
+  '''_demo[\\/].*''',
+]
