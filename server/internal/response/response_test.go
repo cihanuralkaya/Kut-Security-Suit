@@ -6,7 +6,18 @@ import (
 	"testing"
 
 	"kut.corp/suite/server/internal/model"
+	"kut.corp/suite/server/internal/seccontract"
 )
+
+// stubAuthz, sabit bir kararla Authorizer'ı uygular (gate testleri için).
+type stubAuthz struct{ result seccontract.DecisionResult }
+
+func (s stubAuthz) Authorize(seccontract.ActionRequest) seccontract.AuthorizationDecision {
+	if s.result == seccontract.ResultAllow {
+		return seccontract.AuthorizationDecision{Result: seccontract.ResultAllow}
+	}
+	return seccontract.AuthorizationDecision{Result: s.result, ReasonCodes: []seccontract.ReasonCode{seccontract.ReasonBlastRadiusExceeded}}
+}
 
 // fakeStore, response.Store'u kaydederek uygular.
 type fakeStore struct {
@@ -49,7 +60,7 @@ func TestShouldTrigger(t *testing.T) {
 
 func TestAutoQuarantineEnqueuesAndAudits(t *testing.T) {
 	f := newFake()
-	a := New(f)
+	a := New(f, nil, "")
 	if err := a.AutoQuarantine(context.Background(), "dev-1", "kritik olay"); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +78,33 @@ func TestAutoQuarantineEnqueuesAndAudits(t *testing.T) {
 func TestAutoQuarantineReturnsErrOnEnqueueFailure(t *testing.T) {
 	f := newFake()
 	f.failCmd = true
-	if err := New(f).AutoQuarantine(context.Background(), "dev-1", "x"); err == nil {
+	if err := New(f, nil, "").AutoQuarantine(context.Background(), "dev-1", "x"); err == nil {
 		t.Fatal("komut kuyruğa alınamazsa hata dönmeliydi")
+	}
+}
+
+// TestAutoQuarantineDeniedByGateway, gateway DENY verdiğinde HİÇBİR yan-etki
+// üretilmediğini (komut/durum/denetim) ve hata döndüğünü doğrular (fail-closed, G-01).
+func TestAutoQuarantineDeniedByGateway(t *testing.T) {
+	f := newFake()
+	a := New(f, stubAuthz{result: seccontract.ResultDeny}, "t1")
+	if err := a.AutoQuarantine(context.Background(), "dev-1", "kritik"); err == nil {
+		t.Fatal("gateway DENY iken hata dönmeliydi")
+	}
+	if len(f.cmds) != 0 || len(f.status) != 0 || len(f.audits) != 0 {
+		t.Fatalf("DENY sonrası hiçbir yan-etki olmamalıydı: cmds=%v status=%v audits=%v", f.cmds, f.status, f.audits)
+	}
+}
+
+// TestAutoQuarantineAllowedByGateway, gateway ALLOW verdiğinde karantinanın
+// gerçekleştiğini doğrular (davranış-koruyan).
+func TestAutoQuarantineAllowedByGateway(t *testing.T) {
+	f := newFake()
+	a := New(f, stubAuthz{result: seccontract.ResultAllow}, "t1")
+	if err := a.AutoQuarantine(context.Background(), "dev-1", "kritik"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.cmds) != 1 || f.status["dev-1"] != "QUARANTINED" {
+		t.Fatalf("ALLOW sonrası karantina uygulanmalıydı: cmds=%v status=%v", f.cmds, f.status)
 	}
 }
