@@ -514,6 +514,7 @@ func TestEraseDeviceAndExportRequireAdminAndAudit(t *testing.T) {
 	store.roles["op1"] = RoleOperator
 	store.roles["admin1"] = RoleAdmin
 	svc, _ := newService(t, store)
+	svc.SetScopeAllowUnconfigured(true) // bu test RBAC+denetimi doğrular; scope kapısı ayrı test edilir
 
 	// SİLME: OPERATOR yetkisiz (ADMIN gerekir).
 	if _, err := svc.EraseDevice(context.Background(), "op1", "dev-1"); err != ErrForbidden {
@@ -974,6 +975,52 @@ func TestScopeGuardG04(t *testing.T) {
 	}
 	if _, ok := store.cmdParams["COLLECT_FILE"]; !ok {
 		t.Fatal("izinli CollectFile komutu kuyruğa girmeli")
+	}
+}
+
+// TestScopeGuardErase, en yıkıcı yolun (EraseDevice) Scope/ROE'den FAIL-CLOSED geçtiğini
+// doğrular (audit G-03): motor yapılandırılmamışsa reddedilir; enforce+kapsam-dışı
+// reddedilir (ve EraseDeviceData çağrılmaz); enforce+izinli geçer.
+func TestScopeGuardErase(t *testing.T) {
+	ctx := context.Background()
+	base := func() (*Service, *memStore) {
+		store := newMemStore()
+		store.roles["admin1"] = RoleAdmin
+		svc, _ := newService(t, store)
+		return svc, store
+	}
+
+	// Motor yok + izin yok → fail-closed (Destructive), silme yapılmaz.
+	svc, store := base()
+	svc.SetScopeAllowUnconfigured(false) // üretim varsayılanı (newService test-kolaylığı için true'lar)
+	if _, err := svc.EraseDevice(ctx, "admin1", "dev-x"); !errors.Is(err, ErrOutOfScope) {
+		t.Fatalf("yapılandırılmamış motorda Erase fail-closed reddedilmeli: %v", err)
+	}
+	if store.erased == "dev-x" {
+		t.Fatal("reddedilen Erase veriyi silmemeli")
+	}
+
+	// enforce + boş politika → kapsam-dışı reddedilir.
+	svc, store = base()
+	svc.SetScopeEngine(scope.New(&scope.Policy{}), true, "default")
+	if _, err := svc.EraseDevice(ctx, "admin1", "dev-x"); !errors.Is(err, ErrOutOfScope) {
+		t.Fatalf("kapsam-dışı Erase ErrOutOfScope dönmeli: %v", err)
+	}
+	if store.erased == "dev-x" {
+		t.Fatal("reddedilen Erase veriyi silmemeli")
+	}
+
+	// enforce + izinli (wipe) → geçer ve silinir.
+	svc, store = base()
+	svc.SetScopeEngine(scope.New(&scope.Policy{
+		Allowed: scope.Selector{Devices: []string{"dev-x"}},
+		Actions: map[scope.Action]bool{scope.ActionWipe: true},
+	}), true, "default")
+	if _, err := svc.EraseDevice(ctx, "admin1", "dev-x"); err != nil {
+		t.Fatalf("izinli Erase geçmeli: %v", err)
+	}
+	if store.erased != "dev-x" {
+		t.Fatal("izinli Erase veriyi silmeli")
 	}
 }
 

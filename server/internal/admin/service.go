@@ -621,6 +621,13 @@ func (s *Service) EraseDevice(ctx context.Context, adminID, deviceID string) (Er
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
 		return ErasureReport{}, err
 	}
+	// G-03: en yıkıcı server mutasyonu artık Scope/ROE'den FAIL-CLOSED geçer (motor
+	// yapılandırılmamışsa reddedilir; wipe = Destructive). Not (F-C): EraseDeviceData
+	// tek transaction'da atomiktir (tümü-ya-hiç) → "veri silindi ama cert-revoke
+	// başarısız" kısmi-hata tutarsızlığı DB katmanında zaten engellenmiştir.
+	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionWipe); err != nil {
+		return ErasureReport{}, err
+	}
 	ev, cmd, cert, err := s.store.EraseDeviceData(ctx, deviceID)
 	if err != nil {
 		return ErasureReport{}, err
@@ -657,6 +664,13 @@ func (s *Service) RecordAudit(ctx context.Context, adminID, action, targetType, 
 // ajan bir sonraki mTLS el sıkışmasında reddedilir.
 func (s *Service) RevokeDevice(ctx context.Context, adminID, deviceID string) error {
 	if err := s.require(ctx, adminID, RoleOperator); err != nil {
+		return err
+	}
+	// G-05: kimlik/kredensiyel mutasyonu da Scope/ROE-farkında olsun (kapsam dışı cihazın
+	// sertifikası keyfi iptal edilmesin). Cert-revoke geri-alınabilir bir savunma olduğundan
+	// remote-etki: motor yapılandırıldığında zorlanır, yapılandırılmamışsa geçer (savunmayı
+	// yanlış-yapılandırma yüzünden engellememek için).
+	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionRemoteCommand); err != nil {
 		return err
 	}
 	if err := s.store.RevokeDeviceCerts(ctx, deviceID, "admin_revoke"); err != nil {
