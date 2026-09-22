@@ -227,6 +227,13 @@ func (s *Service) guardScope(ctx context.Context, adminID, deviceID string, act 
 		_ = s.store.WriteAudit(ctx, adminID, "SCOPE_UNCONFIGURED_DENY:"+string(act), "device", deviceID)
 		return fmt.Errorf("%w (%s): Scope/ROE motoru yapılandırılmadı — yüksek-etkili operasyon fail-closed reddedildi (kabul için KUT_SCOPE_ALLOW_UNCONFIGURED=1)", ErrOutOfScope, act)
 	}
+	// G-05/INV-044: yapılandırılmış motorda tenant bağı ZORUNLU. Boş tenant güvenlik
+	// nesnesinde implicit "default"a düşemez; yüksek-etkili operasyon fail-closed reddedilir.
+	if s.scopeTenant == "" && scope.ImpactOf(act) >= scope.HighImpact {
+		metrics.IncScopeDenied()
+		_ = s.store.WriteAudit(ctx, adminID, "TENANT_MISSING_DENY:"+string(act), "device", deviceID)
+		return fmt.Errorf("%w (%s): tenant bağı yok — yüksek-etkili operasyon fail-closed reddedildi (INV-044)", ErrOutOfScope, act)
+	}
 	d := s.scopeEng.Authorize(scope.Target{Tenant: s.scopeTenant, DeviceID: deviceID}, act)
 	if d.Allowed {
 		return nil
