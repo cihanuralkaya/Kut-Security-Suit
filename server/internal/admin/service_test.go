@@ -929,6 +929,54 @@ func TestScopeGuardWipe(t *testing.T) {
 	}
 }
 
+// TestScopeGuardG04, AssignPolicy ve CollectFile'ın da diğer yüksek-etkili yollarla
+// TUTARLI biçimde Scope/ROE'den geçtiğini doğrular (audit G-04/F-A): enforce+kapsam-dışı
+// → ErrOutOfScope ve hiçbir yan-etki; enforce+izinli → geçer ve uygulanır.
+func TestScopeGuardG04(t *testing.T) {
+	ctx := context.Background()
+	base := func() (*Service, *memStore) {
+		store := newMemStore()
+		store.roles["admin1"] = RoleAdmin
+		svc, _ := newService(t, store)
+		return svc, store
+	}
+
+	// enforce + boş politika → AssignPolicy ve CollectFile fail-closed, yan-etki yok.
+	svc, store := base()
+	svc.SetScopeEngine(scope.New(&scope.Policy{}), true, "default")
+	if err := svc.AssignPolicy(ctx, "admin1", "dev-x", "pol-1"); !errors.Is(err, ErrOutOfScope) {
+		t.Fatalf("kapsam-dışı AssignPolicy ErrOutOfScope dönmeli: %v", err)
+	}
+	if _, ok := store.assigned["dev-x"]; ok {
+		t.Fatal("reddedilen AssignPolicy uygulanmamalı")
+	}
+	if err := svc.CollectFile(ctx, "admin1", "dev-x", "/tmp/x"); !errors.Is(err, ErrOutOfScope) {
+		t.Fatalf("kapsam-dışı CollectFile ErrOutOfScope dönmeli: %v", err)
+	}
+	if _, ok := store.cmdParams["COLLECT_FILE"]; ok {
+		t.Fatal("reddedilen CollectFile komutu kuyruğa girmemeli")
+	}
+
+	// enforce + izinli → ikisi de geçer ve uygulanır.
+	svc, store = base()
+	svc.SetScopeEngine(scope.New(&scope.Policy{
+		Allowed: scope.Selector{Devices: []string{"dev-x"}},
+		Actions: map[scope.Action]bool{scope.ActionPolicyEnforce: true, scope.ActionRemoteCommand: true},
+	}), true, "default")
+	if err := svc.AssignPolicy(ctx, "admin1", "dev-x", "pol-1"); err != nil {
+		t.Fatalf("izinli AssignPolicy geçmeli: %v", err)
+	}
+	if store.assigned["dev-x"] != "pol-1" {
+		t.Fatal("izinli AssignPolicy uygulanmalı")
+	}
+	if err := svc.CollectFile(ctx, "admin1", "dev-x", "/tmp/x"); err != nil {
+		t.Fatalf("izinli CollectFile geçmeli: %v", err)
+	}
+	if _, ok := store.cmdParams["COLLECT_FILE"]; !ok {
+		t.Fatal("izinli CollectFile komutu kuyruğa girmeli")
+	}
+}
+
 // TestScopeFailClosedWhenUnconfigured, Scope/ROE motoru HİÇ bağlı değilken (üretim
 // varsayılanı) yüksek-etkili operasyonun fail-closed reddedildiğini; operatör riski
 // açıkça kabul ederse (allowUnconfigured) geçtiğini doğrular. Sessiz fail-open
