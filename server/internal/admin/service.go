@@ -542,6 +542,11 @@ func (s *Service) CollectFile(ctx context.Context, adminID, deviceID, path strin
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("%w: dosya yolu zorunlu", ErrInvalidInput)
 	}
+	// G-04: uzaktan dosya toplama da diğer cihaz komutlarıyla TUTARLI biçimde Scope/ROE'den
+	// geçer (kapsam dışı cihazdan kanıt/dosya toplanmasın; H5 chain-of-custody).
+	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionRemoteCommand); err != nil {
+		return err
+	}
 	if err := s.store.EnqueueCommandParams(ctx, deviceID, "COLLECT_FILE", adminID, map[string]string{"path": path}); err != nil {
 		return err
 	}
@@ -677,6 +682,13 @@ func (s *Service) CreatePolicy(ctx context.Context, adminID, name, version strin
 // AssignPolicy, bir politikayı cihaza atar (ADMIN).
 func (s *Service) AssignPolicy(ctx context.Context, adminID, deviceID, policyID string) error {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
+		return err
+	}
+	// G-04/F-A: politika atama, ardından pub.Publish ile cihaza ANLIK push tetikler —
+	// yani DOLAYLI bir executor edge'i. Bu yüzden diğer yüksek-etkili cihaz yollarıyla
+	// TUTARLI biçimde Scope/ROE kapısından geçer (policy_enforce = HighImpact; motor
+	// yapılandırılmamışsa fail-closed).
+	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionPolicyEnforce); err != nil {
 		return err
 	}
 	if err := s.store.AssignPolicy(ctx, deviceID, policyID); err != nil {
