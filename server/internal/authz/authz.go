@@ -49,12 +49,23 @@ type Request struct {
 	Confirmed   bool         // insan talepçi yumuşak-tavanı açıkça onayladı mı
 }
 
+// Code, kararın MAKİNE-OKUNUR gerekçesidir (çeviri/köprü için). Reason serbest
+// metindir; Code deterministik eşlemeye izin verir (boş = ek gerekçe yok/allow).
+type Code string
+
+const (
+	CodeBlastRadius Code = "BLAST_RADIUS"
+	CodeRateLimit   Code = "RATE_LIMIT"
+)
+
 // Decision, Gateway'in kararıdır. Allow=false iken NeedApproval, kararın "kalıcı
-// red" mi yoksa "insan onayı ile aşılabilir" mi olduğunu ayırt eder.
+// red" mi yoksa "insan onayı ile aşılabilir" mi olduğunu ayırt eder. Code, gerekçenin
+// makine-okunur sınıfıdır (Reason'ı parse etmeden çeviri yapmak için).
 type Decision struct {
 	Allow        bool
 	NeedApproval bool // true: kalıcı red değil, insan onayı/daraltma ile geçilebilir
 	Reason       string
+	Code         Code // makine-okunur gerekçe (deny/need-approval'da dolu; allow'da boş)
 }
 
 func allow() Decision { return Decision{Allow: true} }
@@ -127,7 +138,7 @@ func (g *Gateway) Authorize(req Request) Decision {
 func (g *Gateway) checkBlastRadius(req Request) Decision {
 	if req.Requester.autonomous() {
 		if req.TargetCount > g.policy.HardAutonomousRadius {
-			return Decision{Reason: fmt.Sprintf(
+			return Decision{Code: CodeBlastRadius, Reason: fmt.Sprintf(
 				"blast-radius: otonom talepçi (%s) %d cihaz isteyemez — otonom tavan %d; insan onayı gerekli",
 				req.Requester, req.TargetCount, g.policy.HardAutonomousRadius)}
 		}
@@ -135,7 +146,7 @@ func (g *Gateway) checkBlastRadius(req Request) Decision {
 	}
 	// İnsan talepçi: yumuşak-tavanı yalnız açık onayla aşabilir.
 	if req.TargetCount > g.policy.SoftBlastRadius && !req.Confirmed {
-		return Decision{NeedApproval: true, Reason: fmt.Sprintf(
+		return Decision{NeedApproval: true, Code: CodeBlastRadius, Reason: fmt.Sprintf(
 			"blast-radius: %d cihaz yumuşak-tavanı (%d) aşıyor — açık onay gerekli",
 			req.TargetCount, g.policy.SoftBlastRadius)}
 	}
@@ -163,7 +174,7 @@ func (g *Gateway) checkRate(req Request) Decision {
 	}
 	if len(kept) >= g.policy.HighImpactPerMin {
 		g.hits[key] = kept
-		return Decision{Reason: fmt.Sprintf(
+		return Decision{Code: CodeRateLimit, Reason: fmt.Sprintf(
 			"rate-limit: %s dakikada %d yüksek-etkili op sınırını aştı — bekleyin",
 			key, g.policy.HighImpactPerMin)}
 	}
