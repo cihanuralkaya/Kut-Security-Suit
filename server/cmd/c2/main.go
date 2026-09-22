@@ -551,7 +551,7 @@ func run() error {
 	// Otomatik müdahale (SOAR): KUT_AUTO_RESPONSE=1 ise kritik güvenlik olayında
 	// cihaz otomatik karantinaya alınır. Varsayılan KAPALI (karantina bozucudur).
 	if os.Getenv("KUT_AUTO_RESPONSE") == "1" {
-		agentHandler.SetAutoResponder(response.New(backend))
+		agentHandler.SetAutoResponder(response.NewGuarded(backend, cfg.TenantID))
 		autoRespOn = true
 		log.Println("otomatik müdahale: kritik olayda otomatik karantina ETKİN")
 	}
