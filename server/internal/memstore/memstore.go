@@ -1070,6 +1070,23 @@ func (s *Store) DeletePendingWipe(_ context.Context, deviceID string) error {
 	return nil
 }
 
+// ConsumePendingWipe, bekleyen WIPE talebini ATOMİK claim eder (G-08): tek kilit altında
+// oku-kontrol-sil. requestedBy != approver ise siler ve (requestedBy, true); approver
+// talep edenle aynıysa silmeden (requestedBy, false); talep yoksa ("", false).
+func (s *Store) ConsumePendingWipe(_ context.Context, deviceID, approverID string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.pendWipes[deviceID]
+	if !ok {
+		return "", false, nil
+	}
+	if rec.requestedBy == approverID {
+		return rec.requestedBy, false, nil // dört-göz: kendi talebini onaylayamaz (silme yok)
+	}
+	delete(s.pendWipes, deviceID) // atomik claim: yalnız bir eşzamanlı çağrı buraya ulaşır
+	return rec.requestedBy, true, nil
+}
+
 // ListPendingWipes, bekleyen tüm WIPE taleplerini döner (talep eden admin e-postasıyla).
 func (s *Store) ListPendingWipes(_ context.Context) ([]adminread.PendingWipeRow, error) {
 	s.mu.Lock()

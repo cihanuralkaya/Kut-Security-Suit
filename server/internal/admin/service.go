@@ -133,6 +133,12 @@ type Store interface {
 	GetPendingWipe(ctx context.Context, deviceID string) (requestedBy string, exists bool, err error)
 	// DeletePendingWipe, bekleyen WIPE talebini siler (onay/iptal sonrası). Yoksa no-op.
 	DeletePendingWipe(ctx context.Context, deviceID string) error
+	// ConsumePendingWipe, bekleyen WIPE talebini ATOMİK "claim" eder (G-08 approval
+	// concurrency): talep VAR ve requestedBy != approverID ise talebi siler ve
+	// (requestedBy, true) döner; approver talep edenle AYNIYSA silmeden (requestedBy,
+	// false) döner (dört-göz); talep YOKSA ("", false). İki eşzamanlı onaylayandan EN
+	// FAZLA biri true alır → WIPE komutu en fazla bir kez kuyruğa girer.
+	ConsumePendingWipe(ctx context.Context, deviceID, approverID string) (requestedBy string, consumed bool, err error)
 }
 
 // validRuleType, kabul edilen kural tiplerini doğrular.
@@ -471,24 +477,27 @@ func (s *Service) ApproveWipe(ctx context.Context, approverID, deviceID string) 
 	if err := s.require(ctx, approverID, RoleAdmin); err != nil {
 		return err
 	}
-	requestedBy, exists, err := s.store.GetPendingWipe(ctx, deviceID)
+	// Onay anında da Scope/ROE uygulanır (talep ile onay arasında politika değişebilir);
+	// kapsam dışıysa talebi TÜKETMEDEN reddet.
+	if err := s.guardScope(ctx, approverID, deviceID, scope.ActionWipe); err != nil {
+		return err
+	}
+	// Atomik claim (G-08): GetPendingWipe+DeletePendingWipe arasındaki TOCTOU yarışı
+	// kapatıldı — iki eşzamanlı onaylayandan yalnız biri talebi tüketir, böylece WIPE
+	// komutu en fazla BİR kez kuyruğa girer. Dört-göz (requester≠approver) da atomik.
+	requestedBy, consumed, err := s.store.ConsumePendingWipe(ctx, deviceID, approverID)
 	if err != nil {
 		return err
 	}
-	if !exists {
-		return fmt.Errorf("%w: bekleyen WIPE talebi yok", ErrInvalidInput)
-	}
-	if requestedBy == approverID {
-		return ErrForbidden // kendi talebini onaylayamaz (dört-göz)
-	}
-	// Onay anında da Scope/ROE uygulanır (talep ile onay arasında politika değişebilir).
-	if err := s.guardScope(ctx, approverID, deviceID, scope.ActionWipe); err != nil {
-		return err
+	if !consumed {
+		if requestedBy == approverID {
+			return ErrForbidden // kendi talebini onaylayamaz (dört-göz)
+		}
+		return fmt.Errorf("%w: bekleyen WIPE talebi yok", ErrInvalidInput) // yok ya da başka onaylayan tüketti
 	}
 	if err := s.store.EnqueueCommand(ctx, deviceID, "WIPE", approverID); err != nil {
 		return err
 	}
-	_ = s.store.DeletePendingWipe(ctx, deviceID)
 	_ = s.store.WriteAudit(ctx, approverID, "WIPE_APPROVE", "device", deviceID)
 	return nil
 }

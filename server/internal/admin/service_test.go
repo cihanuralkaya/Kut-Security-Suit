@@ -66,6 +66,17 @@ func (m *memStore) DeletePendingWipe(_ context.Context, deviceID string) error {
 	delete(m.pendWipes, deviceID)
 	return nil
 }
+func (m *memStore) ConsumePendingWipe(_ context.Context, deviceID, approverID string) (string, bool, error) {
+	rb, ok := m.pendWipes[deviceID]
+	if !ok {
+		return "", false, nil
+	}
+	if rb == approverID {
+		return rb, false, nil
+	}
+	delete(m.pendWipes, deviceID)
+	return rb, true, nil
+}
 
 func (m *memStore) EraseDeviceData(_ context.Context, deviceID string) (int, int, int, error) {
 	m.erased = deviceID

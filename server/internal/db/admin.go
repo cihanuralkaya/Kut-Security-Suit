@@ -172,6 +172,34 @@ func (s *Store) DeletePendingWipe(ctx context.Context, deviceID string) error {
 	return nil
 }
 
+// ConsumePendingWipe, bekleyen WIPE talebini ATOMİK claim eder (G-08). Tek deyimli
+// `DELETE ... WHERE requested_by <> approver RETURNING` claim'dir: iki eşzamanlı
+// onaylayandan yalnız biri satırı siler/döndürür (diğeri ErrNoRows alır → çift-enqueue
+// yok). Silinmezse takip SELECT'i "talep yok" ile "self-approval"ı ayırır (bu ayrım
+// yarış-kritik değildir; claim zaten başarısız olmuştur).
+func (s *Store) ConsumePendingWipe(ctx context.Context, deviceID, approverID string) (string, bool, error) {
+	var rb string
+	err := s.pool.QueryRow(ctx,
+		`DELETE FROM pending_wipes WHERE device_id = $1::uuid AND requested_by <> $2::uuid RETURNING requested_by::text`,
+		deviceID, approverID).Scan(&rb)
+	if err == nil {
+		return rb, true, nil // atomik claim başarılı
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", false, fmt.Errorf("db: bekleyen wipe consume: %w", err)
+	}
+	// Silinmedi: talep yok ya da requested_by == approver (self-approval). Ayırt et.
+	var existing string
+	e2 := s.pool.QueryRow(ctx, `SELECT requested_by::text FROM pending_wipes WHERE device_id = $1::uuid`, deviceID).Scan(&existing)
+	if errors.Is(e2, pgx.ErrNoRows) {
+		return "", false, nil // talep yok (ya da başka onaylayan tüketti)
+	}
+	if e2 != nil {
+		return "", false, fmt.Errorf("db: bekleyen wipe consume kontrol: %w", e2)
+	}
+	return existing, false, nil // self-approval (silme yok)
+}
+
 func (s *Store) WriteAudit(ctx context.Context, adminID, action, targetType, targetID string) error {
 	// Kurcalama-kanıtı hash zinciri (SEC C-1): önceki entry_hash okunur, yeni hash
 	// hesaplanır ve prev_hash+entry_hash+created_at ile eklenir — hepsi tek
