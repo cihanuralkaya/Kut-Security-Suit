@@ -978,6 +978,31 @@ func TestScopeGuardG04(t *testing.T) {
 	}
 }
 
+// TestScopeTenantRequired, yapılandırılmış motorda boş tenant'ın yüksek-etkili
+// operasyonu fail-closed reddettiğini doğrular (audit G-05 / INV-044).
+func TestScopeTenantRequired(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	store.roles["admin1"] = RoleAdmin
+	svc, _ := newService(t, store)
+	// Motor bağlı ama tenant BOŞ: yüksek-etkili WIPE reddedilmeli.
+	svc.SetScopeEngine(scope.New(&scope.Policy{
+		Allowed: scope.Selector{Devices: []string{"dev-x"}},
+		Actions: map[scope.Action]bool{scope.ActionWipe: true},
+	}), true, "")
+	if err := svc.WipeDevice(ctx, "admin1", "dev-x"); !errors.Is(err, ErrOutOfScope) {
+		t.Fatalf("boş tenant'ta yüksek-etkili op fail-closed reddedilmeli (INV-044): %v", err)
+	}
+	// Tenant ayarlıyken aynı op geçer.
+	svc.SetScopeEngine(scope.New(&scope.Policy{
+		Allowed: scope.Selector{Devices: []string{"dev-x"}},
+		Actions: map[scope.Action]bool{scope.ActionWipe: true},
+	}), true, "default")
+	if err := svc.WipeDevice(ctx, "admin1", "dev-x"); err != nil {
+		t.Fatalf("tenant ayarlıyken izinli op geçmeli: %v", err)
+	}
+}
+
 // TestScopeGuardErase, en yıkıcı yolun (EraseDevice) Scope/ROE'den FAIL-CLOSED geçtiğini
 // doğrular (audit G-03): motor yapılandırılmamışsa reddedilir; enforce+kapsam-dışı
 // reddedilir (ve EraseDeviceData çağrılmaz); enforce+izinli geçer.
