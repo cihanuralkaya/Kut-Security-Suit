@@ -50,6 +50,7 @@ import (
 	"kut.corp/suite/server/internal/notify"
 	"kut.corp/suite/server/internal/ratelimit"
 	"kut.corp/suite/server/internal/report"
+	"kut.corp/suite/server/internal/riskfusion"
 	"kut.corp/suite/server/internal/scope"
 	"kut.corp/suite/server/internal/security"
 	"kut.corp/suite/server/internal/trace"
@@ -426,6 +427,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agentsec/canonical", s.authed(s.handleAgentSecCanonical))
 	mux.HandleFunc("POST /api/agentsec/events", s.authed(s.handleAgentSecEvents))
 	mux.HandleFunc("POST /api/ai/triage", s.authed(s.handleAITriage))
+	mux.HandleFunc("POST /api/ai/risk", s.authed(s.handleAIRisk))
 	// Session DEĞİL, ed25519 İMZA ile kimlik doğrulanan agent telemetri ucu (P0-A).
 	mux.HandleFunc("POST /api/agentsec/telemetry", s.handleAgentSecTelemetry)
 	mux.HandleFunc("GET /api/hunt/sequence-score", s.authed(s.handleSequenceScore))
@@ -1562,6 +1564,59 @@ func (s *Server) handleAITriage(w http.ResponseWriter, r *http.Request, _ string
 			"priority": tr.Priority, "likely_fp": tr.LikelyFP,
 			"next_steps": tr.NextSteps, "confidence": tr.Confidence, "source": tr.Source,
 		},
+	})
+}
+
+// handleAIRisk, deterministik sinyalleri (ve opsiyonel sekans/graf'ı) AI ile zenginleştirip
+// AÇIKLANABİLİR bir füzyon sonucu döner (P4.4 tüketicisi). SALT-OKUNUR/ADVISORY: durum
+// değiştirmez, hiçbir aksiyon yürütmez. FAIL-OPEN: AI yoksa/başarısızsa sonuç, verilen
+// sinyallerin deterministik füzyonuyla BİREBİR aynıdır (ai_available:false). AI sinyalleri
+// (ai_sequence/ai_graph) sonuçta ayrı katkı olarak görünür → nihai skora etkisi denetlenebilir.
+func (s *Server) handleAIRisk(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		Signals []struct {
+			Name   string  `json:"name"`
+			Score  float64 `json:"score"`
+			Weight float64 `json:"weight"`
+		} `json:"signals"`
+		Sequence []string `json:"sequence"`
+		Graph    *struct {
+			FanOut       int     `json:"fan_out"`
+			FanIn        int     `json:"fan_in"`
+			RareEdges    int     `json:"rare_edges"`
+			NewNodeRatio float64 `json:"new_node_ratio"`
+		} `json:"graph"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	base := make([]riskfusion.Signal, 0, len(req.Signals))
+	for _, sg := range req.Signals {
+		base = append(base, riskfusion.Signal{Name: sg.Name, Score: sg.Score, Weight: sg.Weight})
+	}
+	var seq *aibrain.SequenceInput
+	if len(req.Sequence) > 0 {
+		seq = &aibrain.SequenceInput{Tokens: req.Sequence}
+	}
+	var graph *aibrain.GraphInput
+	if req.Graph != nil {
+		graph = &aibrain.GraphInput{Features: aibrain.GraphFeatures{
+			FanOut: req.Graph.FanOut, FanIn: req.Graph.FanIn,
+			RareEdges: req.Graph.RareEdges, NewNodeRatio: req.Graph.NewNodeRatio,
+		}}
+	}
+	// nil-safe: s.brain nil olsa bile FuseWithAI yalnız base'i füzyonlar (fail-open).
+	res := s.brain.FuseWithAI(r.Context(), base, seq, graph)
+	contribs := make([]map[string]any, 0, len(res.Contributions))
+	for _, c := range res.Contributions {
+		contribs = append(contribs, map[string]any{"name": c.Name, "points": c.Points, "share": c.Share})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ai_available":  s.brain != nil && s.brain.Enabled(),
+		"score":         res.Score,
+		"level":         res.Level,
+		"contributions": contribs,
+		"top":           res.Top,
 	})
 }
 

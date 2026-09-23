@@ -407,6 +407,79 @@ func TestAgentSecCanonicalEndpoint(t *testing.T) {
 	}
 }
 
+// TestAIRiskEndpoint, P4.4 tüketicisini doğrular: deterministik sinyaller + nadir bir sekans
+// AI-zenginleştirilmiş, AÇIKLANABİLİR bir füzyon döner (ai_sequence katkısı görünür ve skoru
+// yükseltir). Fail-open: AI yapılandırılmamışken sonuç, sinyallerin deterministik füzyonuyla
+// aynıdır (ai_available:false) — enforcement/durum değişmez.
+func TestAIRiskEndpoint(t *testing.T) {
+	srv, store := newServer(t)
+	lp := aibrain.NewLocalProvider()
+	for i := 0; i < 10; i++ {
+		lp.Learn([]string{"bash", "ls", "cat", "grep"}) // taban çizgisi
+	}
+	srv.SetBrain(aibrain.New(lp, time.Second))
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+	_, ob := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	tok := ob["token"]
+
+	doPost := func(body string) map[string]any {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/ai/risk", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("200 bekleniyordu: %d", resp.StatusCode)
+		}
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return out
+	}
+	hasContrib := func(out map[string]any, name string) bool {
+		cs, _ := out["contributions"].([]any)
+		for _, c := range cs {
+			if m, _ := c.(map[string]any); m != nil && m["name"] == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Etkin AI + nadir sekans → ai_sequence katkısı görünür, skor base-only'nin üstünde.
+	out := doPost(`{"signals":[{"name":"ioc","score":50,"weight":1}],"sequence":["bash","curl","powershell","whoami"]}`)
+	if out["ai_available"] != true {
+		t.Fatalf("etkin AI'da ai_available:true olmalı: %+v", out)
+	}
+	if !hasContrib(out, "ai_sequence") {
+		t.Fatalf("nadir sekans ai_sequence katkısı üretmeliydi: %+v", out)
+	}
+	if !hasContrib(out, "ioc") {
+		t.Fatalf("base sinyal katkısı korunmalı: %+v", out)
+	}
+	score, _ := out["score"].(float64)
+	if score <= 50 {
+		t.Errorf("AI katkısı füzyon skorunu >50'ye çıkarmalıydı: %v", score)
+	}
+
+	// Fail-open: AI yapılandırılmamış → deterministik füzyon (yalnız base sinyalleri).
+	srv.SetBrain(aibrain.New(nil, time.Second))
+	out2 := doPost(`{"signals":[{"name":"ioc","score":50,"weight":1}],"sequence":["bash","curl"]}`)
+	if out2["ai_available"] != false {
+		t.Fatalf("AI yokken ai_available:false olmalı: %+v", out2)
+	}
+	if hasContrib(out2, "ai_sequence") {
+		t.Errorf("AI yokken ai_sequence katkısı OLMAMALI: %+v", out2)
+	}
+	if s2, _ := out2["score"].(float64); s2 != 50 {
+		t.Errorf("fail-open'da skor yalnız base füzyonu (50) olmalı: %v", s2)
+	}
+}
+
 // TestAITriageEndpoint, SOC AI brain triyaj ucunu doğrular: etkin brain öneri döner;
 // dış AI yoksa (fail-open) available:false döner ve çekirdek deterministik yola devam eder.
 func TestAITriageEndpoint(t *testing.T) {
