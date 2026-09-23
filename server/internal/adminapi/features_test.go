@@ -18,7 +18,28 @@ import (
 	"kut.corp/suite/server/internal/aisec"
 	"kut.corp/suite/server/internal/authz"
 	"kut.corp/suite/server/internal/entitygraph"
+	"kut.corp/suite/server/internal/riskfusion"
 )
+
+// stubBrainProvider, aibrain.Provider'ı sabit bir triyajla gerçekler (test).
+type stubBrainProvider struct{}
+
+func (stubBrainProvider) SummarizeIncident(context.Context, aibrain.IncidentInput) (aibrain.Summary, error) {
+	return aibrain.Summary{}, nil
+}
+func (stubBrainProvider) SuggestTriage(context.Context, aibrain.TriageInput) (aibrain.Triage, error) {
+	return aibrain.Triage{Priority: "HIGH", Confidence: 0.8, Source: "stub"}, nil
+}
+func (stubBrainProvider) ScoreSequence(context.Context, aibrain.SequenceInput) (aibrain.SequenceScore, error) {
+	return aibrain.SequenceScore{}, nil
+}
+func (stubBrainProvider) ScoreGraph(context.Context, aibrain.GraphInput) (aibrain.GraphScore, error) {
+	return aibrain.GraphScore{}, nil
+}
+func (stubBrainProvider) ExplainRisk(context.Context, riskfusion.Result) (aibrain.Explanation, error) {
+	return aibrain.Explanation{}, nil
+}
+func (stubBrainProvider) Health(context.Context) error { return nil }
 
 func authedGET(t *testing.T, url, token string) (*http.Response, error) {
 	t.Helper()
@@ -323,6 +344,50 @@ func TestAgentSecEventsIngestEndpoint(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 	if out.Count != 1 {
 		t.Fatalf("ingest sonrası tam 1 exfil bulgusu bekleniyordu, %d", out.Count)
+	}
+}
+
+// TestAITriageEndpoint, SOC AI brain triyaj ucunu doğrular: etkin brain öneri döner;
+// dış AI yoksa (fail-open) available:false döner ve çekirdek deterministik yola devam eder.
+func TestAITriageEndpoint(t *testing.T) {
+	srv, store := newServer(t)
+	srv.SetBrain(aibrain.New(stubBrainProvider{}, time.Second))
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+	_, ob := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	tok := ob["token"]
+
+	doPost := func(body string) map[string]any {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/ai/triage", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("200 bekleniyordu: %d", resp.StatusCode)
+		}
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return out
+	}
+
+	out := doPost(`{"incident_id":"i1","events":["x"]}`)
+	if out["enabled"] != true || out["available"] != true {
+		t.Fatalf("etkin brain enabled+available olmalı: %+v", out)
+	}
+	if tr, _ := out["triage"].(map[string]any); tr == nil || tr["priority"] != "HIGH" {
+		t.Fatalf("triyaj önerisi dönmeliydi: %+v", out)
+	}
+
+	// Fail-open: dış AI yok (nil provider) → available:false.
+	srv.SetBrain(aibrain.New(nil, time.Second))
+	out2 := doPost(`{"incident_id":"i1"}`)
+	if out2["enabled"] != false || out2["available"] != false {
+		t.Fatalf("dış AI yokken available:false olmalı: %+v", out2)
 	}
 }
 

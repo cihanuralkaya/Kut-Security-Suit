@@ -104,6 +104,7 @@ type Server struct {
 	cases         casemgmt.Store                // SOC vaka yönetimi (varsayılan bellek-içi; SetCaseStore ile DB destekli)
 	seqModel      *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli (salt-okunur skor sorgusu; nil → uç kapalı)
 	agentSec      *aisec.Service                // agentic tehdit savunması (salt-okunur bulgu uçları; nil → uç kapalı)
+	brain         *aibrain.Brain                // SOC AI brain (fail-open; dış AI yoksa deterministik yola döner)
 }
 
 // MSPStore, MSP müşteri kaydının kalıcı deposudur (§37). db.Store (kalıcı) ve
@@ -294,6 +295,10 @@ func (s *Server) SetSeqModel(m *aibrain.SeqModel) { s.seqModel = m }
 // salt-okunur bulgu uçları — ajan telemetrisi besler). nil → /api/agentsec uçları kapalı.
 func (s *Server) SetAgentSec(a *aisec.Service) { s.agentSec = a }
 
+// SetBrain, SOC AI brain'ini bağlar (aibrain; fail-open). Dış AI yapılandırılmamışsa
+// (Provider nil) uçlar "available:false" döner ve çekirdek deterministik yola devam eder.
+func (s *Server) SetBrain(b *aibrain.Brain) { s.brain = b }
+
 // SetPrivacyNotice, KVKK aydınlatma metnini ayarlar (boş verilirse varsayılan
 // korunur). Kurulum, kurumsal metni buradan geçebilir.
 func (s *Server) SetPrivacyNotice(text string) {
@@ -413,6 +418,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/graph/anomaly", s.authed(s.handleGraphAnomaly))
 	mux.HandleFunc("GET /api/agentsec/findings", s.authed(s.handleAgentSecFindings))
 	mux.HandleFunc("POST /api/agentsec/events", s.authed(s.handleAgentSecEvents))
+	mux.HandleFunc("POST /api/ai/triage", s.authed(s.handleAITriage))
 	mux.HandleFunc("GET /api/hunt/sequence-score", s.authed(s.handleSequenceScore))
 	mux.HandleFunc("POST /api/cases", s.authed(s.handleCaseCreate))
 	mux.HandleFunc("GET /api/cases", s.authed(s.handleCaseList))
@@ -1437,6 +1443,36 @@ func (s *Server) handleAgentSecEvents(w http.ResponseWriter, r *http.Request, _ 
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nodes": len(req.Nodes), "edges": len(req.Edges)})
+}
+
+// handleAITriage, opsiyonel SOC AI brain'inden bir incident için triyaj ÖNERİSİ ister
+// (aksiyon DEĞİL, salt-öneri). FAIL-OPEN: brain yoksa/dış AI yapılandırılmamışsa ya da
+// çağrı başarısızsa "available:false" döner — SOC deterministik yola devam eder. Öneri,
+// §0 zinciri dışında hiçbir yürütme tetiklemez.
+func (s *Server) handleAITriage(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		IncidentID string   `json:"incident_id"`
+		Events     []string `json:"events"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if s.brain == nil || !s.brain.Enabled() {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false, "available": false})
+		return
+	}
+	tr, ok := s.brain.SuggestTriage(r.Context(), aibrain.TriageInput{IncidentID: req.IncidentID, Events: req.Events})
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "available": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled": true, "available": true,
+		"triage": map[string]any{
+			"priority": tr.Priority, "likely_fp": tr.LikelyFP,
+			"next_steps": tr.NextSteps, "confidence": tr.Confidence, "source": tr.Source,
+		},
+	})
 }
 
 // handleSequenceScore, bir süreç zincirinin (virgül-ayrımlı ?tokens=a,b,c) ortama

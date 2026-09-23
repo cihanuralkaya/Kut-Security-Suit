@@ -610,10 +610,19 @@ func run() error {
 	readSvc := adminread.NewService(backend, cipher)
 	sessions := security.NewSessionSigner(security.DeriveKey(cfg.MasterKey, security.LabelSessionToken))
 	adminAPI := adminapi.New(adminSvc, readSvc, backend, sessions, cfg.AdminSessionTTL)
-	agentSec := aisec.NewService()        // agentic tehdit savunması analiz servisi (Agent Causality Graph)
-	adminAPI.SetEntityGraph(entGraph)     // salt-okunur pivot uçları (/api/graph/pivot)
-	adminAPI.SetSeqModel(seqModel)        // salt-okunur sekans skoru (/api/hunt/sequence-score)
-	adminAPI.SetAgentSec(agentSec)        // agentic tehdit savunması bulguları (/api/agentsec/findings)
+	agentSec := aisec.NewService()    // agentic tehdit savunması analiz servisi (Agent Causality Graph)
+	adminAPI.SetEntityGraph(entGraph) // salt-okunur pivot uçları (/api/graph/pivot)
+	adminAPI.SetSeqModel(seqModel)    // salt-okunur sekans skoru (/api/hunt/sequence-score)
+	adminAPI.SetAgentSec(agentSec)    // agentic tehdit savunması bulguları (/api/agentsec/findings)
+	// SOC AI brain (fail-open): KUT_AI_URL varsa dış sağlayıcı, yoksa deterministik (nil).
+	var socBrain *aibrain.Brain
+	if aiURL := os.Getenv("KUT_AI_URL"); aiURL != "" {
+		socBrain = aibrain.New(aibrain.NewHTTPProvider(aiURL, os.Getenv("KUT_AI_KEY"), os.Getenv("KUT_AI_MODEL"), 0), 0)
+		log.Printf("SOC AI brain: dış sağlayıcı bağlı (%s)", aiURL)
+	} else {
+		socBrain = aibrain.New(nil, 0) // dış AI yok → fail-open, deterministik yol
+	}
+	adminAPI.SetBrain(socBrain)           // salt-öneri triyaj (/api/ai/triage; fail-open)
 	adminAPI.SetCaseStore(caseStore)      // korelatörle paylaşımlı vaka deposu (otomatik incident→vaka)
 	adminAPI.SetStream(liveBus)           // canlı SSE akışı
 	adminAPI.SetHealthCheck(backend.Ping) // /readyz depo sağlık kontrolü
