@@ -828,6 +828,35 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🔗 Varlık Graf Pivot</h2>
+            <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">ilişki gezinme</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Bir varlıktan ilişkili varlıklara pivot (cihaz→domain, ip→cihaz...). Salt-okunur.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint)">Tür
+                <select id="gp-kind" style="padding:6px 9px;font-size:12px">
+                  <option value="device">device</option><option value="ip">ip</option>
+                  <option value="domain">domain</option><option value="process">process</option>
+                </select>
+              </label>
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);flex:1;min-width:160px">Kimlik
+                <input id="gp-id" placeholder="ör. pc-01" style="width:100%;padding:6px 9px;font-size:12px">
+              </label>
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint)">İlişki
+                <input id="gp-rel" placeholder="hepsi" style="width:120px;padding:6px 9px;font-size:12px">
+              </label>
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint)">Yön
+                <select id="gp-dir" style="padding:6px 9px;font-size:12px">
+                  <option value="sources">kaynaklar</option><option value="targets">hedefler</option>
+                </select>
+              </label>
+              <button class="btn sm" id="gp-run" type="button">🔎 Pivot</button>
+            </div>
+            <div id="gp-result"></div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
           <div class="head"><h2>🧩 Olay Korelasyonu (Incident)</h2>
             <span class="sp"></span><span id="inc-count" class="count">0</span></div>
           <div class="body">
@@ -2173,6 +2202,20 @@
         '<p class="hint" style="margin:8px 0 0">'+esc(r.rationale||"")+'</p>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
   }
+  // loadGraphPivot: bir varlıktan ilişkili varlıklara salt-okunur pivot.
+  function loadGraphPivot(){
+    var kind=$("gp-kind").value, id=($("gp-id").value||"").trim(), rel=($("gp-rel").value||"").trim(), dir=$("gp-dir").value, out=$("gp-result");
+    if(!id){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">Bir kimlik girin.</p>'; return; }
+    out.innerHTML='<p class="hint" style="margin:0">Geziliyor…</p>';
+    var url="/api/graph/pivot?kind="+encodeURIComponent(kind)+"&id="+encodeURIComponent(id)+"&dir="+encodeURIComponent(dir);
+    if(rel) url+="&rel="+encodeURIComponent(rel);
+    api(url).then(function(r){
+      var ns=(r&&r.nodes)||[];
+      if(!ns.length){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">İlişkili varlık yok.</p>'; return; }
+      var rows=ns.map(function(n){ return "<tr><td class='mono'>"+esc(n.kind||"")+"</td><td class='mono'>"+esc(n.id||"")+"</td></tr>"; }).join("");
+      out.innerHTML='<p class="hint" style="margin:0 0 8px">'+ns.length+' ilişkili varlık:</p><div class="tbl-wrap"><table><thead><tr><th>Tür</th><th>Kimlik</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
+  }
   // testEventAgainstRules: gerçek bir olayı Kural Test Aracı'na taşır — Güvenlik
   // görünümüne geçer, kategori/mesajı doldurur, testi çalıştırır ve aracı görünür
   // kılar. Olaylar akışını tespit motoruna bağlar (bu olay hangi kuralları tetikler?).
@@ -2710,6 +2753,7 @@
   $("ag-refresh").onclick=loadAgentSec;
   $("case-refresh").onclick=loadCases;
   $("ga-run").onclick=loadGraphAnomaly;
+  $("gp-run").onclick=loadGraphPivot;
   $("evt-pending").onclick=function(){ state.pendingOnly=!state.pendingOnly; this.className="btn ghost sm"+(state.pendingOnly?" on":""); renderEvents(); };
   $("sw-run").onclick=searchSoftware;
   $("sw-q").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); searchSoftware(); } });
