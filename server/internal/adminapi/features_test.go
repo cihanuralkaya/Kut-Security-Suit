@@ -19,6 +19,7 @@ import (
 	"kut.corp/suite/server/internal/aisec"
 	"kut.corp/suite/server/internal/authz"
 	"kut.corp/suite/server/internal/entitygraph"
+	"kut.corp/suite/server/internal/model"
 	"kut.corp/suite/server/internal/riskfusion"
 )
 
@@ -345,6 +346,64 @@ func TestAgentSecEventsIngestEndpoint(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 	if out.Count != 1 {
 		t.Fatalf("ingest sonrası tam 1 exfil bulgusu bekleniyordu, %d", out.Count)
+	}
+}
+
+// TestAgentSecCanonicalEndpoint, P0-B'yi uçtan doğrular: AG exfil bulgusu, GET
+// /api/agentsec/canonical'da MEVCUT kanonik olay modeli (model.Event) olarak dönmeli —
+// içerik-adresli event_id, kanonik event_type/source/severity ve şema sürümü ile. Böylece
+// agent güvenlik tespiti ikinci bir modele değil, ortak kanonik hatta oturur.
+func TestAgentSecCanonicalEndpoint(t *testing.T) {
+	srv, store := newServer(t)
+	svc := aisec.NewService()
+	svc.ObserveNode("web", aisec.KindContext, aisec.Untrusted)
+	svc.ObserveNode("agent", aisec.KindAgent, aisec.Trusted)
+	svc.ObserveNode("cred", aisec.KindCredential, aisec.Trusted)
+	svc.ObserveNode("evil", aisec.KindExternal, aisec.Trusted)
+	svc.ObserveRead("agent", "web")
+	svc.ObserveRead("agent", "cred")
+	svc.ObserveWrite("agent", "evil")
+	srv.SetAgentSec(svc)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+	_, ob := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	tok := ob["token"]
+
+	resp, err := authedGET(t, ts.URL+"/api/agentsec/canonical?tenant=t1", tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("kanonik uç 200 dönmeliydi, %d", resp.StatusCode)
+	}
+	var body struct {
+		SchemaVersion string        `json:"schema_version"`
+		Count         int           `json:"count"`
+		Events        []model.Event `json:"events"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.SchemaVersion != model.EventSchemaVersion {
+		t.Errorf("kanonik şema sürümü dönmeliydi: %q", body.SchemaVersion)
+	}
+	if body.Count != 1 || len(body.Events) != 1 {
+		t.Fatalf("tam 1 kanonik olay bekleniyordu: %+v", body)
+	}
+	e := body.Events[0]
+	if e.EventID == "" {
+		t.Error("kanonik olay içerik-adresli event_id taşımalı")
+	}
+	if e.EventType != "AGENT_EXFIL_CHAIN" || e.Source != "agentsec" {
+		t.Errorf("kanonik tip/kaynak yanlış: type=%s source=%s", e.EventType, e.Source)
+	}
+	if e.TenantID != "t1" || e.DeviceID != "agent" {
+		t.Errorf("atıf yanlış: tenant=%s device=%s", e.TenantID, e.DeviceID)
+	}
+	if e.Severity == "" || e.Confidence == 0 {
+		t.Errorf("severity/confidence atanmalı: sev=%s conf=%v", e.Severity, e.Confidence)
 	}
 }
 
