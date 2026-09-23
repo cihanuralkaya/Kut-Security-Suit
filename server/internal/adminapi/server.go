@@ -412,6 +412,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/graph/pivot", s.authed(s.handleGraphPivot))
 	mux.HandleFunc("GET /api/graph/anomaly", s.authed(s.handleGraphAnomaly))
 	mux.HandleFunc("GET /api/agentsec/findings", s.authed(s.handleAgentSecFindings))
+	mux.HandleFunc("POST /api/agentsec/events", s.authed(s.handleAgentSecEvents))
 	mux.HandleFunc("GET /api/hunt/sequence-score", s.authed(s.handleSequenceScore))
 	mux.HandleFunc("POST /api/cases", s.authed(s.handleCaseCreate))
 	mux.HandleFunc("GET /api/cases", s.authed(s.handleCaseList))
@@ -1394,6 +1395,48 @@ func (s *Server) handleAgentSecFindings(w http.ResponseWriter, _ *http.Request, 
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"findings": out, "count": len(out)})
+}
+
+// handleAgentSecEvents, agent-davranış gözlemlerini (düğüm + kenar) ingest eder ve Agent
+// Causality Graph'ı besler (telemetri kaynağı seam'i). Gözlemler DATA'dır; enforcement
+// üretmez (INV-AG-010). Kenar tipleri: read (agent→source), write (agent→sink), delegate
+// (delegator→delegatee), influence (from→to). Bilinmeyen trust fail-safe Untrusted'a düşer.
+func (s *Server) handleAgentSecEvents(w http.ResponseWriter, r *http.Request, _ string) {
+	if s.agentSec == nil {
+		writeErr(w, http.StatusNotFound, "agentic tehdit savunması etkin değil")
+		return
+	}
+	var req struct {
+		Nodes []struct {
+			ID    string `json:"id"`
+			Kind  string `json:"kind"`
+			Trust string `json:"trust"`
+		} `json:"nodes"`
+		Edges []struct {
+			Type string `json:"type"`
+			From string `json:"from"`
+			To   string `json:"to"`
+		} `json:"edges"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	for _, n := range req.Nodes {
+		s.agentSec.ObserveNode(n.ID, aisec.NodeKind(n.Kind), aisec.ParseTrust(n.Trust))
+	}
+	for _, e := range req.Edges {
+		switch e.Type {
+		case "read":
+			s.agentSec.ObserveRead(e.From, e.To)
+		case "write":
+			s.agentSec.ObserveWrite(e.From, e.To)
+		case "delegate":
+			s.agentSec.ObserveDelegate(e.From, e.To)
+		case "influence":
+			s.agentSec.ObserveInfluence(e.From, e.To)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nodes": len(req.Nodes), "edges": len(req.Edges)})
 }
 
 // handleSequenceScore, bir süreç zincirinin (virgül-ayrımlı ?tokens=a,b,c) ortama

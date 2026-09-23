@@ -285,6 +285,47 @@ func TestAgentSecFindingsEndpoint(t *testing.T) {
 	}
 }
 
+// TestAgentSecEventsIngestEndpoint, uçtan-uca doğrular: POST /api/agentsec/events ile
+// ingest edilen bir exfil zinciri, GET /api/agentsec/findings'te bulgu olarak görünür.
+func TestAgentSecEventsIngestEndpoint(t *testing.T) {
+	srv, store := newServer(t)
+	srv.SetAgentSec(aisec.NewService())
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+	_, ob := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	tok := ob["token"]
+
+	body := map[string]any{
+		"nodes": []map[string]any{
+			{"id": "web", "kind": "context", "trust": "UNTRUSTED"},
+			{"id": "agent", "kind": "agent", "trust": "TRUSTED"},
+			{"id": "cred", "kind": "credential", "trust": "TRUSTED"},
+			{"id": "evil", "kind": "external", "trust": "TRUSTED"},
+		},
+		"edges": []map[string]any{
+			{"type": "read", "from": "agent", "to": "web"},
+			{"type": "read", "from": "agent", "to": "cred"},
+			{"type": "write", "from": "agent", "to": "evil"},
+		},
+	}
+	if code, _ := post(t, ts.URL+"/api/agentsec/events", tok, body); code != http.StatusOK {
+		t.Fatalf("olay ingest 200 dönmeliydi, %d", code)
+	}
+	resp, err := authedGET(t, ts.URL+"/api/agentsec/findings", tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Count int `json:"count"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.Count != 1 {
+		t.Fatalf("ingest sonrası tam 1 exfil bulgusu bekleniyordu, %d", out.Count)
+	}
+}
+
 // TestSequenceScoreEndpoint, salt-okunur tehdit-avı sekans skoru ucunu doğrular:
 // modele öğretilen ortamda görülmemiş bir süreç geçişi yüksek nadirlik skorlanır.
 func TestSequenceScoreEndpoint(t *testing.T) {
