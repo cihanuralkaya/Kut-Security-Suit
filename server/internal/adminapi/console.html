@@ -807,6 +807,27 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🕸️ Varlık Graf Anomalisi</h2>
+            <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">yapısal skor</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Bir varlığın (cihaz/ip/domain/süreç) yapısal anomali skoru — fan-out/in + nadir kenarlardan türetilir. Salt-okunur.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint)">Tür
+                <select id="ga-kind" style="padding:6px 9px;font-size:12px">
+                  <option value="device">device</option><option value="ip">ip</option>
+                  <option value="domain">domain</option><option value="process">process</option>
+                </select>
+              </label>
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);flex:1;min-width:180px">Kimlik
+                <input id="ga-id" placeholder="ör. pc-01 / 203.0.113.9" style="width:100%;padding:6px 9px;font-size:12px">
+              </label>
+              <button class="btn sm" id="ga-run" type="button">🔎 Skorla</button>
+            </div>
+            <div id="ga-result"></div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
           <div class="head"><h2>🧩 Olay Korelasyonu (Incident)</h2>
             <span class="sp"></span><span id="inc-count" class="count">0</span></div>
           <div class="body">
@@ -2139,6 +2160,19 @@
       out.innerHTML='<div class="tbl-wrap"><table><thead><tr><th>ID</th><th>Başlık</th><th>Önem</th><th>Durum</th><th>Oluşturuldu</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
   }
+  // loadGraphAnomaly: bir varlığın yapısal graf anomali skorunu salt-okunur çeker.
+  function loadGraphAnomaly(){
+    var kind=$("ga-kind").value, id=($("ga-id").value||"").trim(), out=$("ga-result");
+    if(!id){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">Bir kimlik girin.</p>'; return; }
+    out.innerHTML='<p class="hint" style="margin:0">Skorlanıyor…</p>';
+    api("/api/graph/anomaly?kind="+encodeURIComponent(kind)+"&id="+encodeURIComponent(id)).then(function(r){
+      var sc=(r&&r.score)||0;
+      out.innerHTML='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'+
+        '<div style="font-size:26px;font-weight:700;color:'+(sc>=70?"var(--crit,#f43f5e)":"var(--accent)")+'">'+esc(String(sc))+'<span style="font-size:12px;color:var(--faint)"> /100</span></div>'+
+        '<div class="mini">fan-out '+esc(String(r.fan_out||0))+' · fan-in '+esc(String(r.fan_in||0))+' · nadir kenar '+esc(String(r.rare_edges||0))+'</div></div>'+
+        '<p class="hint" style="margin:8px 0 0">'+esc(r.rationale||"")+'</p>';
+    }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
+  }
   // testEventAgainstRules: gerçek bir olayı Kural Test Aracı'na taşır — Güvenlik
   // görünümüne geçer, kategori/mesajı doldurur, testi çalıştırır ve aracı görünür
   // kılar. Olaylar akışını tespit motoruna bağlar (bu olay hangi kuralları tetikler?).
@@ -2675,6 +2709,7 @@
   $("hunt-run").onclick=runHunt;
   $("ag-refresh").onclick=loadAgentSec;
   $("case-refresh").onclick=loadCases;
+  $("ga-run").onclick=loadGraphAnomaly;
   $("evt-pending").onclick=function(){ state.pendingOnly=!state.pendingOnly; this.className="btn ghost sm"+(state.pendingOnly?" on":""); renderEvents(); };
   $("sw-run").onclick=searchSoftware;
   $("sw-q").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); searchSoftware(); } });
