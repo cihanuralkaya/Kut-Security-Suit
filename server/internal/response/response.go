@@ -86,7 +86,7 @@ func (a *AutoQuarantiner) AutoQuarantine(ctx context.Context, deviceID, reason s
 	if err := a.store.EnqueueCommand(ctx, deviceID, "QUARANTINE", systemActor); err != nil {
 		return fmt.Errorf("response: karantina komutu kuyruğa alınamadı: %w", err)
 	}
-	_ = a.store.SetDeviceStatus(ctx, deviceID, "QUARANTINED")
+	_ = a.store.SetDeviceStatus(ctx, deviceID, "QUARANTINE_PENDING") // DESIRED; effective ajan onayıyla (F-D)
 	_ = a.store.WriteAudit(ctx, systemActor, "AUTO_QUARANTINE", "device", deviceID)
 	return nil
 }

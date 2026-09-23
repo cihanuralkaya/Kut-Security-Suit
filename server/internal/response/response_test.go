@@ -67,8 +67,8 @@ func TestAutoQuarantineEnqueuesAndAudits(t *testing.T) {
 	if len(f.cmds) != 1 || f.cmds[0] != "dev-1:QUARANTINE:" {
 		t.Fatalf("karantina komutu kuyruğa alınmalıydı: %v", f.cmds)
 	}
-	if f.status["dev-1"] != "QUARANTINED" {
-		t.Fatalf("durum QUARANTINED olmalıydı: %v", f.status)
+	if f.status["dev-1"] != "QUARANTINE_PENDING" {
+		t.Fatalf("DESIRED durum QUARANTINE_PENDING olmalıydı: %v", f.status)
 	}
 	if len(f.audits) != 1 || f.audits[0] != "AUTO_QUARANTINE:dev-1" {
 		t.Fatalf("denetim izine yazılmalıydı: %v", f.audits)
@@ -104,7 +104,7 @@ func TestAutoQuarantineAllowedByGateway(t *testing.T) {
 	if err := a.AutoQuarantine(context.Background(), "dev-1", "kritik"); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.cmds) != 1 || f.status["dev-1"] != "QUARANTINED" {
-		t.Fatalf("ALLOW sonrası karantina uygulanmalıydı: cmds=%v status=%v", f.cmds, f.status)
+	if len(f.cmds) != 1 || f.status["dev-1"] != "QUARANTINE_PENDING" {
+		t.Fatalf("ALLOW sonrası karantina uygulanmalıydı (DESIRED PENDING): cmds=%v status=%v", f.cmds, f.status)
 	}
 }

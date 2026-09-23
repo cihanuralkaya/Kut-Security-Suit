@@ -588,12 +588,13 @@ func TestQuarantineReleaseReflectsStatus(t *testing.T) {
 	store.roles["op1"] = RoleOperator
 	svc, _ := newService(t, store)
 
-	// Karantina: durum QUARANTINED olarak yansımalı.
+	// Karantina: DESIRED durum QUARANTINE_PENDING olarak yansımalı (effective 'QUARANTINED'
+	// yalnız ajan komut SUCCESS bildirince verilir — F-D desired≠effective).
 	if err := svc.QuarantineDevice(context.Background(), "op1", "dev-1"); err != nil {
 		t.Fatal(err)
 	}
-	if got := store.statuses["dev-1"]; got != "QUARANTINED" {
-		t.Fatalf("karantina sonrası durum QUARANTINED olmalı, dönen: %q", got)
+	if got := store.statuses["dev-1"]; got != "QUARANTINE_PENDING" {
+		t.Fatalf("karantina sonrası DESIRED durum QUARANTINE_PENDING olmalı, dönen: %q", got)
 	}
 
 	// Serbest bırakma: durum ACTIVE'e dönmeli.
