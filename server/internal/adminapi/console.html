@@ -872,6 +872,24 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🧮 AI Risk Füzyonu</h2>
+            <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">açıklanabilir · fail-open</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Deterministik sinyalleri opsiyonel AI'ın sekans/graf skorlarıyla birleştirir ve her katkıyı ayrıştırır. AI yoksa/başarısızsa sonuç yalnız verilen sinyallerin füzyonudur (denetlenebilir). Aksiyon tetiklemez.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);flex:1;min-width:220px">Sinyaller (ad:skor:ağırlık, virgülle)
+                <input id="air-signals" placeholder="ör. ioc:70:1, ueba:40:1" style="width:100%;padding:6px 9px;font-size:12px">
+              </label>
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);flex:1;min-width:180px">Süreç dizisi (opsiyonel, virgülle)
+                <input id="air-seq" placeholder="ör. explorer.exe,powershell.exe,curl.exe" style="width:100%;padding:6px 9px;font-size:12px">
+              </label>
+              <button class="btn sm" id="air-run" type="button">🧮 Füzyonla</button>
+            </div>
+            <div id="air-result"></div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
           <div class="head"><h2>🧩 Olay Korelasyonu (Incident)</h2>
             <span class="sp"></span><span id="inc-count" class="count">0</span></div>
           <div class="body">
@@ -2245,6 +2263,36 @@
         '<p class="mini" style="color:var(--faint);margin:4px 0 0">kaynak: '+esc(t.source||"")+'</p>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
   }
+  // loadAIRisk: deterministik sinyalleri (ad:skor:ağırlık) + opsiyonel süreç dizisini AI ile
+  // birleştirip AÇIKLANABİLİR füzyon sonucunu (skor/seviye + katkı ayrışımı) gösterir. AI
+  // yoksa sonuç yalnız verilen sinyallerin füzyonudur. Tüm alanlar esc()'ten geçer (XSS).
+  function loadAIRisk(){
+    var out=$("air-result");
+    var signals=[];
+    (($("air-signals").value||"").trim()).split(",").forEach(function(t){
+      t=t.trim(); if(!t) return;
+      var p=t.split(":"), name=(p[0]||"").trim(); if(!name) return;
+      signals.push({name:name, score:parseFloat(p[1])||0, weight:(p[2]!==undefined&&p[2].trim()!=="")?(parseFloat(p[2])||0):1});
+    });
+    if(!signals.length){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">En az bir sinyal girin (ör. ioc:70:1).</p>'; return; }
+    var seq=[];
+    (($("air-seq").value||"").trim()).split(",").forEach(function(t){ t=t.trim(); if(t) seq.push(t); });
+    var body={signals:signals}; if(seq.length) body.sequence=seq;
+    out.innerHTML='<p class="hint" style="margin:0">Füzyonlanıyor…</p>';
+    api("/api/ai/risk","POST",body).then(function(r){
+      var sc=(r&&r.score)||0, lvl=(r&&r.level)||"LOW", ai=!!(r&&r.ai_available);
+      var rows=((r&&r.contributions)||[]).map(function(c){
+        return "<tr><td class='mono'>"+esc(c.name||"")+"</td>"+
+          "<td>"+esc((Number(c.points)||0).toFixed(1))+"</td>"+
+          "<td>"+esc(Math.round((Number(c.share)||0)*100)+"%")+"</td></tr>";
+      }).join("");
+      out.innerHTML='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'+
+        '<div style="font-size:26px;font-weight:700;color:'+(sc>=70?"var(--crit,#f43f5e)":"var(--accent)")+'">'+esc(String(Math.round(sc)))+'<span style="font-size:12px;color:var(--faint)"> /100</span></div>'+
+        '<span class="sev '+esc(lvl)+'">'+esc(lvl)+'</span>'+
+        '<span class="mini" style="color:var(--faint)">AI: '+(ai?"etkin":"devre dışı (deterministik)")+'</span></div>'+
+        (rows?('<div class="tbl-wrap"><table><thead><tr><th>Sinyal</th><th>Puan</th><th>Pay</th></tr></thead><tbody>'+rows+'</tbody></table></div>'):'<p class="hint" style="margin:0;color:var(--faint)">Katkı yok (skor 0).</p>');
+    }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Füzyon başarısız: '+esc(e.message)+'</p>'; });
+  }
   // testEventAgainstRules: gerçek bir olayı Kural Test Aracı'na taşır — Güvenlik
   // görünümüne geçer, kategori/mesajı doldurur, testi çalıştırır ve aracı görünür
   // kılar. Olaylar akışını tespit motoruna bağlar (bu olay hangi kuralları tetikler?).
@@ -2784,6 +2832,7 @@
   $("ga-run").onclick=loadGraphAnomaly;
   $("gp-run").onclick=loadGraphPivot;
   $("ait-run").onclick=loadAITriage;
+  $("air-run").onclick=loadAIRisk;
   $("evt-pending").onclick=function(){ state.pendingOnly=!state.pendingOnly; this.className="btn ghost sm"+(state.pendingOnly?" on":""); renderEvents(); };
   $("sw-run").onclick=searchSoftware;
   $("sw-q").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); searchSoftware(); } });
