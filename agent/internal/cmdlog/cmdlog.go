@@ -27,7 +27,8 @@ const ttl = 24 * time.Hour
 // için kullanır (ör. QUARANTINE OK → cihaz gerçekten izole).
 type Result struct {
 	ID     string
-	OK     bool // true=SUCCEEDED, false=FAILED
+	OK     bool  // true=SUCCEEDED, false=FAILED
+	Type   int32 // komut tipi (proto Command.CommandType enum değeri) — sonuç self-describing
 	Detail string
 }
 
@@ -124,13 +125,13 @@ func (l *Log) ConfirmAcks(ids []string) {
 
 // QueueResult, komutun yürütme sonucunu (SUCCEEDED/FAILED) bildirilecek kuyruğa ekler.
 // Aynı id yeniden kuyruklanırsa son sonuç geçerlidir. Boş id yok sayılır.
-func (l *Log) QueueResult(id string, ok bool, detail string) {
+func (l *Log) QueueResult(id string, ok bool, typ int32, detail string) {
 	if id == "" {
 		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.results[id] = Result{ID: id, OK: ok, Detail: detail}
+	l.results[id] = Result{ID: id, OK: ok, Type: typ, Detail: detail}
 }
 
 // TakeResults, o an bildirilecek sonuçların anlık kopyasını döner (kuyruğu BOŞALTMAZ —

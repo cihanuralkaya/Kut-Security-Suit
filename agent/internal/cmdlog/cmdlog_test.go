@@ -74,9 +74,9 @@ func TestEmptyIDIgnored(t *testing.T) {
 // semantiğini doğrular: TakeResults boşaltmaz; yalnız ConfirmResults çıkarır.
 func TestResultQueueRoundtrip(t *testing.T) {
 	l := Open(t.TempDir())
-	l.QueueResult("c1", true, "")
-	l.QueueResult("c2", false, "hata")
-	l.QueueResult("", true, "") // boş id yok sayılır
+	l.QueueResult("c1", true, 1, "")
+	l.QueueResult("c2", false, 1, "hata")
+	l.QueueResult("", true, 0, "") // boş id yok sayılır
 	if got := l.TakeResults(); len(got) != 2 {
 		t.Fatalf("2 sonuç bekleniyordu: %d", len(got))
 	}

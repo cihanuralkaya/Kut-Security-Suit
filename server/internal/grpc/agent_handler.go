@@ -46,6 +46,10 @@ type DeviceRegistry interface {
 	// sinyali döner: saklı hash boş değilse, SÜRÜM değişmediği hâlde hash değişmişse
 	// (takas/yamalanmış ikili) tampered=true. hash boşsa (öz-tasdik yok) no-op.
 	RecordAgentBinary(ctx context.Context, deviceID, version, hash string) (tampered bool, err error)
+	// ApplyCommandResults, ajanın bildirdiği komut YÜRÜTME sonuçlarını işler: başarılı
+	// bir QUARANTINE/UNQUARANTINE sonucunda cihazın EFFECTIVE durumunu günceller
+	// (desired→effective; F-D). Başarısız/ilgisiz sonuçlar durum değiştirmez. Best-effort.
+	ApplyCommandResults(ctx context.Context, deviceID string, outcomes []model.CommandOutcome) error
 }
 
 // EventSink, gelen olayları kalıcılaştırır ve kabul edilen son sırayı döner.
@@ -390,6 +394,19 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 	if acked := req.GetAckedCommandIds(); len(acked) > 0 {
 		_ = h.devices.AckCommands(ctx, deviceID, acked)
 	}
+	// Komut YÜRÜTME sonuçları (SUCCESS/FAILED) — effective-state geçişi (F-D). ACK'ten
+	// (yalnız teslim) ayrı; başarılı karantina cihazın gerçekten izole olduğunu gösterir.
+	if crs := req.GetCommandResults(); len(crs) > 0 {
+		outs := make([]model.CommandOutcome, 0, len(crs))
+		for _, cr := range crs {
+			outs = append(outs, model.CommandOutcome{
+				CommandID: cr.GetCommandId(),
+				Type:      commandTypeName(cr.GetCommandType()),
+				OK:        cr.GetStatus() == kutv1.CommandStatus_COMMAND_STATUS_SUCCEEDED,
+			})
+		}
+		_ = h.devices.ApplyCommandResults(ctx, deviceID, outs)
+	}
 	cmds, err := h.devices.PendingCommands(ctx, deviceID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "komutlar alınamadı")
@@ -400,6 +417,25 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 		PolicyUpdateAvailable: serverPolicyVersion != "" && serverPolicyVersion != req.GetCurrentPolicyVersion(),
 		PendingCommands:       cmds,
 	}, nil
+}
+
+// commandTypeName, proto komut tipini kuyruk-türü string'ine çevirir (EnqueueCommand
+// ile aynı adlar). Yalnız effective-state ile ilgili tipler adlandırılır; diğerleri "".
+func commandTypeName(t kutv1.Command_CommandType) string {
+	switch t {
+	case kutv1.Command_COMMAND_TYPE_QUARANTINE:
+		return "QUARANTINE"
+	case kutv1.Command_COMMAND_TYPE_UNQUARANTINE:
+		return "UNQUARANTINE"
+	case kutv1.Command_COMMAND_TYPE_LOCK:
+		return "LOCK"
+	case kutv1.Command_COMMAND_TYPE_RESTART:
+		return "RESTART"
+	case kutv1.Command_COMMAND_TYPE_WIPE:
+		return "WIPE"
+	default:
+		return ""
+	}
 }
 
 // ReportEvents, olay akışını alır (store-and-forward), kalıcılaştırır ve kabul
