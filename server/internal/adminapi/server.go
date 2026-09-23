@@ -30,6 +30,7 @@ import (
 	"kut.corp/suite/server/internal/adminread"
 	"kut.corp/suite/server/internal/aiassist"
 	"kut.corp/suite/server/internal/aibrain"
+	"kut.corp/suite/server/internal/aisec"
 	"kut.corp/suite/server/internal/auditexport"
 	"kut.corp/suite/server/internal/authtoken"
 	"kut.corp/suite/server/internal/authz"
@@ -102,6 +103,7 @@ type Server struct {
 	graph         *entitygraph.Graph            // varlık/tehdit grafı (salt-okunur pivot uçları; nil → uç kapalı)
 	cases         casemgmt.Store                // SOC vaka yönetimi (varsayılan bellek-içi; SetCaseStore ile DB destekli)
 	seqModel      *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli (salt-okunur skor sorgusu; nil → uç kapalı)
+	agentSec      *aisec.Service                // agentic tehdit savunması (salt-okunur bulgu uçları; nil → uç kapalı)
 }
 
 // MSPStore, MSP müşteri kaydının kalıcı deposudur (§37). db.Store (kalıcı) ve
@@ -288,6 +290,10 @@ func (s *Server) SetCaseStore(cs casemgmt.Store) {
 // öğrenir; bu uç salt-okunur skor sorgular). nil → /api/hunt/sequence-score kapalı.
 func (s *Server) SetSeqModel(m *aibrain.SeqModel) { s.seqModel = m }
 
+// SetAgentSec, agentic tehdit savunması analiz servisini bağlar (Agent Causality Graph;
+// salt-okunur bulgu uçları — ajan telemetrisi besler). nil → /api/agentsec uçları kapalı.
+func (s *Server) SetAgentSec(a *aisec.Service) { s.agentSec = a }
+
 // SetPrivacyNotice, KVKK aydınlatma metnini ayarlar (boş verilirse varsayılan
 // korunur). Kurulum, kurumsal metni buradan geçebilir.
 func (s *Server) SetPrivacyNotice(text string) {
@@ -405,6 +411,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/devices/{id}/graph", s.authed(s.handleEntityGraph))
 	mux.HandleFunc("GET /api/graph/pivot", s.authed(s.handleGraphPivot))
 	mux.HandleFunc("GET /api/graph/anomaly", s.authed(s.handleGraphAnomaly))
+	mux.HandleFunc("GET /api/agentsec/findings", s.authed(s.handleAgentSecFindings))
 	mux.HandleFunc("GET /api/hunt/sequence-score", s.authed(s.handleSequenceScore))
 	mux.HandleFunc("POST /api/cases", s.authed(s.handleCaseCreate))
 	mux.HandleFunc("GET /api/cases", s.authed(s.handleCaseList))
@@ -1368,6 +1375,25 @@ func (s *Server) handleGraphAnomaly(w http.ResponseWriter, r *http.Request, _ st
 		"score": sc.Score, "rationale": sc.Rationale, "source": sc.Source,
 		"fan_out": fanOut, "fan_in": fanIn, "rare_edges": rareEdges,
 	})
+}
+
+// handleAgentSecFindings, agentic tehdit savunmasının exfil bulgularını (Agent Causality
+// Graph) salt-okunur döner. Bulgular DATA'dır (INV-AG-010); enforcement §0 zincirinden
+// geçer, bu uç yalnız görünürlük sağlar.
+func (s *Server) handleAgentSecFindings(w http.ResponseWriter, _ *http.Request, _ string) {
+	if s.agentSec == nil {
+		writeErr(w, http.StatusNotFound, "agentic tehdit savunması etkin değil")
+		return
+	}
+	f := s.agentSec.Findings()
+	out := make([]map[string]any, 0, len(f))
+	for _, x := range f {
+		out = append(out, map[string]any{
+			"agent_id": x.AgentID, "credential": x.Credential,
+			"sink": x.Sink, "trust": x.Trust.String(),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"findings": out, "count": len(out)})
 }
 
 // handleSequenceScore, bir süreç zincirinin (virgül-ayrımlı ?tokens=a,b,c) ortama

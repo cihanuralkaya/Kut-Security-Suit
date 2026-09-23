@@ -15,6 +15,7 @@ import (
 	"kut.corp/suite/server/internal/admin"
 	"kut.corp/suite/server/internal/adminread"
 	"kut.corp/suite/server/internal/aibrain"
+	"kut.corp/suite/server/internal/aisec"
 	"kut.corp/suite/server/internal/authz"
 	"kut.corp/suite/server/internal/entitygraph"
 )
@@ -239,6 +240,48 @@ func TestGraphAnomalyEndpoint(t *testing.T) {
 	}
 	if body.Score < 70 {
 		t.Fatalf("tarama-benzeri düğüm yüksek anomali skorlanmalı: %v", body.Score)
+	}
+}
+
+// TestAgentSecFindingsEndpoint, agentic tehdit savunması salt-okunur bulgu ucunu
+// doğrular: ingest edilen exfil zinciri (untrusted→credential→external) /api/agentsec/
+// findings ile döner.
+func TestAgentSecFindingsEndpoint(t *testing.T) {
+	srv, store := newServer(t)
+	svc := aisec.NewService()
+	svc.ObserveNode("web", aisec.KindContext, aisec.Untrusted)
+	svc.ObserveNode("agent", aisec.KindAgent, aisec.Trusted)
+	svc.ObserveNode("cred", aisec.KindCredential, aisec.Trusted)
+	svc.ObserveNode("evil", aisec.KindExternal, aisec.Trusted)
+	svc.ObserveRead("agent", "web")
+	svc.ObserveRead("agent", "cred")
+	svc.ObserveWrite("agent", "evil")
+	srv.SetAgentSec(svc)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+	_, ob := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	tok := ob["token"]
+
+	resp, err := authedGET(t, ts.URL+"/api/agentsec/findings", tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("bulgu ucu 200 dönmeliydi, %d", resp.StatusCode)
+	}
+	var body struct {
+		Count    int `json:"count"`
+		Findings []struct {
+			AgentID    string `json:"agent_id"`
+			Credential string `json:"credential"`
+			Sink       string `json:"sink"`
+		} `json:"findings"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if body.Count != 1 || len(body.Findings) != 1 || body.Findings[0].AgentID != "agent" || body.Findings[0].Sink != "evil" {
+		t.Fatalf("exfil bulgusu dönmeliydi: %+v", body)
 	}
 }
 

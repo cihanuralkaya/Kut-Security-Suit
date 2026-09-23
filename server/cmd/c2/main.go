@@ -34,6 +34,7 @@ import (
 	"kut.corp/suite/server/internal/adminapi"
 	"kut.corp/suite/server/internal/adminread"
 	"kut.corp/suite/server/internal/aibrain"
+	"kut.corp/suite/server/internal/aisec"
 	"kut.corp/suite/server/internal/authtoken"
 	"kut.corp/suite/server/internal/beacon"
 	"kut.corp/suite/server/internal/bruteforce"
@@ -609,8 +610,10 @@ func run() error {
 	readSvc := adminread.NewService(backend, cipher)
 	sessions := security.NewSessionSigner(security.DeriveKey(cfg.MasterKey, security.LabelSessionToken))
 	adminAPI := adminapi.New(adminSvc, readSvc, backend, sessions, cfg.AdminSessionTTL)
+	agentSec := aisec.NewService()        // agentic tehdit savunması analiz servisi (Agent Causality Graph)
 	adminAPI.SetEntityGraph(entGraph)     // salt-okunur pivot uçları (/api/graph/pivot)
 	adminAPI.SetSeqModel(seqModel)        // salt-okunur sekans skoru (/api/hunt/sequence-score)
+	adminAPI.SetAgentSec(agentSec)        // agentic tehdit savunması bulguları (/api/agentsec/findings)
 	adminAPI.SetCaseStore(caseStore)      // korelatörle paylaşımlı vaka deposu (otomatik incident→vaka)
 	adminAPI.SetStream(liveBus)           // canlı SSE akışı
 	adminAPI.SetHealthCheck(backend.Ping) // /readyz depo sağlık kontrolü
