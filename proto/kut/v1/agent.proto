@@ -60,6 +60,10 @@ message HeartbeatRequest {
   // (en-az-bir-kez teslim onayı). Sunucu bunları acked olarak işaretler; onaylanmayan
   // komutlar kira süresi sonunda yeniden teslim edilir (ajan çökse de kaybolmaz).
   repeated string acked_command_ids = 6;
+  // command_results, ajanın komutları YÜRÜTME SONUCUDUR (SUCCEEDED/FAILED) — ACK'ten
+  // (yalnız teslim/alındı) FARKLI. Sunucu bunu effective-state geçişi için kullanır
+  // (ör. QUARANTINE SUCCEEDED → cihaz gerçekten izole; desired≠effective ayrımı, F-D).
+  repeated CommandResult command_results = 7;
 }
 
 message HeartbeatResponse {
@@ -94,6 +98,22 @@ message Command {
     COMMAND_TYPE_RESTART = 8;       // Uzaktan yeniden başlatma (MDM).
     COMMAND_TYPE_WIPE = 9;          // Uzaktan veri silme (MDM; ADMIN + audit).
   }
+}
+
+// CommandStatus, bir komutun YÜRÜTME sonucudur (ACK/alındı DEĞİL — gerçek sonuç).
+enum CommandStatus {
+  COMMAND_STATUS_UNSPECIFIED = 0;
+  COMMAND_STATUS_SUCCEEDED = 1; // komut cihazda başarıyla uygulandı (effective)
+  COMMAND_STATUS_FAILED = 2;    // komut uygulanamadı
+}
+
+// CommandResult, tek bir komutun yürütme sonucudur. Ajan heartbeat'te bildirir;
+// sunucu desired→effective durum geçişini (ör. QUARANTINE_PENDING→QUARANTINED) buna
+// göre yapar. ACK (teslim) ile SUCCESS (uygulandı) burada ayrışır.
+message CommandResult {
+  string command_id = 1;
+  CommandStatus status = 2;
+  string detail = 3; // opsiyonel hata/bağlam
 }
 
 message PolicySubscribeRequest {
