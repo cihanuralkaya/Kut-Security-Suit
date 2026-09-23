@@ -535,7 +535,8 @@ func run() error {
 	beat := func() {
 		hbCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
-		acks := clog.TakeAcks() // yürütülüp henüz onaylanmamış komutlar
+		acks := clog.TakeAcks()       // yürütülüp henüz onaylanmamış komutlar
+		results := clog.TakeResults() // yürütme sonuçları (SUCCEEDED/FAILED); effective-state için
 		resp, err := cli.Heartbeat(hbCtx, &kutv1.HeartbeatRequest{
 			Identity: &kutv1.AgentIdentity{
 				DeviceId:     ident.deviceID,
@@ -546,12 +547,14 @@ func run() error {
 			CurrentPolicyVersion: engine.Load().Version(),
 			BinaryHash:           selfHash, // öz-tasdik (#4): kendi ikilisinin SHA-256'sı
 			AckedCommandIds:      acks,
+			CommandResults:       toProtoResults(results),
 		})
 		if err != nil {
 			log.Printf("heartbeat başarısız: %v", err)
-			return // acks temizlenmez → sonraki heartbeat'te yeniden bildirilir
+			return // acks/results temizlenmez → sonraki heartbeat'te yeniden bildirilir
 		}
-		clog.ConfirmAcks(acks) // sunucu onayları aldı; kuyruktan çıkar
+		clog.ConfirmAcks(acks)                  // sunucu onayları aldı; kuyruktan çıkar
+		clog.ConfirmResults(resultIDs(results)) // sonuçlar bildirildi; kuyruktan çıkar
 		// Sunucu saatini çıpa al (yerel saate güvenilmez, inceleme #3).
 		if resp.GetServerTime() != nil {
 			clock.Sync(resp.GetServerTime().AsTime())
@@ -740,14 +743,18 @@ func handleCommands(ctx context.Context, cmds []*kutv1.Command, quar *quarantine
 		case kutv1.Command_COMMAND_TYPE_QUARANTINE:
 			if err := quar.Apply(); err != nil {
 				log.Printf("karantina uygulanamadı: %v", err)
+				queueResult(clog, id, false, err.Error()) // effective-state: uygulanamadı
 			} else {
 				log.Println("karantina uygulandı")
+				queueResult(clog, id, true, "") // effective-state: cihaz gerçekten izole
 			}
 		case kutv1.Command_COMMAND_TYPE_UNQUARANTINE:
 			if err := quar.Release(); err != nil {
 				log.Printf("karantina kaldırılamadı: %v", err)
+				queueResult(clog, id, false, err.Error())
 			} else {
 				log.Println("karantina kaldırıldı")
+				queueResult(clog, id, true, "")
 			}
 		case kutv1.Command_COMMAND_TYPE_RUN_SIGNED_SCRIPT:
 			// Uzun sürebilir; heartbeat döngüsünü bloklamamak için arka planda.
@@ -775,6 +782,38 @@ func handleCommands(ctx context.Context, cmds []*kutv1.Command, quar *quarantine
 			clog.QueueAck(id)
 		}
 	}
+}
+
+// queueResult, komut yürütme sonucunu güvenli kuyruğa alır (clog nil olabilir).
+func queueResult(clog *cmdlog.Log, id string, ok bool, detail string) {
+	if clog != nil {
+		clog.QueueResult(id, ok, detail)
+	}
+}
+
+// toProtoResults, cmdlog sonuçlarını heartbeat için proto CommandResult'a çevirir.
+func toProtoResults(rs []cmdlog.Result) []*kutv1.CommandResult {
+	if len(rs) == 0 {
+		return nil
+	}
+	out := make([]*kutv1.CommandResult, 0, len(rs))
+	for _, r := range rs {
+		st := kutv1.CommandStatus_COMMAND_STATUS_SUCCEEDED
+		if !r.OK {
+			st = kutv1.CommandStatus_COMMAND_STATUS_FAILED
+		}
+		out = append(out, &kutv1.CommandResult{CommandId: r.ID, Status: st, Detail: r.Detail})
+	}
+	return out
+}
+
+// resultIDs, sonuç kimliklerini döner (ConfirmResults için).
+func resultIDs(rs []cmdlog.Result) []string {
+	out := make([]string, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, r.ID)
+	}
+	return out
 }
 
 // selectWipeFn, WIPE için çalıştırılacak fonksiyonu ARM durumuna göre seçer.

@@ -69,3 +69,28 @@ func TestEmptyIDIgnored(t *testing.T) {
 		t.Fatalf("boş id ack'lenmemeli: %v", got)
 	}
 }
+
+// TestResultQueueRoundtrip, yürütme-sonucu kuyruğunun retry-until-confirmed
+// semantiğini doğrular: TakeResults boşaltmaz; yalnız ConfirmResults çıkarır.
+func TestResultQueueRoundtrip(t *testing.T) {
+	l := Open(t.TempDir())
+	l.QueueResult("c1", true, "")
+	l.QueueResult("c2", false, "hata")
+	l.QueueResult("", true, "") // boş id yok sayılır
+	if got := l.TakeResults(); len(got) != 2 {
+		t.Fatalf("2 sonuç bekleniyordu: %d", len(got))
+	}
+	// TakeResults kuyruğu boşaltmaz (heartbeat başarısız olursa yeniden denenir).
+	if len(l.TakeResults()) != 2 {
+		t.Fatal("TakeResults kuyruğu boşaltmamalı (retry-until-confirmed)")
+	}
+	l.ConfirmResults([]string{"c1"})
+	rem := l.TakeResults()
+	if len(rem) != 1 || rem[0].ID != "c2" || rem[0].OK {
+		t.Fatalf("yalnız c2 (FAILED) kalmalıydı: %+v", rem)
+	}
+	l.ConfirmResults([]string{"c2"})
+	if l.TakeResults() != nil {
+		t.Fatal("tüm sonuçlar onaylandıktan sonra kuyruk boş olmalı")
+	}
+}
