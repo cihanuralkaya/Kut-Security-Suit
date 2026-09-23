@@ -1,0 +1,26 @@
+name: AI Service
+
+# services/ai (dış AI mikroservis iskeleti) için AYRI CI — Go pipeline'ından bağımsız.
+# Yalnız Python stdlib; runner'ın yerleşik python3'ü kullanılır (pip/ek bağımlılık yok).
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "services/ai/**"
+      - ".github/workflows/ai-service.yml"
+  pull_request:
+    paths:
+      - "services/ai/**"
+      - ".github/workflows/ai-service.yml"
+
+jobs:
+  test:
+    name: unittest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Python sürümü
+        run: python3 --version
+      - name: unittest
+        working-directory: services/ai
+        run: python3 -m unittest -v
