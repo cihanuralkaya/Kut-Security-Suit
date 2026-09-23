@@ -105,6 +105,7 @@ type Server struct {
 	seqModel      *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli (salt-okunur skor sorgusu; nil → uç kapalı)
 	agentSec      *aisec.Service                // agentic tehdit savunması (salt-okunur bulgu uçları; nil → uç kapalı)
 	brain         *aibrain.Brain                // SOC AI brain (fail-open; dış AI yoksa deterministik yola döner)
+	agentTrust    *aisec.TrustVerifier          // imzalı agent telemetri doğrulayıcı (nil → /api/agentsec/telemetry kapalı)
 }
 
 // MSPStore, MSP müşteri kaydının kalıcı deposudur (§37). db.Store (kalıcı) ve
@@ -299,6 +300,10 @@ func (s *Server) SetAgentSec(a *aisec.Service) { s.agentSec = a }
 // (Provider nil) uçlar "available:false" döner ve çekirdek deterministik yola devam eder.
 func (s *Server) SetBrain(b *aibrain.Brain) { s.brain = b }
 
+// SetAgentTrust, imzalı agent telemetri doğrulayıcısını bağlar (P0-A). nil →
+// /api/agentsec/telemetry kapalı. Bu uç session değil, ed25519 İMZA ile kimlik doğrular.
+func (s *Server) SetAgentTrust(v *aisec.TrustVerifier) { s.agentTrust = v }
+
 // SetPrivacyNotice, KVKK aydınlatma metnini ayarlar (boş verilirse varsayılan
 // korunur). Kurulum, kurumsal metni buradan geçebilir.
 func (s *Server) SetPrivacyNotice(text string) {
@@ -419,6 +424,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agentsec/findings", s.authed(s.handleAgentSecFindings))
 	mux.HandleFunc("POST /api/agentsec/events", s.authed(s.handleAgentSecEvents))
 	mux.HandleFunc("POST /api/ai/triage", s.authed(s.handleAITriage))
+	// Session DEĞİL, ed25519 İMZA ile kimlik doğrulanan agent telemetri ucu (P0-A).
+	mux.HandleFunc("POST /api/agentsec/telemetry", s.handleAgentSecTelemetry)
 	mux.HandleFunc("GET /api/hunt/sequence-score", s.authed(s.handleSequenceScore))
 	mux.HandleFunc("POST /api/cases", s.authed(s.handleCaseCreate))
 	mux.HandleFunc("GET /api/cases", s.authed(s.handleCaseList))
@@ -1443,6 +1450,69 @@ func (s *Server) handleAgentSecEvents(w http.ResponseWriter, r *http.Request, _ 
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nodes": len(req.Nodes), "edges": len(req.Edges)})
+}
+
+// handleAgentSecTelemetry, KRİPTOGRAFİK İMZALI agent telemetrisini alır (P0-A). Session
+// gerektirmez; kimlik ed25519 imzayla doğrulanır. TrustVerifier fail-closed'dır: imza/
+// tenant/sequence/replay/tazelik kontrolü geçmezse 403 (reason'lı) döner ve graf
+// BESLENMEZ. Kabul edilirse payload (nodes/edges) Agent Causality Graph'a işlenir.
+func (s *Server) handleAgentSecTelemetry(w http.ResponseWriter, r *http.Request) {
+	if s.agentTrust == nil || s.agentSec == nil {
+		writeErr(w, http.StatusNotFound, "agent telemetri etkin değil")
+		return
+	}
+	var wire struct {
+		AgentID   string    `json:"agent_id"`
+		TenantID  string    `json:"tenant_id"`
+		Sequence  uint64    `json:"sequence"`
+		Timestamp time.Time `json:"timestamp"`
+		Nonce     string    `json:"nonce"`
+		Payload   []byte    `json:"payload"`   // kanonik gözlem (base64 JSON)
+		Signature []byte    `json:"signature"` // ed25519 (base64)
+	}
+	if !decode(w, r, &wire) {
+		return
+	}
+	obs := aisec.SignedObservation{
+		AgentID: wire.AgentID, TenantID: wire.TenantID, Sequence: wire.Sequence,
+		Timestamp: wire.Timestamp, Nonce: wire.Nonce, Payload: wire.Payload, Signature: wire.Signature,
+	}
+	if err := s.agentTrust.Verify(obs); err != nil {
+		writeErr(w, http.StatusForbidden, "telemetri reddedildi: "+err.Error())
+		return
+	}
+	var p struct {
+		Nodes []struct {
+			ID    string `json:"id"`
+			Kind  string `json:"kind"`
+			Trust string `json:"trust"`
+		} `json:"nodes"`
+		Edges []struct {
+			Type string `json:"type"`
+			From string `json:"from"`
+			To   string `json:"to"`
+		} `json:"edges"`
+	}
+	if json.Unmarshal(wire.Payload, &p) != nil {
+		writeErr(w, http.StatusBadRequest, "geçersiz payload")
+		return
+	}
+	for _, n := range p.Nodes {
+		s.agentSec.ObserveNode(n.ID, aisec.NodeKind(n.Kind), aisec.ParseTrust(n.Trust))
+	}
+	for _, e := range p.Edges {
+		switch e.Type {
+		case "read":
+			s.agentSec.ObserveRead(e.From, e.To)
+		case "write":
+			s.agentSec.ObserveWrite(e.From, e.To)
+		case "delegate":
+			s.agentSec.ObserveDelegate(e.From, e.To)
+		case "influence":
+			s.agentSec.ObserveInfluence(e.From, e.To)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"accepted": true, "nodes": len(p.Nodes), "edges": len(p.Edges)})
 }
 
 // handleAITriage, opsiyonel SOC AI brain'inden bir incident için triyaj ÖNERİSİ ister

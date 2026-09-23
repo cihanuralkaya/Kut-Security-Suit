@@ -622,10 +622,31 @@ func run() error {
 	} else {
 		socBrain = aibrain.New(nil, 0) // dış AI yok → fail-open, deterministik yol
 	}
-	adminAPI.SetBrain(socBrain)           // salt-öneri triyaj (/api/ai/triage; fail-open)
-	adminAPI.SetCaseStore(caseStore)      // korelatörle paylaşımlı vaka deposu (otomatik incident→vaka)
-	adminAPI.SetStream(liveBus)           // canlı SSE akışı
-	adminAPI.SetHealthCheck(backend.Ping) // /readyz depo sağlık kontrolü
+	adminAPI.SetBrain(socBrain) // salt-öneri triyaj (/api/ai/triage; fail-open)
+	// Agent telemetri güven doğrulayıcı (P0-A): KUT_AGENT_KEYS'ten ed25519 anahtarları
+	// kaydet ("agentID:base64pub:tenant,..."). İmzalı telemetri /api/agentsec/telemetry'den
+	// gelir; kayıtsız/geçersiz/replay imza fail-closed reddedilir.
+	agentKeys := aisec.NewMemKeyRegistry()
+	if raw := os.Getenv("KUT_AGENT_KEYS"); raw != "" {
+		nkeys := 0
+		for _, ent := range strings.Split(raw, ",") {
+			parts := strings.SplitN(strings.TrimSpace(ent), ":", 3)
+			if len(parts) != 3 {
+				continue
+			}
+			pub, err := base64.StdEncoding.DecodeString(parts[1])
+			if err != nil || len(pub) != ed25519.PublicKeySize {
+				continue
+			}
+			agentKeys.Register(parts[0], ed25519.PublicKey(pub), parts[2])
+			nkeys++
+		}
+		log.Printf("agent telemetri: %d ed25519 anahtarı kayıtlı", nkeys)
+	}
+	adminAPI.SetAgentTrust(aisec.NewTrustVerifier(agentKeys, nil, 0)) // imzalı telemetri ucu
+	adminAPI.SetCaseStore(caseStore)                                  // korelatörle paylaşımlı vaka deposu (otomatik incident→vaka)
+	adminAPI.SetStream(liveBus)                                       // canlı SSE akışı
+	adminAPI.SetHealthCheck(backend.Ping)                             // /readyz depo sağlık kontrolü
 	// /readyz olay-partition hazırlığı: yalnız DB deposu EventPartitionReady sunar
 	// (memstore sunmaz → atlanır). Retention işi aksayıp bu-ay partition'ı oluşmazsa
 	// /readyz 503 döner ve sessiz INSERT hataları yerine erken uyarı verir.
