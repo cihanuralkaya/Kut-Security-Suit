@@ -857,6 +857,21 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🤖 AI Triyaj Önerisi</h2>
+            <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">salt-öneri · fail-open</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Opsiyonel dış AI'dan bir incident için triyaj önerisi (öncelik / muhtemel-FP / sonraki adımlar). Dış AI yapılandırılmamışsa devre dışıdır ve çekirdek deterministik yola devam eder. Aksiyon tetiklemez.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+              <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);flex:1;min-width:180px">Incident ID
+                <input id="ait-id" placeholder="ör. inc-123" style="width:100%;padding:6px 9px;font-size:12px">
+              </label>
+              <button class="btn sm" id="ait-run" type="button">🤖 Öneri Al</button>
+            </div>
+            <div id="ait-result"></div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
           <div class="head"><h2>🧩 Olay Korelasyonu (Incident)</h2>
             <span class="sp"></span><span id="inc-count" class="count">0</span></div>
           <div class="body">
@@ -2216,6 +2231,20 @@
       out.innerHTML='<p class="hint" style="margin:0 0 8px">'+ns.length+' ilişkili varlık:</p><div class="tbl-wrap"><table><thead><tr><th>Tür</th><th>Kimlik</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
   }
+  // loadAITriage: opsiyonel dış AI'dan bir incident için salt-öneri triyaj ister (fail-open).
+  function loadAITriage(){
+    var id=($("ait-id").value||"").trim(), out=$("ait-result");
+    if(!id){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">Incident ID girin.</p>'; return; }
+    out.innerHTML='<p class="hint" style="margin:0">Öneri isteniyor…</p>';
+    api("/api/ai/triage","POST",{incident_id:id}).then(function(r){
+      if(!r||!r.available){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">Dış AI yapılandırılmadı — deterministik yol geçerli.</p>'; return; }
+      var t=r.triage||{};
+      out.innerHTML='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="sev '+esc(t.priority||"")+'">'+esc(t.priority||"")+'</span>'+
+        '<span class="mini">'+(t.likely_fp?"muhtemel yanlış-pozitif":"gerçek")+' · güven '+esc(String(t.confidence||0))+'</span></div>'+
+        '<p class="hint" style="margin:8px 0 0">Adımlar: '+esc((t.next_steps||[]).join(", ")||"—")+'</p>'+
+        '<p class="mini" style="color:var(--faint);margin:4px 0 0">kaynak: '+esc(t.source||"")+'</p>';
+    }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
+  }
   // testEventAgainstRules: gerçek bir olayı Kural Test Aracı'na taşır — Güvenlik
   // görünümüne geçer, kategori/mesajı doldurur, testi çalıştırır ve aracı görünür
   // kılar. Olaylar akışını tespit motoruna bağlar (bu olay hangi kuralları tetikler?).
@@ -2754,6 +2783,7 @@
   $("case-refresh").onclick=loadCases;
   $("ga-run").onclick=loadGraphAnomaly;
   $("gp-run").onclick=loadGraphPivot;
+  $("ait-run").onclick=loadAITriage;
   $("evt-pending").onclick=function(){ state.pendingOnly=!state.pendingOnly; this.className="btn ghost sm"+(state.pendingOnly?" on":""); renderEvents(); };
   $("sw-run").onclick=searchSoftware;
   $("sw-q").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); searchSoftware(); } });
