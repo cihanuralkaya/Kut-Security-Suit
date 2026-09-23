@@ -405,7 +405,10 @@ func normalizeTags(tags []string) []string {
 
 // QuarantineDevice, cihazı karantinaya alma komutu kuyruğa ekler (OPERATOR+).
 func (s *Service) QuarantineDevice(ctx context.Context, adminID, deviceID string) error {
-	return s.command(ctx, adminID, deviceID, "QUARANTINE", "QUARANTINED")
+	// DESIRED durum QUARANTINE_PENDING'dir (F-D): komut kuyruğa alındı ama cihaz henüz
+	// gerçek izolasyonu onaylamadı. EFFECTIVE 'QUARANTINED', yalnız ajan komut SUCCESS
+	// bildirince ApplyCommandResults ile verilir — SOC yanıltıcı "izole" görmez.
+	return s.command(ctx, adminID, deviceID, "QUARANTINE", "QUARANTINE_PENDING")
 }
 
 // ReleaseDevice, karantinayı kaldırma komutu kuyruğa ekler (OPERATOR+) ve durum

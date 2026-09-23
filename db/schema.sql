@@ -27,8 +27,12 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ENUM TİPLERİ
 -- ---------------------------------------------------------------------------
 CREATE TYPE device_status AS ENUM (
-    'PENDING_ENROLLMENT', 'ACTIVE', 'OFFLINE', 'QUARANTINED', 'UNINSTALLED'
+    'PENDING_ENROLLMENT', 'ACTIVE', 'OFFLINE', 'QUARANTINE_PENDING', 'QUARANTINED', 'UNINSTALLED'
 );
+-- QUARANTINE_PENDING: karantina komutu kuyruğa alındı (DESIRED) ama cihaz henüz gerçek
+-- izolasyonu ONAYLAMADI. Effective 'QUARANTINED', yalnız ajan komut SUCCESS bildirince
+-- verilir (F-D: desired≠effective). Mevcut DB'ye ekleme: ALTER TYPE device_status
+-- ADD VALUE IF NOT EXISTS 'QUARANTINE_PENDING' BEFORE 'QUARANTINED';
 
 CREATE TYPE event_category AS ENUM (
     'SYSTEM', 'SECURITY', 'NETWORK_DISCOVERY', 'POLICY_VIOLATION', 'AGENT_UPDATE', 'PROCESS', 'NETWORK_CONN'
