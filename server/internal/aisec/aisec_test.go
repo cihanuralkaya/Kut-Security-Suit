@@ -74,6 +74,20 @@ func TestEffectiveCapabilitiesEdgeCases(t *testing.T) {
 	}
 }
 
+// TestParseTrustFailSafe, dış girdinin bilinmeyen/boş durumda ASLA Trusted olmadığını
+// doğrular (fail-safe; INV-AG-001).
+func TestParseTrustFailSafe(t *testing.T) {
+	cases := map[string]TrustLevel{
+		"TRUSTED": Trusted, "trusted": Trusted, " Tainted ": Tainted,
+		"UNTRUSTED": Untrusted, "": Untrusted, "bogus": Untrusted, "TRUSTED_X": Untrusted,
+	}
+	for in, want := range cases {
+		if got := ParseTrust(in); got != want {
+			t.Errorf("ParseTrust(%q)=%s want %s", in, got, want)
+		}
+	}
+}
+
 func TestAgentExpiry(t *testing.T) {
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 	a := AgentPrincipal{ExpiresAt: now.Add(time.Minute)}

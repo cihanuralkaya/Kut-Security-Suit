@@ -14,7 +14,10 @@
 // memory provenance (INV-AG-006), tool allowlist deny-by-default (INV-AG-009).
 package aisec
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // TrustLevel, bir principal/içerik/context'in güven düzeyidir (KUT-AI-SEC-006). SIRALI:
 // Tainted < Untrusted < Trusted. Propagation MONOTON AŞAĞIDIR — birleşimde daima en
@@ -37,6 +40,19 @@ func (t TrustLevel) String() string {
 		return "UNTRUSTED"
 	default:
 		return "TAINTED"
+	}
+}
+
+// ParseTrust, dış girdiden (telemetri/API) güven düzeyi ayrıştırır. FAIL-SAFE: bilinmeyen
+// veya boş değer Untrusted'a düşer — dış girdi ASLA yanlışlıkla Trusted olmaz (INV-AG-001).
+func ParseTrust(s string) TrustLevel {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "TRUSTED":
+		return Trusted
+	case "TAINTED":
+		return Tainted
+	default:
+		return Untrusted // "UNTRUSTED", bilinmeyen, boş → untrusted (asla Trusted)
 	}
 }
 
