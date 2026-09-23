@@ -2,6 +2,7 @@ package adminapi
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"io"
@@ -388,6 +389,66 @@ func TestAITriageEndpoint(t *testing.T) {
 	out2 := doPost(`{"incident_id":"i1"}`)
 	if out2["enabled"] != false || out2["available"] != false {
 		t.Fatalf("dış AI yokken available:false olmalı: %+v", out2)
+	}
+}
+
+// TestAgentSecTelemetryEndpoint, P0-A imza-doğrulamalı telemetri ucunu uçtan uca
+// doğrular: geçerli imzalı gözlem KABUL edilir ve graf'a işlenir (findings'te görünür);
+// bozuk imza 403 reddedilir. Uç session gerektirmez (imza ile kimlik doğrular).
+func TestAgentSecTelemetryEndpoint(t *testing.T) {
+	srv, store := newServer(t)
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	reg := aisec.NewMemKeyRegistry()
+	reg.Register("agent-1", pub, "t1")
+	srv.SetAgentTrust(aisec.NewTrustVerifier(reg, nil, time.Minute))
+	srv.SetAgentSec(aisec.NewService())
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	payload := []byte(`{"nodes":[{"id":"web","kind":"context","trust":"UNTRUSTED"},{"id":"agent","kind":"agent","trust":"TRUSTED"},{"id":"cred","kind":"credential","trust":"TRUSTED"},{"id":"evil","kind":"external","trust":"TRUSTED"}],"edges":[{"type":"read","from":"agent","to":"web"},{"type":"read","from":"agent","to":"cred"},{"type":"write","from":"agent","to":"evil"}]}`)
+	now := time.Now()
+	obs := aisec.SignedObservation{AgentID: "agent-1", TenantID: "t1", Sequence: 1, Timestamp: now, Nonce: "n1", Payload: payload}
+	obs.Signature = ed25519.Sign(priv, aisec.SigningBytes(obs))
+
+	send := func(sig []byte) int {
+		wire := map[string]any{
+			"agent_id": "agent-1", "tenant_id": "t1", "sequence": 1,
+			"timestamp": now, "nonce": "n1", "payload": payload, "signature": sig,
+		}
+		b, _ := json.Marshal(wire)
+		req, _ := http.NewRequest("POST", ts.URL+"/api/agentsec/telemetry", strings.NewReader(string(b)))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	// Geçerli imza → 200 kabul.
+	if code := send(obs.Signature); code != http.StatusOK {
+		t.Fatalf("geçerli imzalı telemetri 200 olmalı: %d", code)
+	}
+	// Graf beslendi mi → findings (authed) ile doğrula.
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+	_, ob := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	resp, err := authedGET(t, ts.URL+"/api/agentsec/findings", ob["token"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Count int `json:"count"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.Count != 1 {
+		t.Fatalf("imzalı telemetri sonrası tam 1 exfil bulgusu bekleniyordu: %d", out.Count)
+	}
+
+	// Bozuk imza → 403 (ve graf yeniden beslenmez).
+	if code := send([]byte("bozuk-imza")); code != http.StatusForbidden {
+		t.Fatalf("bozuk imza 403 olmalı: %d", code)
 	}
 }
 
