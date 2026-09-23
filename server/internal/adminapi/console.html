@@ -787,6 +787,16 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🕵️ Agentic Tehdit Savunması</h2>
+            <span class="sp"></span><span id="ag-count" class="count">0</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">AI-agent nedensellik grafından exfiltration zincirleri (untrusted bağlam → credential okuma → dış yazma). Salt-okunur; telemetri <code>/api/agentsec/events</code> ile beslenir.</p>
+            <button class="btn sm" id="ag-refresh" type="button">🔄 Yenile</button>
+            <div id="ag-result" style="margin-top:10px"></div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
           <div class="head"><h2>🧩 Olay Korelasyonu (Incident)</h2>
             <span class="sp"></span><span id="inc-count" class="count">0</span></div>
           <div class="body">
@@ -2082,6 +2092,25 @@
         '<div class="tbl-wrap"><table><thead><tr><th>Zaman</th><th>Cihaz</th><th>Önem</th><th>Mesaj</th>'+techHdr+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Tarama başarısız: '+esc(e.message)+'</p>'; });
   }
+  // loadAgentSec: agentic tehdit savunması bulgularını (Agent Causality Graph exfil
+  // zincirleri) salt-okunur çeker ve gösterir. Tüm alanlar esc()'ten geçer (XSS).
+  function loadAgentSec(){
+    var out=$("ag-result"), cnt=$("ag-count");
+    out.innerHTML='<p class="hint" style="margin:0">Yükleniyor…</p>';
+    api("/api/agentsec/findings").then(function(r){
+      var f=(r&&r.findings)||[];
+      if(cnt) cnt.textContent=f.length;
+      if(!f.length){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">✓ Aktif exfiltration bulgusu yok. (Telemetri /api/agentsec/events ile beslenir.)</p>'; return; }
+      var rows=f.map(function(x){
+        return "<tr><td class='mono'>"+esc(x.agent_id||"")+"</td>"+
+          "<td class='mono'>"+esc(x.credential||"")+"</td>"+
+          "<td class='mono'>"+esc(x.sink||"")+"</td>"+
+          "<td><span class='sev CRITICAL'>"+esc(x.trust||"")+"</span></td></tr>";
+      }).join("");
+      out.innerHTML='<p class="hint" style="margin:0 0 8px;color:var(--crit,#f43f5e)">⚠ '+f.length+' exfiltration zinciri (untrusted → credential → dış):</p>'+
+        '<div class="tbl-wrap"><table><thead><tr><th>Agent</th><th>Credential</th><th>Sink</th><th>Güven</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
+  }
   // testEventAgainstRules: gerçek bir olayı Kural Test Aracı'na taşır — Güvenlik
   // görünümüne geçer, kategori/mesajı doldurur, testi çalıştırır ve aracı görünür
   // kılar. Olaylar akışını tespit motoruna bağlar (bu olay hangi kuralları tetikler?).
@@ -2616,6 +2645,7 @@
   $("posture-csv").onclick=exportPosture;
   $("rt-run").onclick=testRule;
   $("hunt-run").onclick=runHunt;
+  $("ag-refresh").onclick=loadAgentSec;
   $("evt-pending").onclick=function(){ state.pendingOnly=!state.pendingOnly; this.className="btn ghost sm"+(state.pendingOnly?" on":""); renderEvents(); };
   $("sw-run").onclick=searchSoftware;
   $("sw-q").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); searchSoftware(); } });
