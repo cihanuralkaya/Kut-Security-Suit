@@ -1,0 +1,62 @@
+package aisec
+
+import "testing"
+
+// TestEvaluateExfiltration, INV-AG-004'ü doğrular: credential.read + external.write
+// birlikteliği tainted'te DENY, untrusted'ta REQUIRE_HUMAN, trusted'ta ALLOW; tek başına
+// bir yetenek veya güvenilir context serbest.
+func TestEvaluateExfiltration(t *testing.T) {
+	both := CapSet{CapCredentialRead: true, CapExternalWrite: true}
+	onlyRead := CapSet{CapCredentialRead: true}
+	onlyWrite := CapSet{CapExternalWrite: true}
+
+	cases := []struct {
+		name  string
+		trust TrustLevel
+		eff   CapSet
+		want  AGDecision
+	}{
+		{"tainted+both→DENY", Tainted, both, AGDeny},
+		{"untrusted+both→REQUIRE_HUMAN", Untrusted, both, AGRequireHuman},
+		{"trusted+both→ALLOW", Trusted, both, AGAllow},
+		{"tainted+onlyRead→ALLOW", Tainted, onlyRead, AGAllow},
+		{"tainted+onlyWrite→ALLOW", Tainted, onlyWrite, AGAllow},
+		{"tainted+none→ALLOW", Tainted, CapSet{}, AGAllow},
+	}
+	for _, c := range cases {
+		if got := EvaluateExfiltration(c.trust, c.eff); got != c.want {
+			t.Errorf("%s: got %s want %s", c.name, got, c.want)
+		}
+	}
+}
+
+// TestToolOutputIsData, INV-AG-005'i doğrular: tool/MCP çıktısı en fazla Untrusted'tır
+// ve bir agent onu okuyunca güveni yükselmez (yalnız düşer/korunur).
+func TestToolOutputIsData(t *testing.T) {
+	if ToolOutputTrust() != Untrusted {
+		t.Fatalf("tool çıktısı en fazla Untrusted olmalı: %s", ToolOutputTrust())
+	}
+	// Güvenilir agent tool okur → en fazla Untrusted'a düşer (talimat yetkisi kazanmaz).
+	if got := AbsorbToolOutput(Trusted); got != Untrusted {
+		t.Fatalf("trusted agent tool okuyunca Untrusted olmalı: %s", got)
+	}
+	// Zaten tainted agent tool okur → tainted kalır (yükselme yok).
+	if got := AbsorbToolOutput(Tainted); got != Tainted {
+		t.Fatalf("tainted agent tool okuyunca tainted kalmalı: %s", got)
+	}
+}
+
+// TestExfiltrationChainScenario, uçtan-uca senaryo: güvenilir agent untrusted web +
+// tool çıktısı okur (zincir tainted olur) ve credential+external yeteneğiyle exfil
+// dener → DENY.
+func TestExfiltrationChainScenario(t *testing.T) {
+	// Zincir: iç agent (Trusted) → untrusted web (Untrusted) → tainted araç sonucu.
+	trust := ChainTrust(Trusted, Untrusted, Tainted)
+	eff := EffectiveCapabilities(
+		CapSet{CapCredentialRead: true, CapExternalWrite: true}, // human
+		CapSet{CapCredentialRead: true, CapExternalWrite: true}, // agent
+	)
+	if got := EvaluateExfiltration(trust, eff); got != AGDeny {
+		t.Fatalf("tainted zincir + credential + external → DENY bekleniyordu: %s", got)
+	}
+}
