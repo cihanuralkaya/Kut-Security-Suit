@@ -31,6 +31,7 @@ import (
 	"kut.corp/suite/server/internal/aiassist"
 	"kut.corp/suite/server/internal/aibrain"
 	"kut.corp/suite/server/internal/aisec"
+	"kut.corp/suite/server/internal/aisecnorm"
 	"kut.corp/suite/server/internal/auditexport"
 	"kut.corp/suite/server/internal/authtoken"
 	"kut.corp/suite/server/internal/authz"
@@ -422,6 +423,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/graph/pivot", s.authed(s.handleGraphPivot))
 	mux.HandleFunc("GET /api/graph/anomaly", s.authed(s.handleGraphAnomaly))
 	mux.HandleFunc("GET /api/agentsec/findings", s.authed(s.handleAgentSecFindings))
+	mux.HandleFunc("GET /api/agentsec/canonical", s.authed(s.handleAgentSecCanonical))
 	mux.HandleFunc("POST /api/agentsec/events", s.authed(s.handleAgentSecEvents))
 	mux.HandleFunc("POST /api/ai/triage", s.authed(s.handleAITriage))
 	// Session DEĞİL, ed25519 İMZA ile kimlik doğrulanan agent telemetri ucu (P0-A).
@@ -1408,6 +1410,24 @@ func (s *Server) handleAgentSecFindings(w http.ResponseWriter, _ *http.Request, 
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"findings": out, "count": len(out)})
+}
+
+// handleAgentSecCanonical, AG exfil bulgularını MEVCUT kanonik olay modeline (model.Event)
+// çevirip döner (P0-B). Amaç: agent güvenlik tespitlerini ikinci bir modele değil, dedup
+// (§6)/korelasyon (§5)/SIEM ile aynı kanonik hatta oturtmak. Salt-okunur; enforcement
+// üretmez (INV-AG-010). Opsiyonel ?tenant=<id> atıf içindir (tenant kişisel veri değildir).
+func (s *Server) handleAgentSecCanonical(w http.ResponseWriter, r *http.Request, _ string) {
+	if s.agentSec == nil {
+		writeErr(w, http.StatusNotFound, "agentic tehdit savunması etkin değil")
+		return
+	}
+	tenant := strings.TrimSpace(r.URL.Query().Get("tenant"))
+	evs := aisecnorm.FindingsToEvents(s.agentSec.Findings(), tenant, 0, s.now().UTC())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"schema_version": model.EventSchemaVersion,
+		"events":         evs,
+		"count":          len(evs),
+	})
 }
 
 // handleAgentSecEvents, agent-davranış gözlemlerini (düğüm + kenar) ingest eder ve Agent
