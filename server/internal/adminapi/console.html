@@ -797,6 +797,16 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>📁 SOC Vakaları</h2>
+            <span class="sp"></span><span id="case-count" class="count">0</span></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Tespit → incident → otomatik SOC vakası yaşam döngüsü. Salt-okunur liste.</p>
+            <button class="btn sm" id="case-refresh" type="button">🔄 Yenile</button>
+            <div id="case-result" style="margin-top:10px"></div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
           <div class="head"><h2>🧩 Olay Korelasyonu (Incident)</h2>
             <span class="sp"></span><span id="inc-count" class="count">0</span></div>
           <div class="body">
@@ -2111,6 +2121,24 @@
         '<div class="tbl-wrap"><table><thead><tr><th>Agent</th><th>Credential</th><th>Sink</th><th>Güven</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
   }
+  // loadCases: SOC vaka listesini (tespit→incident→otomatik vaka) salt-okunur çeker.
+  function loadCases(){
+    var out=$("case-result"), cnt=$("case-count");
+    out.innerHTML='<p class="hint" style="margin:0">Yükleniyor…</p>';
+    api("/api/cases").then(function(r){
+      var cs=(r&&r.cases)||[];
+      if(cnt) cnt.textContent=cs.length;
+      if(!cs.length){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">Henüz açık vaka yok.</p>'; return; }
+      var rows=cs.map(function(c){
+        return "<tr><td class='mono' style='font-size:11px'>"+esc(c.id||"")+"</td>"+
+          "<td>"+esc(c.title||"")+"</td>"+
+          "<td><span class='sev "+esc(c.severity||"")+"'>"+esc(c.severity||"")+"</span></td>"+
+          "<td>"+esc(c.status||"")+"</td>"+
+          "<td class='mono' style='font-size:11px'>"+esc(relTime(c.created_at||""))+"</td></tr>";
+      }).join("");
+      out.innerHTML='<div class="tbl-wrap"><table><thead><tr><th>ID</th><th>Başlık</th><th>Önem</th><th>Durum</th><th>Oluşturuldu</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
+  }
   // testEventAgainstRules: gerçek bir olayı Kural Test Aracı'na taşır — Güvenlik
   // görünümüne geçer, kategori/mesajı doldurur, testi çalıştırır ve aracı görünür
   // kılar. Olaylar akışını tespit motoruna bağlar (bu olay hangi kuralları tetikler?).
@@ -2646,6 +2674,7 @@
   $("rt-run").onclick=testRule;
   $("hunt-run").onclick=runHunt;
   $("ag-refresh").onclick=loadAgentSec;
+  $("case-refresh").onclick=loadCases;
   $("evt-pending").onclick=function(){ state.pendingOnly=!state.pendingOnly; this.className="btn ghost sm"+(state.pendingOnly?" on":""); renderEvents(); };
   $("sw-run").onclick=searchSoftware;
   $("sw-q").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); searchSoftware(); } });
