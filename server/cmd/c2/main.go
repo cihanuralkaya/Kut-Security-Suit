@@ -614,13 +614,15 @@ func run() error {
 	adminAPI.SetEntityGraph(entGraph) // salt-okunur pivot uçları (/api/graph/pivot)
 	adminAPI.SetSeqModel(seqModel)    // salt-okunur sekans skoru (/api/hunt/sequence-score)
 	adminAPI.SetAgentSec(agentSec)    // agentic tehdit savunması bulguları (/api/agentsec/findings)
-	// SOC AI brain (fail-open): KUT_AI_URL varsa dış sağlayıcı, yoksa deterministik (nil).
+	// SOC AI brain (fail-open): KUT_AI_URL varsa dış sağlayıcı; yoksa SIFIR-AĞ deterministik
+	// yerel sağlayıcı (plan varsayılanı) — CANLI seqModel'i paylaşır, böylece yerel AI de
+	// gerçek PROCESS verisinden beslenir (dış servis olmadan triyaj/füzyon çalışır).
 	var socBrain *aibrain.Brain
 	if aiURL := os.Getenv("KUT_AI_URL"); aiURL != "" {
 		socBrain = aibrain.New(aibrain.NewHTTPProvider(aiURL, os.Getenv("KUT_AI_KEY"), os.Getenv("KUT_AI_MODEL"), 0), 0)
 		log.Printf("SOC AI brain: dış sağlayıcı bağlı (%s)", aiURL)
 	} else {
-		socBrain = aibrain.New(nil, 0) // dış AI yok → fail-open, deterministik yol
+		socBrain = aibrain.New(aibrain.NewLocalProviderWithSeq(seqModel), 0) // yerel deterministik varsayılan
 	}
 	adminAPI.SetBrain(socBrain) // salt-öneri triyaj (/api/ai/triage; fail-open)
 	// Agent telemetri güven doğrulayıcı (P0-A): KUT_AGENT_KEYS'ten ed25519 anahtarları
