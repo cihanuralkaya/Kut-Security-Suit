@@ -22,12 +22,23 @@ import (
 // (lease × azami-deneme) kat kat uzun; böylece redelivery boyunca idempotency korunur.
 const ttl = 24 * time.Hour
 
-// Log, yürütülen komut kimliklerini (kalıcı) ve ack kuyruğunu (geçici) tutar.
+// Result, bir komutun YÜRÜTME sonucudur (SUCCEEDED/FAILED) — sunucuya bildirilir ve
+// ACK'ten (yalnız teslim/alındı) FARKLIDIR. Sunucu bunu desired→effective durum geçişi
+// için kullanır (ör. QUARANTINE OK → cihaz gerçekten izole).
+type Result struct {
+	ID     string
+	OK     bool // true=SUCCEEDED, false=FAILED
+	Detail string
+}
+
+// Log, yürütülen komut kimliklerini (kalıcı), ack kuyruğunu ve sonuç kuyruğunu
+// (ikisi de geçici) tutar.
 type Log struct {
 	mu       sync.Mutex
 	path     string
 	executed map[string]int64    // komut id -> yürütülme anı (unix); kalıcı
 	acks     map[string]struct{} // bildirilecek onaylar; geçici
+	results  map[string]Result   // bildirilecek yürütme sonuçları; geçici
 	now      func() time.Time
 }
 
@@ -39,6 +50,7 @@ func Open(dataDir string) *Log {
 		path:     filepath.Join(dataDir, "executed-commands.json"),
 		executed: map[string]int64{},
 		acks:     map[string]struct{}{},
+		results:  map[string]Result{},
 		now:      time.Now,
 	}
 	if b, err := os.ReadFile(l.path); err == nil {
@@ -107,6 +119,41 @@ func (l *Log) ConfirmAcks(ids []string) {
 	defer l.mu.Unlock()
 	for _, id := range ids {
 		delete(l.acks, id)
+	}
+}
+
+// QueueResult, komutun yürütme sonucunu (SUCCEEDED/FAILED) bildirilecek kuyruğa ekler.
+// Aynı id yeniden kuyruklanırsa son sonuç geçerlidir. Boş id yok sayılır.
+func (l *Log) QueueResult(id string, ok bool, detail string) {
+	if id == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.results[id] = Result{ID: id, OK: ok, Detail: detail}
+}
+
+// TakeResults, o an bildirilecek sonuçların anlık kopyasını döner (kuyruğu BOŞALTMAZ —
+// heartbeat başarılıysa ConfirmResults ile temizlenir; başarısızsa yeniden denenir).
+func (l *Log) TakeResults() []Result {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.results) == 0 {
+		return nil
+	}
+	out := make([]Result, 0, len(l.results))
+	for _, r := range l.results {
+		out = append(out, r)
+	}
+	return out
+}
+
+// ConfirmResults, sunucuya BAŞARIYLA bildirilen sonuçları kuyruktan çıkarır.
+func (l *Log) ConfirmResults(ids []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, id := range ids {
+		delete(l.results, id)
 	}
 }
 
