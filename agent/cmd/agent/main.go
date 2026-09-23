@@ -743,18 +743,18 @@ func handleCommands(ctx context.Context, cmds []*kutv1.Command, quar *quarantine
 		case kutv1.Command_COMMAND_TYPE_QUARANTINE:
 			if err := quar.Apply(); err != nil {
 				log.Printf("karantina uygulanamadı: %v", err)
-				queueResult(clog, id, false, err.Error()) // effective-state: uygulanamadı
+				queueResult(clog, id, false, c.GetType(), err.Error()) // effective-state: uygulanamadı
 			} else {
 				log.Println("karantina uygulandı")
-				queueResult(clog, id, true, "") // effective-state: cihaz gerçekten izole
+				queueResult(clog, id, true, c.GetType(), "") // effective-state: cihaz gerçekten izole
 			}
 		case kutv1.Command_COMMAND_TYPE_UNQUARANTINE:
 			if err := quar.Release(); err != nil {
 				log.Printf("karantina kaldırılamadı: %v", err)
-				queueResult(clog, id, false, err.Error())
+				queueResult(clog, id, false, c.GetType(), err.Error())
 			} else {
 				log.Println("karantina kaldırıldı")
-				queueResult(clog, id, true, "")
+				queueResult(clog, id, true, c.GetType(), "")
 			}
 		case kutv1.Command_COMMAND_TYPE_RUN_SIGNED_SCRIPT:
 			// Uzun sürebilir; heartbeat döngüsünü bloklamamak için arka planda.
@@ -785,9 +785,9 @@ func handleCommands(ctx context.Context, cmds []*kutv1.Command, quar *quarantine
 }
 
 // queueResult, komut yürütme sonucunu güvenli kuyruğa alır (clog nil olabilir).
-func queueResult(clog *cmdlog.Log, id string, ok bool, detail string) {
+func queueResult(clog *cmdlog.Log, id string, ok bool, typ kutv1.Command_CommandType, detail string) {
 	if clog != nil {
-		clog.QueueResult(id, ok, detail)
+		clog.QueueResult(id, ok, int32(typ), detail)
 	}
 }
 
@@ -802,7 +802,12 @@ func toProtoResults(rs []cmdlog.Result) []*kutv1.CommandResult {
 		if !r.OK {
 			st = kutv1.CommandStatus_COMMAND_STATUS_FAILED
 		}
-		out = append(out, &kutv1.CommandResult{CommandId: r.ID, Status: st, Detail: r.Detail})
+		out = append(out, &kutv1.CommandResult{
+			CommandId:   r.ID,
+			Status:      st,
+			CommandType: kutv1.Command_CommandType(r.Type),
+			Detail:      r.Detail,
+		})
 	}
 	return out
 }

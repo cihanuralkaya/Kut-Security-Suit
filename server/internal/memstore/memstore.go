@@ -346,6 +346,30 @@ func (s *Store) SetDeviceStatus(_ context.Context, deviceID, status string) erro
 	return nil
 }
 
+// ApplyCommandResults, başarılı karantina sonuçlarında EFFECTIVE cihaz durumunu ayarlar
+// (F-D: desired QUARANTINE_PENDING → effective QUARANTINED). Başarısız/ilgisiz sonuçlar
+// durumu değiştirmez.
+func (s *Store) ApplyCommandResults(_ context.Context, deviceID string, outcomes []model.CommandOutcome) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, ok := s.devices[deviceID]
+	if !ok {
+		return nil
+	}
+	for _, o := range outcomes {
+		if !o.OK {
+			continue
+		}
+		switch o.Type {
+		case "QUARANTINE":
+			d.status = "QUARANTINED"
+		case "UNQUARANTINE":
+			d.status = "ACTIVE"
+		}
+	}
+	return nil
+}
+
 func (s *Store) PendingCommands(_ context.Context, deviceID string) ([]*kutv1.Command, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

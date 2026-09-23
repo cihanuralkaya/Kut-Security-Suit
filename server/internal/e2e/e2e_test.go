@@ -409,6 +409,10 @@ func (m *memStore) PendingCommands(_ context.Context, _ string) ([]*kutv1.Comman
 
 func (m *memStore) AckCommands(_ context.Context, _ string, _ []string) error { return nil }
 
+func (m *memStore) ApplyCommandResults(_ context.Context, _ string, _ []model.CommandOutcome) error {
+	return nil
+}
+
 func (m *memStore) setPolicy(b *kutv1.PolicyBundle) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -114,6 +114,10 @@ message CommandResult {
   string command_id = 1;
   CommandStatus status = 2;
   string detail = 3; // opsiyonel hata/bağlam
+  // command_type, sonucun HANGİ komut tipine ait olduğudur. Sonucu self-describing
+  // yapar: sunucu effective-state kararını (ör. QUARANTINE SUCCEEDED → QUARANTINED)
+  // komut-geçmişi araması yapmadan verir.
+  Command.CommandType command_type = 4;
 }
 
 message PolicySubscribeRequest {
