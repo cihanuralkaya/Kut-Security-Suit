@@ -100,6 +100,18 @@ type LocalProvider struct {
 // NewLocalProvider, boş bir yerel sağlayıcı oluşturur.
 func NewLocalProvider() *LocalProvider { return &LocalProvider{seq: NewSeqModel()} }
 
+// NewLocalProviderWithSeq, MEVCUT (canlı) bir SeqModel'i PAYLAŞAN bir yerel sağlayıcı
+// oluşturur. Böylece ajan PROCESS soyağacından pasif öğrenen taban çizgisi, hem
+// /api/hunt/sequence-score hem de füzyon/triyaj (Brain) yolunda AYNI modeli kullanır —
+// yerel deterministik AI, dış servis olmadan da gerçek verinden beslenir. seq nil ise
+// boş bir model kullanılır (NewLocalProvider ile eşdeğer).
+func NewLocalProviderWithSeq(seq *SeqModel) *LocalProvider {
+	if seq == nil {
+		seq = NewSeqModel()
+	}
+	return &LocalProvider{seq: seq}
+}
+
 // Derleme-zamanı güvence: LocalProvider, Provider arayüzünü karşılar.
 var _ Provider = (*LocalProvider)(nil)
 

@@ -69,6 +69,33 @@ func TestBrainWithLocalProvider(t *testing.T) {
 	}
 }
 
+// TestLocalProviderSharesLiveSeqModel, NewLocalProviderWithSeq'in verilen SeqModel'i
+// PAYLAŞTIĞINI doğrular: canlı modele (sequence-score yolu) eklenen taban çizgisi, Brain
+// yolundaki ScoreSequence skorunu da etkiler — yerel deterministik AI gerçek veriden beslenir.
+func TestLocalProviderSharesLiveSeqModel(t *testing.T) {
+	live := NewSeqModel()
+	for i := 0; i < 10; i++ {
+		live.Observe([]string{"bash", "ls", "cat"}) // canlı taban çizgisi
+	}
+	b := New(NewLocalProviderWithSeq(live), 500*time.Millisecond)
+
+	// Taban çizgisiyle uyumlu dizi → düşük nadirlik.
+	common, ok := b.ScoreSequence(context.Background(), SequenceInput{Tokens: []string{"bash", "ls"}})
+	if !ok {
+		t.Fatal("paylaşımlı yerel sağlayıcıda ScoreSequence ok=true olmalı")
+	}
+	// Görülmemiş geçiş → yüksek nadirlik.
+	rare, _ := b.ScoreSequence(context.Background(), SequenceInput{Tokens: []string{"bash", "nmap"}})
+	if !(rare.Score > common.Score) {
+		t.Fatalf("paylaşımlı model: nadir dizi (%.1f) yaygın diziden (%.1f) yüksek skorlamalı", rare.Score, common.Score)
+	}
+
+	// nil seq → boş modelle güvenli (NewLocalProvider eşdeğeri).
+	if b2 := New(NewLocalProviderWithSeq(nil), 0); !b2.Enabled() {
+		t.Fatal("nil seq ile de sağlayıcı etkin olmalı")
+	}
+}
+
 func TestSuggestTriageUsesRiskFusion(t *testing.T) {
 	lp := NewLocalProvider()
 	// Yüksek deterministik sinyaller → HIGH/CRITICAL öncelik, FP değil.
