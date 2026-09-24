@@ -555,7 +555,9 @@ func requestLog(next http.Handler) http.Handler {
 		start := time.Now()
 		next.ServeHTTP(sw, r)
 		if r.URL.Path != "/healthz" && r.URL.Path != "/readyz" {
-			log.Printf("[access] %s %s %d %dms rid=%s", r.Method, r.URL.Path, sw.status, time.Since(start).Milliseconds(), rid)
+			// Path %q ile yazılır: içindeki CR/LF/kontrol karakterleri kaçışlanır, böylece
+			// istemci bir yol içine sahte "[access]" satırı enjekte edemez (CWE-117 log injection).
+			log.Printf("[access] %s %q %d %dms rid=%s", r.Method, r.URL.Path, sw.status, time.Since(start).Milliseconds(), rid)
 		}
 	})
 }
@@ -1996,9 +1998,12 @@ func scimUUID() string {
 }
 
 // handleSCIMCreate, yeni bir SCIM kullanıcısı sağlar (sunucu id atar).
-func (s *Server) handleSCIMCreate(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleSCIMCreate(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.scim == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
 	var u iam.User
@@ -2020,9 +2025,12 @@ func scimTenant(r *http.Request) string {
 }
 
 // handleSCIMGet, bir SCIM kullanıcısını döner.
-func (s *Server) handleSCIMGet(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleSCIMGet(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.scim == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
 	u, err := s.scim.Get(scimTenant(r), r.PathValue("id"))
@@ -2033,9 +2041,12 @@ func (s *Server) handleSCIMGet(w http.ResponseWriter, r *http.Request, _ string)
 }
 
 // handleSCIMReplace, bir SCIM kullanıcısını tümüyle değiştirir (PUT).
-func (s *Server) handleSCIMReplace(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleSCIMReplace(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.scim == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
 	var u iam.User
@@ -2050,9 +2061,12 @@ func (s *Server) handleSCIMReplace(w http.ResponseWriter, r *http.Request, _ str
 }
 
 // handleSCIMDeactivate, bir SCIM kullanıcısını devre dışı bırakır (soft-delete; active=false).
-func (s *Server) handleSCIMDeactivate(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleSCIMDeactivate(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.scim == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
 	u, err := s.scim.Deactivate(scimTenant(r), r.PathValue("id"))
@@ -2065,9 +2079,12 @@ func (s *Server) handleSCIMDeactivate(w http.ResponseWriter, r *http.Request, _ 
 // --- MSP müşteri yönetimi (§37) — ADMIN --------------------------------------
 
 // handleMSPCreateCustomer, yeni bir MSP müşterisi ekler.
-func (s *Server) handleMSPCreateCustomer(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleMSPCreateCustomer(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.mspStore == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
 	var req struct {
@@ -2089,9 +2106,12 @@ func (s *Server) handleMSPCreateCustomer(w http.ResponseWriter, r *http.Request,
 }
 
 // handleMSPListCustomers, tüm MSP müşterilerini döner.
-func (s *Server) handleMSPListCustomers(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleMSPListCustomers(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.mspStore == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
 	list, err := s.mspStore.MSPListCustomers()
@@ -2102,9 +2122,12 @@ func (s *Server) handleMSPListCustomers(w http.ResponseWriter, r *http.Request, 
 }
 
 // handleMSPDeactivateCustomer, bir MSP müşterisini devre dışı bırakır (soft-delete).
-func (s *Server) handleMSPDeactivateCustomer(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleMSPDeactivateCustomer(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.mspStore == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
 	ok, err := s.mspStore.MSPDeactivateCustomer(r.PathValue("id"))
@@ -2178,6 +2201,9 @@ func (s *Server) handleHunt(w http.ResponseWriter, r *http.Request, _ string) {
 	}
 	if !decode(w, r, &req) {
 		return
+	}
+	if req.Limit <= 0 || req.Limit > 1000 { // sunucu-tarafı tavan: aşırı LIMIT ile bellek şişmesini önle
+		req.Limit = 200
 	}
 	f := adminread.EventFilter{
 		DeviceID: req.DeviceID, Severity: req.Severity, Category: req.Category,
@@ -2555,7 +2581,13 @@ func (s *Server) handleWipeDevice(w http.ResponseWriter, r *http.Request, adminI
 		var req struct {
 			Reason string `json:"reason"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&req) // gerekçe opsiyonel
+		// Gövde MaxBytesReader ile sınırlanır (OOM DoS önlenir); gerekçe opsiyonel olduğundan
+		// boş gövde (io.EOF) kabul edilir, ama diğer hatalar (aşırı boyut/bozuk JSON) reddedilir.
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			writeErr(w, http.StatusBadRequest, "geçersiz istek gövdesi")
+			return
+		}
 		if respondErr(w, s.adminSvc.RequestWipe(r.Context(), adminID, r.PathValue("id"), req.Reason)) {
 			return
 		}
@@ -2667,6 +2699,9 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request, 
 	if name == "" {
 		name = "artifact.bin"
 	}
+	// filename token'ından çıkış yapılmasını önle: tırnak/ters-eğik/kontrol karakterlerini
+	// etkisizleştir (CWE-116 — Content-Disposition filename injection/spoofing).
+	name = strings.NewReplacer(`"`, "_", `\`, "_", "\r", "_", "\n", "_").Replace(name)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -2696,8 +2731,7 @@ func (s *Server) handleEventCase(w http.ResponseWriter, r *http.Request, adminID
 		Assignee string `json:"assignee"`
 		Note     string `json:"note"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "geçersiz istek gövdesi"})
+	if !decode(w, r, &req) { // decode: gövde MaxBytesReader ile sınırlı + hata yanıtı
 		return
 	}
 	if respondErr(w, s.adminSvc.UpdateEventCase(r.Context(), adminID, r.PathValue("id"), req.Assignee, req.Note)) {

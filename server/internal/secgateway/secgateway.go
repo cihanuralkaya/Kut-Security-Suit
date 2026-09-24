@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"kut.corp/suite/server/internal/authz"
+	"kut.corp/suite/server/internal/scope"
 	"kut.corp/suite/server/internal/seccontract"
 )
 
@@ -54,6 +55,16 @@ func (b *Gateway) Authorize(req seccontract.ActionRequest) seccontract.Authoriza
 	r, ok := mapRequester(req.Principal.Type)
 	if !ok {
 		return seccontract.Deny(seccontract.ReasonRBACDeny)
+	}
+
+	// 2.5) Boş yüksek-etki Target → DENY (CONTRACTS §1). authz TargetCount<1'i 1'e
+	// yükselttiğinden blast-radius kapısını atlar; burada fail-closed kapatırız (yoksa
+	// hedefsiz yıkıcı/yüksek-etki istek için DeviceID="" bir grant mint edilirdi).
+	// NOT: AI'ın yüksek-etki grant ALMASI frozen sözleşmede (sert-otonom-yarıçap içinde)
+	// KASITLI olarak izinlidir; yürütme yine GuardedExecutor'da bloklanır — bu yüzden
+	// grant-mint'te ayrı bir capability kapısı EKLENMEZ (§1-13 semantiği değiştirilmez).
+	if len(req.Targets) == 0 && req.EffectiveImpact() >= scope.HighImpact {
+		return seccontract.Deny(seccontract.ReasonScopeDeny)
 	}
 
 	// 3) Canlı gateway: etki Action'dan server-side türetilir (H6); TargetCount

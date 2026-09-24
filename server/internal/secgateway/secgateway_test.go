@@ -103,6 +103,18 @@ func TestHumanSoftExceed_Confirmed_Allow(t *testing.T) {
 	}
 }
 
+// TestEmptyHighImpactTargets_Deny, boş Target listeli yüksek-etki isteğin fail-closed
+// DENY edildiğini doğrular (CONTRACTS §1). authz TargetCount<1'i 1'e yükselttiğinden
+// blast-radius kapısını atlar; köprü bunu ayrıca kapatmalı (yoksa DeviceID="" grant mint edilir).
+func TestEmptyHighImpactTargets_Deny(t *testing.T) {
+	gw := newTestGW(authz.DefaultPolicy())
+	d := gw.Authorize(req("t1", seccontract.PrincipalHuman, scope.ActionQuarantine, 0, true))
+	assertValid(t, d)
+	if d.Result != seccontract.ResultDeny || d.Grant != nil {
+		t.Fatalf("boş yüksek-etki hedef DENY (grant yok) bekliyordu: %+v", d)
+	}
+}
+
 func TestAutonomousHardExceed_Deny(t *testing.T) {
 	gw := newTestGW(authz.DefaultPolicy()) // HardAutonomousRadius=3
 	d := gw.Authorize(req("t1", seccontract.PrincipalAI, scope.ActionQuarantine, 5, true /* onay otonomu kurtarmaz */))

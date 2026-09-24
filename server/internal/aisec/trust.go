@@ -101,7 +101,10 @@ type TrustVerifier struct {
 
 	mu      sync.Mutex
 	lastSeq map[string]uint64
-	seen    map[string]bool
+	// seen: gözlenen nonce'lar → gözlem zaman damgası. Anahtar agentID+0x1f+nonce (agent
+	// başına ad-alanı: bir ajanın nonce'u başka ajanınkiyle çakışıp onu reddedemez). Değer,
+	// tazelik penceresi dışında kalan girdileri budamak içindir (sınırsız büyüme/DoS önlenir).
+	seen map[string]time.Time
 }
 
 // NewTrustVerifier oluşturur. now nil ise time.Now; window<=0 ise 5dk (timestamp tazeliği).
@@ -112,7 +115,7 @@ func NewTrustVerifier(reg AgentKeyRegistry, now func() time.Time, window time.Du
 	if window <= 0 {
 		window = 5 * time.Minute
 	}
-	return &TrustVerifier{reg: reg, now: now, window: window, lastSeq: map[string]uint64{}, seen: map[string]bool{}}
+	return &TrustVerifier{reg: reg, now: now, window: window, lastSeq: map[string]uint64{}, seen: map[string]time.Time{}}
 }
 
 // Verify, gözlemi doğrular. nil → KABUL (ve durum güncellenir); aksi halde spesifik DENY
@@ -131,6 +134,12 @@ func (v *TrustVerifier) Verify(o SignedObservation) error {
 	if d := now.Sub(o.Timestamp); d > v.window || d < -v.window {
 		return ErrExpiredTimestamp
 	}
+	// Savunma-derinliği: ed25519.Verify, anahtar 32 baytta değilse PANİK eder. Kayıt
+	// yolu bugün uzunluğu doğruluyor; yine de bozuk bir kayıtlı anahtarın ingest
+	// goroutine'ini düşürmesini önlemek için burada da fail-closed kontrol ederiz.
+	if len(pub) != ed25519.PublicKeySize {
+		return ErrBadSignature
+	}
 	if !ed25519.Verify(pub, SigningBytes(o), o.Signature) {
 		return ErrBadSignature
 	}
@@ -140,10 +149,22 @@ func (v *TrustVerifier) Verify(o SignedObservation) error {
 	if o.Sequence <= v.lastSeq[o.AgentID] {
 		return ErrSequenceRollback
 	}
-	if o.Nonce == "" || v.seen[o.Nonce] {
+	if o.Nonce == "" {
+		return ErrReplay
+	}
+	// Tazelik penceresinden eski nonce'ları buda: pencere dışı bir nonce zaten tazelik
+	// kapısından geçemeyeceğinden yeniden-oynatılamaz → güvenle silinir (bellek sınırlı kalır).
+	cutoff := now.Add(-v.window)
+	for k, ts := range v.seen {
+		if ts.Before(cutoff) {
+			delete(v.seen, k)
+		}
+	}
+	key := o.AgentID + "\x1f" + o.Nonce
+	if _, dup := v.seen[key]; dup {
 		return ErrReplay
 	}
 	v.lastSeq[o.AgentID] = o.Sequence
-	v.seen[o.Nonce] = true
+	v.seen[key] = o.Timestamp
 	return nil
 }
