@@ -86,3 +86,31 @@ func TestTrustVerifierRejectStateNotPolluted(t *testing.T) {
 		t.Fatalf("geçerli telemetri kabul edilmeli (ret durumu kirletmemeliydi): %v", err)
 	}
 }
+
+// TestTrustVerifierNoncePerAgentNamespace, nonce ad-alanının AGENT BAŞINA olduğunu
+// doğrular: iki farklı ajan AYNI nonce dizesini kullanabilir (biri diğerini reddedemez),
+// ama aynı ajan kendi nonce'unu yeniden kullanamaz (replay). (Denetim düzeltmesi: nonce
+// eskiden global namespace'ti → ajanlar-arası çakışma meşru telemetriyi reddedebiliyordu.)
+func TestTrustVerifierNoncePerAgentNamespace(t *testing.T) {
+	pubA, privA, _ := ed25519.GenerateKey(nil)
+	pubB, privB, _ := ed25519.GenerateKey(nil)
+	reg := NewMemKeyRegistry()
+	reg.Register("agent-A", pubA, "t1")
+	reg.Register("agent-B", pubB, "t1")
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	v := NewTrustVerifier(reg, func() time.Time { return now }, time.Minute)
+	p := []byte(`{"nodes":[]}`)
+
+	// Agent A, "shared" nonce'uyla → KABUL.
+	if err := v.Verify(mkSigned("agent-A", "t1", 1, now, "shared", p, privA)); err != nil {
+		t.Fatalf("agent-A ilk gözlem kabul edilmeli: %v", err)
+	}
+	// Agent B, AYNI "shared" nonce'uyla → KABUL (ad-alanı agent başına; çakışma yok).
+	if err := v.Verify(mkSigned("agent-B", "t1", 1, now, "shared", p, privB)); err != nil {
+		t.Fatalf("agent-B aynı nonce'u kullanabilmeli (per-agent namespace): %v", err)
+	}
+	// Agent A kendi "shared" nonce'unu tekrar kullanırsa → REPLAY.
+	if err := v.Verify(mkSigned("agent-A", "t1", 2, now, "shared", p, privA)); !errors.Is(err, ErrReplay) {
+		t.Fatalf("agent-A kendi nonce'unu yeniden kullanınca ErrReplay dönmeli: %v", err)
+	}
+}

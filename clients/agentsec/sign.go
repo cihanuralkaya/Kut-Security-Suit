@@ -57,12 +57,16 @@ func signingBytes(agentID, tenantID string, seq uint64, ts time.Time, nonce stri
 	return b
 }
 
-func randNonce() string {
+// randNonce, kriptografik rastgele bir nonce üretir. FAIL-CLOSED: RNG başarısız olursa
+// SABİT bir değer yaymak yerine hata döner — öngörülebilir bir nonce hem tahmin edilebilir
+// olur hem de (aynı değer tekrarlanınca) sunucunun anti-replay'inde o ajanın telemetrisini
+// kalıcı olarak kilitler.
+func randNonce() (string, error) {
 	var b [12]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "n_fallback"
+		return "", err
 	}
-	return hex.EncodeToString(b[:])
+	return hex.EncodeToString(b[:]), nil
 }
 
 // ReportSigned, yığındaki gözlemleri İMZALAYIP /api/agentsec/telemetry'ye gönderir. Her
@@ -77,7 +81,10 @@ func (c *Client) ReportSigned(ctx context.Context, s *Signer, b *Batch) error {
 		return err
 	}
 	ts := time.Now()
-	nonce := randNonce()
+	nonce, err := randNonce()
+	if err != nil {
+		return fmt.Errorf("agentsec: nonce üretilemedi: %w", err)
+	}
 	seq := s.next()
 	sig := ed25519.Sign(s.priv, signingBytes(s.AgentID, s.TenantID, seq, ts, nonce, payload))
 
