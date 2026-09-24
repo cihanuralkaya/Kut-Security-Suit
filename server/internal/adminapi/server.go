@@ -1649,13 +1649,16 @@ func (s *Server) handleSequenceScore(w http.ResponseWriter, r *http.Request, _ s
 	})
 }
 
-// caseTenant, vaka isteğinin kiracı kimliğini X-Tenant-ID başlığından okur (boşsa
-// "default"a normalize edilir — tek-kiracılı uyum).
-func caseTenant(r *http.Request) string {
-	if t := casemgmt.NormTenant(strings.TrimSpace(r.Header.Get("X-Tenant-ID"))); t != "" {
+// caseTenant, işlem yapılacak kiracıyı DAĞITIMIN yapılandırılmış tenant'ından (KUT_TENANT_ID)
+// türetir — İSTEMCİ header'ından DEĞİL. Model dağıtım-başına tek-kiracılıdır (MSP her müşteriyi
+// ayrı deployment'a eşler). Eskiden tenant X-Tenant-ID başlığından alınıyordu ve oturuma bağlı
+// değildi; bu, kimliği doğrulanmış herhangi birinin başlığı değiştirerek başka kiracının
+// vakalarına erişmesine izin veriyordu (cross-tenant IDOR). Artık başlık YOK SAYILIR.
+func (s *Server) caseTenant() string {
+	if t := casemgmt.NormTenant(strings.TrimSpace(s.tenantID)); t != "" {
 		return t
 	}
-	return "default" // tek-kiracılı uyum (başlık yoksa varsayılan kiracı)
+	return "default"
 }
 
 // writeCaseErr, casemgmt alan hatalarını uygun HTTP durumuna eşler; hata yoksa false.
@@ -1703,7 +1706,7 @@ func (s *Server) handleCaseCreate(w http.ResponseWriter, r *http.Request, adminI
 		return
 	}
 	created, err := s.cases.Create(casemgmt.Case{
-		ID: newCaseID(), TenantID: caseTenant(r), Title: strings.TrimSpace(req.Title),
+		ID: newCaseID(), TenantID: s.caseTenant(), Title: strings.TrimSpace(req.Title),
 		Severity: casemgmt.Severity(strings.ToUpper(strings.TrimSpace(req.Severity))),
 		Status:   casemgmt.StatusOpen, Owner: adminID,
 		Assets: req.Assets, Users: req.Users, MITRE: req.MITRE,
@@ -1716,7 +1719,7 @@ func (s *Server) handleCaseCreate(w http.ResponseWriter, r *http.Request, adminI
 
 // handleCaseList, kiracının vakalarını listeler (VIEWER+; salt-okuma).
 func (s *Server) handleCaseList(w http.ResponseWriter, r *http.Request, _ string) {
-	list, err := s.cases.List(caseTenant(r))
+	list, err := s.cases.List(s.caseTenant())
 	if writeCaseErr(w, err) {
 		return
 	}
@@ -1725,7 +1728,7 @@ func (s *Server) handleCaseList(w http.ResponseWriter, r *http.Request, _ string
 
 // handleCaseGet, tek bir vakayı (zaman çizelgesiyle) döner (VIEWER+).
 func (s *Server) handleCaseGet(w http.ResponseWriter, r *http.Request, _ string) {
-	c, err := s.cases.Get(caseTenant(r), r.PathValue("id"))
+	c, err := s.cases.Get(s.caseTenant(), r.PathValue("id"))
 	if writeCaseErr(w, err) {
 		return
 	}
@@ -1744,7 +1747,7 @@ func (s *Server) handleCaseTransition(w http.ResponseWriter, r *http.Request, ad
 	if !decode(w, r, &req) {
 		return
 	}
-	c, err := s.cases.Transition(caseTenant(r), r.PathValue("id"), adminID,
+	c, err := s.cases.Transition(s.caseTenant(), r.PathValue("id"), adminID,
 		casemgmt.Status(strings.ToUpper(strings.TrimSpace(req.To))), req.Note)
 	if writeCaseErr(w, err) {
 		return
@@ -1764,7 +1767,7 @@ func (s *Server) handleCaseAttach(w http.ResponseWriter, r *http.Request, adminI
 	if !decode(w, r, &req) {
 		return
 	}
-	c, err := s.cases.Attach(caseTenant(r), r.PathValue("id"), adminID,
+	c, err := s.cases.Attach(s.caseTenant(), r.PathValue("id"), adminID,
 		casemgmt.AttachKind(strings.ToLower(strings.TrimSpace(req.Kind))), strings.TrimSpace(req.Ref))
 	if writeCaseErr(w, err) {
 		return
@@ -2011,17 +2014,17 @@ func (s *Server) handleSCIMCreate(w http.ResponseWriter, r *http.Request, adminI
 		return
 	}
 	u.ID = scimUUID()
-	created, err := s.scim.Create(scimTenant(r), u)
+	created, err := s.scim.Create(s.scimTenant(), u)
 	if respondErr(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
 }
 
-// scimTenant, SCIM isteğinin kiracı kimliğini X-Tenant-ID başlığından okur (boşsa
-// "default" — tek-kiracılı kurulumlar etkilenmez). İki kiracı DB'de izole edilir.
-func scimTenant(r *http.Request) string {
-	return iam.NormTenant(strings.TrimSpace(r.Header.Get("X-Tenant-ID")))
+// scimTenant, SCIM işleminin kiracısını DAĞITIMIN yapılandırılmış tenant'ından türetir —
+// İSTEMCİ header'ından DEĞİL (cross-tenant IDOR kapatıldı; bkz. caseTenant). Başlık yok sayılır.
+func (s *Server) scimTenant() string {
+	return iam.NormTenant(strings.TrimSpace(s.tenantID))
 }
 
 // handleSCIMGet, bir SCIM kullanıcısını döner.
@@ -2033,7 +2036,7 @@ func (s *Server) handleSCIMGet(w http.ResponseWriter, r *http.Request, adminID s
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
-	u, err := s.scim.Get(scimTenant(r), r.PathValue("id"))
+	u, err := s.scim.Get(s.scimTenant(), r.PathValue("id"))
 	if respondErr(w, err) {
 		return
 	}
@@ -2053,7 +2056,7 @@ func (s *Server) handleSCIMReplace(w http.ResponseWriter, r *http.Request, admin
 	if !decode(w, r, &u) {
 		return
 	}
-	replaced, err := s.scim.Replace(scimTenant(r), r.PathValue("id"), u)
+	replaced, err := s.scim.Replace(s.scimTenant(), r.PathValue("id"), u)
 	if respondErr(w, err) {
 		return
 	}
@@ -2069,7 +2072,7 @@ func (s *Server) handleSCIMDeactivate(w http.ResponseWriter, r *http.Request, ad
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
-	u, err := s.scim.Deactivate(scimTenant(r), r.PathValue("id"))
+	u, err := s.scim.Deactivate(s.scimTenant(), r.PathValue("id"))
 	if respondErr(w, err) {
 		return
 	}
