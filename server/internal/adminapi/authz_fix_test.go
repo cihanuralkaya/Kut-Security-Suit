@@ -12,6 +12,28 @@ import (
 	"kut.corp/suite/server/internal/msp"
 )
 
+// TestABACEvaluateRequiresAdmin, politika-değerlendirme ucunun (policy oracle) artık
+// RoleAdmin gerektirdiğini doğrular: VIEWER 403 alır, ADMIN geçer. (Denetim bulgusu:
+// önceden herhangi bir Viewer ABAC yüzeyini haritalayabiliyordu.)
+func TestABACEvaluateRequiresAdmin(t *testing.T) {
+	srv, store := newServer(t)
+	srv.SetABAC(iam.NewEngine(nil))
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	addAdmin(t, store, "v1", "viewer@x", "secret", admin.RoleViewer)
+	addAdmin(t, store, "a1", "admin@x", "secret", admin.RoleAdmin)
+	_, vb := post(t, ts.URL+"/api/login", "", map[string]string{"email": "viewer@x", "password": "secret"})
+	_, ab := post(t, ts.URL+"/api/login", "", map[string]string{"email": "admin@x", "password": "secret"})
+
+	body := map[string]any{"subject": map[string]any{"id": "u1"}, "action": "read", "resource": map[string]any{"type": "case"}}
+	if code, _ := post(t, ts.URL+"/api/iam/abac/evaluate", vb["token"], body); code != http.StatusForbidden {
+		t.Fatalf("VIEWER ABAC evaluate 403 almalıydı, %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/iam/abac/evaluate", ab["token"], body); code != http.StatusOK {
+		t.Fatalf("ADMIN ABAC evaluate 200 almalıydı, %d", code)
+	}
+}
+
 // fakeProvisioner, iam.Provisioner'ı test için gerçekler (girdi kullanıcıyı geri döner).
 type fakeProvisioner struct{}
 
