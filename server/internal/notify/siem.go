@@ -36,7 +36,15 @@ func cefEscapeHeader(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, "|", `\|`)
 	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ") // CR de etkisizleştirilir (satır enjeksiyonu)
 	return s
+}
+
+// leefEscape, LEEF öznitelik değerlerinde AYRAÇ (TAB) ve satır sonlarını (CR/LF) boşlukla
+// değiştirir. LEEF öznitelikleri TAB ile ayrıldığından, saldırgan-kontrollü bir alandaki TAB
+// sahte öznitelik enjekte edebilir (ör. sev/devTime sızdırma) — CWE-117 SIEM alan injection.
+func leefEscape(s string) string {
+	return strings.NewReplacer("\t", " ", "\n", " ", "\r", " ").Replace(s)
 }
 
 // cefEscapeExt, CEF uzantı (extension) değerlerinde \ ve = karakterlerini kaçırır.
@@ -44,6 +52,7 @@ func cefEscapeExt(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, "=", `\=`)
 	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ") // CR de etkisizleştirilir
 	return s
 }
 
@@ -74,16 +83,16 @@ func formatCEF(a Alert, product, version string) string {
 func formatLEEF(a Alert, product, version string) string {
 	attrs := "devTime=" + a.OccurredAt.Format(time.RFC3339) +
 		"\tsev=" + fmt.Sprintf("%d", sevToCEF(a.Severity)) +
-		"\tsrc=" + a.DeviceID +
-		"\tcat=" + a.Category +
-		"\tmsg=" + strings.ReplaceAll(a.Message, "\n", " ")
+		"\tsrc=" + leefEscape(a.DeviceID) +
+		"\tcat=" + leefEscape(a.Category) +
+		"\tmsg=" + leefEscape(a.Message)
 	if a.TechniqueID != "" {
-		attrs += "\tmitreTechnique=" + a.TechniqueID
+		attrs += "\tmitreTechnique=" + leefEscape(a.TechniqueID)
 	}
 	if a.Tenant != "" {
-		attrs += "\ttenant=" + a.Tenant
+		attrs += "\ttenant=" + leefEscape(a.Tenant)
 	}
-	return fmt.Sprintf("LEEF:2.0|KUT|%s|%s|%s|%s", product, version, a.Category, attrs)
+	return fmt.Sprintf("LEEF:2.0|KUT|%s|%s|%s|%s", product, version, leefEscape(a.Category), attrs)
 }
 
 // syslogPriority, RFC 3164 <PRI> öneki (facility local0=16, önem düzeyine göre).
