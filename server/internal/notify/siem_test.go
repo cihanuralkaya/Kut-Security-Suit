@@ -52,6 +52,35 @@ func TestFormatLEEF(t *testing.T) {
 	}
 }
 
+// TestFormatLEEFNeutralizesTabInjection, saldırgan-kontrollü bir alandaki TAB/CR/LF'nin
+// LEEF çıktısında sahte öznitelik enjekte edemeyeceğini doğrular (CWE-117). msg içindeki
+// bir TAB, ayraç sayısını artırmamalı ve sahte "sev="/"devTime=" enjekte edememeli.
+func TestFormatLEEFNeutralizesTabInjection(t *testing.T) {
+	a := sampleAlert()
+	a.Message = "iyi\tsev=1\tdevTime=2000-01-01T00:00:00Z"
+	a.DeviceID = "d\t1"
+	s := formatLEEF(a, "Suite", "1.0")
+	// Enjekte edilen TAB'lar boşluğa dönüşmeli → msg değeri tek bir alan kalmalı.
+	if strings.Contains(s, "msg=iyi\tsev=") {
+		t.Fatalf("msg içindeki TAB etkisizleştirilmeliydi: %q", s)
+	}
+	if strings.Contains(s, "src=d\t1") {
+		t.Fatalf("src içindeki TAB etkisizleştirilmeliydi: %q", s)
+	}
+	// TAB-ayraçlı alanlara böl: "sev=" ile BAŞLAYAN tam olarak bir alan olmalı (gerçek sev=10);
+	// enjekte "sev=1" ayrı bir alan DEĞİL, msg metninin içinde kalmalı.
+	_, attrs, _ := strings.Cut(s, "|SECURITY|") // header'dan sonra öznitelik bölümü
+	sevFields := 0
+	for _, f := range strings.Split(attrs, "\t") {
+		if strings.HasPrefix(f, "sev=") {
+			sevFields++
+		}
+	}
+	if sevFields != 1 {
+		t.Fatalf("tam olarak bir sev= ALANI olmalı (enjeksiyon ayrı alan olmamalı): %q", s)
+	}
+}
+
 func TestSevToCEF(t *testing.T) {
 	if sevToCEF("CRITICAL") != 10 || sevToCEF("HIGH") != 8 || sevToCEF("INFO") != 2 || sevToCEF("?") != 0 {
 		t.Fatal("sevToCEF eşlemesi hatalı")
