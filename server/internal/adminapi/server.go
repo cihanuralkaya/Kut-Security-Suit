@@ -53,6 +53,7 @@ import (
 	"kut.corp/suite/server/internal/riskfusion"
 	"kut.corp/suite/server/internal/scope"
 	"kut.corp/suite/server/internal/security"
+	"kut.corp/suite/server/internal/telemetryschema"
 	"kut.corp/suite/server/internal/trace"
 	"kut.corp/suite/server/internal/vuln"
 )
@@ -1849,10 +1850,45 @@ func (s *Server) handleEraseDevice(w http.ResponseWriter, r *http.Request, admin
 	writeJSON(w, http.StatusOK, report)
 }
 
+// ocsfProduct, OCSF çıktısında metadata.product alanıdır (CEF/LEEF ile tutarlı kimlik).
+var ocsfProduct = telemetryschema.Product{Name: "Suite", VendorName: "KUT"}
+
+// eventDTOToModel, salt-okuma DTO'sunu kanonik model.Event'e köprüler (OCSF eşlemesi için).
+func eventDTOToModel(d adminread.EventDTO) model.Event {
+	return model.Event{
+		EventID:       d.EventID,
+		Category:      d.Category,
+		Severity:      d.Severity,
+		Message:       d.Message,
+		OccurredAt:    d.OccurredAt,
+		DeviceID:      d.DeviceID,
+		Source:        d.Source,
+		EventType:     d.EventType,
+		Confidence:    d.Confidence,
+		CorrelationID: d.CorrelationID,
+		ParentEventID: d.ParentEventID,
+		Details:       string(d.Details),
+	}
+}
+
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request, _ string) {
 	q := r.URL.Query()
 	events, err := s.reader.Events(r.Context(), q.Get("device_id"), q.Get("severity"), q.Get("category"), intParam(r, "limit"))
 	if respondErr(w, err) {
+		return
+	}
+	// format=ocsf: olayları sektör-standardı OCSF şemasına eşleyip döner (SIEM/veri-gölü
+	// interop; roadmap P1). Kanonik EventID korunur → OCSF çıktısı da yinelenebilir.
+	if q.Get("format") == "ocsf" {
+		evs := make([]model.Event, 0, len(events))
+		for _, d := range events {
+			evs = append(evs, eventDTOToModel(d))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"schema":         "ocsf",
+			"schema_version": telemetryschema.OCSFSchemaVersion,
+			"events":         telemetryschema.ToOCSFBatch(evs, ocsfProduct),
+		})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": events})
