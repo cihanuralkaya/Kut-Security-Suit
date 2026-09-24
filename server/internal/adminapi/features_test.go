@@ -1429,6 +1429,78 @@ func TestListEventsFilter(t *testing.T) {
 	}
 }
 
+// TestListEventsOCSF, /api/events?format=ocsf'in olayları sektör-standardı OCSF Detection
+// Finding şemasına eşlediğini doğrular (roadmap P1). Envelope + sınıflandırma + severity +
+// device + kanonik-kimlik korunumu (metadata.uid == finding_info.uid) sınanır.
+func TestListEventsOCSF(t *testing.T) {
+	ts, store := setup(t)
+	defer ts.Close()
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+
+	now := time.Unix(1_700_000_000, 0).UTC()
+	store.evtRows = []adminread.EventRow{
+		{ID: "e1", DeviceID: "pc-01", Category: "malware", Severity: "HIGH", Message: "şüpheli süreç", OccurredAt: now, CreatedAt: now},
+	}
+	_, body := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	token := body["token"]
+
+	resp, err := authedGET(t, ts.URL+"/api/events?format=ocsf", token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("200 beklenirdi, %d", resp.StatusCode)
+	}
+	var out struct {
+		Schema        string `json:"schema"`
+		SchemaVersion string `json:"schema_version"`
+		Events        []struct {
+			CategoryUID int    `json:"category_uid"`
+			ClassUID    int    `json:"class_uid"`
+			TypeUID     int    `json:"type_uid"`
+			SeverityID  int    `json:"severity_id"`
+			Severity    string `json:"severity"`
+			Time        int64  `json:"time"`
+			Metadata    struct {
+				UID     string `json:"uid"`
+				Version string `json:"version"`
+			} `json:"metadata"`
+			FindingInfo struct {
+				UID string `json:"uid"`
+			} `json:"finding_info"`
+			Device *struct {
+				UID string `json:"uid"`
+			} `json:"device"`
+		} `json:"events"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Schema != "ocsf" || out.SchemaVersion == "" {
+		t.Fatalf("OCSF envelope yanlış: schema=%q ver=%q", out.Schema, out.SchemaVersion)
+	}
+	if len(out.Events) != 1 {
+		t.Fatalf("tam 1 OCSF olay bekleniyordu: %d", len(out.Events))
+	}
+	e := out.Events[0]
+	if e.CategoryUID != 2 || e.ClassUID != 2004 || e.TypeUID != 200401 {
+		t.Errorf("OCSF sınıflandırma yanlış: cat=%d class=%d type=%d", e.CategoryUID, e.ClassUID, e.TypeUID)
+	}
+	if e.SeverityID != 4 || e.Severity != "High" {
+		t.Errorf("HIGH → 4/High bekleniyordu: %d/%s", e.SeverityID, e.Severity)
+	}
+	if e.Time != now.UnixMilli() {
+		t.Errorf("time occurred_at ms olmalı: %d != %d", e.Time, now.UnixMilli())
+	}
+	if e.Device == nil || e.Device.UID != "pc-01" {
+		t.Errorf("device.uid device_id'den gelmeli: %+v", e.Device)
+	}
+	if e.Metadata.UID == "" || e.Metadata.UID != e.FindingInfo.UID {
+		t.Errorf("kanonik kimlik korunmalı (metadata.uid == finding_info.uid): %q vs %q", e.Metadata.UID, e.FindingInfo.UID)
+	}
+}
+
 func TestEnrollmentTokenLifecycleHTTP(t *testing.T) {
 	ts, store := setup(t)
 	defer ts.Close()
