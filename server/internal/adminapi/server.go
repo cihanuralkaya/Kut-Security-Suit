@@ -1974,9 +1974,14 @@ func (s *Server) handleAIAnalyze(w http.ResponseWriter, r *http.Request, _ strin
 // (özne/kaynak öznitelikleri + eylem) yapılandırılmış ABAC politikalarına göre
 // değerlendirir ve karar (izin/ret + eşleşen politika) döner. RBAC'ı tamamlar; salt
 // değerlendirme (politikaları uygulamaz, yalnız yanıtlar). Motor yapılandırılmamışsa 404.
-func (s *Server) handleABACEvaluate(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleABACEvaluate(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.abacEngine == nil {
 		http.NotFound(w, r)
+		return
+	}
+	// Politika-oracle'ı: yetkilendirme yüzeyini haritalamak isteyen düşük-yetkili bir
+	// kullanıcıya kapalı olmalı (§35 ADMIN).
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
 	var req iam.Request
