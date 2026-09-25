@@ -126,6 +126,10 @@ type Store interface {
 	ActivateMFA(ctx context.Context, adminID string) error
 	// DisableMFA, TOTP sırrını siler ve MFA'yı kapatır.
 	DisableMFA(ctx context.Context, adminID string) error
+	// ConsumeTOTPStep, TOTP tek-kullanım (anti-replay) zorlamasıdır: verilen adım sayacını
+	// (VerifyTOTPStep'ten) yöneticinin son kabul edilen adımından BÜYÜKSE atomik olarak
+	// kaydeder ve accepted=true döner; aksi halde (adım <= son) accepted=false (replay).
+	ConsumeTOTPStep(ctx context.Context, adminID string, step int64) (accepted bool, err error)
 	// SavePendingWipe, bir cihaz için ikinci-onay bekleyen WIPE talebini saklar
 	// (çift-kontrol / dört-göz). deviceID başına upsert.
 	SavePendingWipe(ctx context.Context, deviceID, requestedBy, reason string) error
@@ -326,8 +330,14 @@ func (s *Service) ActivateMFA(ctx context.Context, adminID, code string) error {
 	if secret == "" {
 		return fmt.Errorf("%w: MFA kaydı başlatılmadı", ErrForbidden)
 	}
-	if !security.VerifyTOTP(secret, code, s.now()) {
+	step, ok := security.VerifyTOTPStep(secret, code, s.now())
+	if !ok {
 		return fmt.Errorf("%w: doğrulama kodu geçersiz", ErrForbidden)
+	}
+	if accepted, err := s.store.ConsumeTOTPStep(ctx, adminID, step); err != nil {
+		return err
+	} else if !accepted {
+		return fmt.Errorf("%w: kod zaten kullanıldı (tekrar reddi)", ErrForbidden)
 	}
 	if err := s.store.ActivateMFA(ctx, adminID); err != nil {
 		return err
@@ -346,8 +356,16 @@ func (s *Service) DisableMFA(ctx context.Context, adminID, code string) error {
 	if err != nil {
 		return err
 	}
-	if enrolled && !security.VerifyTOTP(secret, code, s.now()) {
-		return fmt.Errorf("%w: doğrulama kodu geçersiz", ErrForbidden)
+	if enrolled {
+		step, ok := security.VerifyTOTPStep(secret, code, s.now())
+		if !ok {
+			return fmt.Errorf("%w: doğrulama kodu geçersiz", ErrForbidden)
+		}
+		if accepted, err := s.store.ConsumeTOTPStep(ctx, adminID, step); err != nil {
+			return err
+		} else if !accepted {
+			return fmt.Errorf("%w: kod zaten kullanıldı (tekrar reddi)", ErrForbidden)
+		}
 	}
 	if err := s.store.DisableMFA(ctx, adminID); err != nil {
 		return err

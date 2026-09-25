@@ -103,6 +103,7 @@ type adminRec struct {
 	active                  bool
 	mfaSecret               string // TOTP sırrı (bellek-içi demo; db katmanı şifreler)
 	mfaEnrolled             bool
+	mfaLastStep             int64 // en son kabul edilen TOTP adım sayacı (tek-kullanım/anti-replay)
 }
 
 type auditRec struct {
@@ -831,6 +832,23 @@ func (s *Store) DisableMFA(_ context.Context, adminID string) error {
 		a.mfaEnrolled = false
 	}
 	return nil
+}
+
+// ConsumeTOTPStep, TOTP tek-kullanım zorlaması (anti-replay): adım son kabul edilenden
+// BÜYÜKSE kaydeder ve true döner; değilse false. Kilit altında atomik (eşzamanlı tekrar
+// oynatma tek-kazananla engellenir).
+func (s *Store) ConsumeTOTPStep(_ context.Context, adminID string, step int64) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.adminsByID[adminID]
+	if !ok {
+		return false, nil
+	}
+	if step <= a.mfaLastStep {
+		return false, nil
+	}
+	a.mfaLastStep = step
+	return true, nil
 }
 
 // --- adminread.Store ---

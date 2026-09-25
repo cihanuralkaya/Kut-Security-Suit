@@ -68,17 +68,18 @@ func TOTPAt(secret string, t time.Time) (string, error) {
 	return hotp(key, counter), nil
 }
 
-// VerifyTOTP, kullanıcının girdiği kodu now etrafında ±totpSkew pencerede
-// doğrular. Karşılaştırma sabit-zamanlıdır. Sır geçersizse ya da kod boşsa
-// false döner (fail-closed).
-func VerifyTOTP(secret, code string, now time.Time) bool {
+// VerifyTOTPStep, kodu now etrafında ±totpSkew pencerede doğrular ve EŞLEŞEN ADIM
+// SAYACINI (time-step counter) döner. Bu sayaç, tek-kullanım (anti-replay) zorlaması için
+// kullanılır: çağıran, kabul edilen adımı kalıcılaştırıp aynı/eski adımı reddedebilir.
+// Karşılaştırma sabit-zamanlıdır; sır/kod geçersizse (0,false) döner (fail-closed).
+func VerifyTOTPStep(secret, code string, now time.Time) (int64, bool) {
 	code = strings.TrimSpace(code)
 	if len(code) != totpDigits {
-		return false
+		return 0, false
 	}
 	key, err := decodeSecret(secret)
 	if err != nil {
-		return false
+		return 0, false
 	}
 	base := uint64(now.Unix()) / uint64(totpStep.Seconds())
 	for d := -totpSkew; d <= totpSkew; d++ {
@@ -87,10 +88,17 @@ func VerifyTOTP(secret, code string, now time.Time) bool {
 			continue
 		}
 		if subtle.ConstantTimeCompare([]byte(hotp(key, uint64(c))), []byte(code)) == 1 {
-			return true
+			return c, true
 		}
 	}
-	return false
+	return 0, false
+}
+
+// VerifyTOTP, kodu doğrular (adım sayacı gerekmeyen çağıranlar için). Anti-replay isteyen
+// çağıranlar VerifyTOTPStep kullanıp dönen adımı kalıcılaştırmalıdır.
+func VerifyTOTP(secret, code string, now time.Time) bool {
+	_, ok := VerifyTOTPStep(secret, code, now)
+	return ok
 }
 
 // OTPAuthURI, authenticator uygulamalarının QR olarak okuduğu otpauth:// URI'sini

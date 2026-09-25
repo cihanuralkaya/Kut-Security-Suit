@@ -91,6 +91,7 @@ type adminEntry struct {
 	active      bool
 	mfaSecret   string
 	mfaEnrolled bool
+	mfaLastStep int64
 }
 
 func newMemStore() *memStore {
@@ -226,6 +227,16 @@ func (m *memStore) ActivateMFA(_ context.Context, id string) error {
 		a.mfaEnrolled = true
 	}
 	return nil
+}
+func (m *memStore) ConsumeTOTPStep(_ context.Context, id string, step int64) (bool, error) {
+	if a, ok := m.admins[id]; ok {
+		if step <= a.mfaLastStep {
+			return false, nil
+		}
+		a.mfaLastStep = step
+		return true, nil
+	}
+	return false, nil
 }
 func (m *memStore) DisableMFA(_ context.Context, id string) error {
 	if a, ok := m.admins[id]; ok {

@@ -54,6 +54,7 @@ type adminRec struct{ id, hash string }
 type mfaRec struct {
 	secret   string
 	enrolled bool
+	lastStep int64
 }
 
 func newMemStore() *memStore {
@@ -255,6 +256,18 @@ func (m *memStore) DisableMFA(_ context.Context, id string) error {
 	m.ensureMFA()
 	delete(m.mfa, id)
 	return nil
+}
+func (m *memStore) ConsumeTOTPStep(_ context.Context, id string, step int64) (bool, error) {
+	m.ensureMFA()
+	r, ok := m.mfa[id]
+	if !ok {
+		return false, nil
+	}
+	if step <= r.lastStep {
+		return false, nil
+	}
+	r.lastStep = step
+	return true, nil
 }
 
 // adminread.Store
@@ -557,11 +570,16 @@ func TestLoginEnforcesMFAWhenEnrolled(t *testing.T) {
 	if c, _ := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret", "code": "000000"}); c != http.StatusUnauthorized {
 		t.Fatalf("yanlış MFA kodu 401 dönmeliydi, %d", c)
 	}
-	// Doğru kod → token.
-	otp2, _ := security.TOTPAt(secret, time.Now())
+	// Doğru kod → token. (Sonraki zaman-adımından kod: aktivasyonda kullanılan adım
+	// tek-kullanım kuralıyla tüketildiğinden login FARKLI/sonraki bir adım kullanmalı.)
+	otp2, _ := security.TOTPAt(secret, time.Now().Add(30*time.Second))
 	_, okBody := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret", "code": otp2})
 	if okBody["token"] == "" {
 		t.Fatal("doğru MFA kodu ile giriş token vermeliydi")
+	}
+	// Tek-kullanım: AYNI kodu tekrar oynatmak → 401 (replay reddi).
+	if c, _ := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret", "code": otp2}); c != http.StatusUnauthorized {
+		t.Fatalf("yeniden kullanılan MFA kodu 401 dönmeliydi, %d", c)
 	}
 }
 

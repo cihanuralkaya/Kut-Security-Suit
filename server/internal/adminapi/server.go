@@ -700,9 +700,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusOK, map[string]bool{"mfa_required": true})
 				return
 			}
-			if !security.VerifyTOTP(secret, req.Code, s.now()) {
+			step, vok := security.VerifyTOTPStep(secret, req.Code, s.now())
+			if !vok {
 				s.loginFailed(key, req.Email)
 				writeErr(w, http.StatusUnauthorized, "geçersiz doğrulama kodu")
+				return
+			}
+			// Tek-kullanım: aynı kodun (adım) pencere içinde yeniden oynatılması reddedilir.
+			if accepted, err := mfa.ConsumeTOTPStep(r.Context(), adminID, step); err != nil {
+				writeErr(w, http.StatusInternalServerError, "MFA durumu güncellenemedi")
+				return
+			} else if !accepted {
+				s.loginFailed(key, req.Email)
+				writeErr(w, http.StatusUnauthorized, "doğrulama kodu zaten kullanıldı")
 				return
 			}
 		}
@@ -964,6 +974,9 @@ func (s *Server) handleTokenRevoke(w http.ResponseWriter, r *http.Request, admin
 // (geriye dönük uyumluluk).
 type MFAStore interface {
 	LookupMFA(ctx context.Context, adminID string) (secret string, enrolled bool, err error)
+	// ConsumeTOTPStep, TOTP tek-kullanım (anti-replay): verilen adım son kabul edilenden
+	// büyükse atomik kaydeder ve true döner; değilse false (replay — kod tekrar kullanıldı).
+	ConsumeTOTPStep(ctx context.Context, adminID string, step int64) (accepted bool, err error)
 }
 
 // handleMFAEnroll, oturum sahibi için yeni bir TOTP sırrı üretir ve otpauth URI'si
