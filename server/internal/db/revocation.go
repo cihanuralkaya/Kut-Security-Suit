@@ -63,6 +63,11 @@ func (s *Store) EraseDeviceData(ctx context.Context, deviceID string) (int, int,
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("db: komut silme: %w", err)
 	}
+	// KVKK/GDPR silme, toplanan dosya artefaktlarını (düz-metin içerik, sıklıkla PII) da
+	// kaldırır — aynı atomik tx içinde. (Adli legal-hold ayrı saklama politikasıyla ele alınır.)
+	if _, err := tx.Exec(ctx, `DELETE FROM artifacts WHERE device_id = $1::uuid`, deviceID); err != nil {
+		return 0, 0, 0, fmt.Errorf("db: artefakt silme: %w", err)
+	}
 	certTag, err := tx.Exec(ctx,
 		`UPDATE agent_certificates SET revoked_at = now(), revoke_reason = 'KVKK erasure'
 		   WHERE device_id = $1::uuid AND revoked_at IS NULL`, deviceID)

@@ -42,6 +42,13 @@ func TestEraseDeviceDataRemovesBehavioralDataOnly(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Toplanan artefakt: d1 için (silinmeli — PII), d2 için (dokunulmamalı).
+	if _, err := s.SaveArtifact(ctx, d1, "cmd-1", "C:/secret.txt", "sha1", []byte("pii")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveArtifact(ctx, d2, "cmd-2", "C:/other.txt", "sha2", []byte("x")); err != nil {
+		t.Fatal(err)
+	}
 
 	ev, cmd, cert, err := s.EraseDeviceData(ctx, d1)
 	if err != nil {
@@ -65,6 +72,16 @@ func TestEraseDeviceDataRemovesBehavioralDataOnly(t *testing.T) {
 	certs, _ := s.CertsByDevice(ctx, d1)
 	if len(certs) != 1 || !certs[0].Revoked {
 		t.Fatalf("d1 sertifikası iptal (revoked) edilmeliydi: %+v", certs)
+	}
+
+	// d1 artefaktları (PII) silinmeli; d2 artefaktlarına dokunulmamalı (KVKK/GDPR).
+	d1art, _ := s.ListArtifacts(ctx, d1)
+	d2art, _ := s.ListArtifacts(ctx, d2)
+	if len(d1art) != 0 {
+		t.Fatalf("d1 artefaktları silinmeliydi, kalan: %d", len(d1art))
+	}
+	if len(d2art) != 1 {
+		t.Fatalf("d2 artefaktlarına dokunulmamalıydı, kalan: %d", len(d2art))
 	}
 
 	// İkinci silme çağrısı sıfır sayımla dönmeli (idempotent).
