@@ -20,12 +20,19 @@ import (
 type FileSwapper struct {
 	binaryPath string // ajan ikilisinin yolu
 	stageDir   string // update.Prepare'in yazdığı dizin
+	// verify, swap'tan HEMEN ÖNCE staged ikiliyi yeniden doğrular (imza + SHA-256). nil ise
+	// yeniden-doğrulama yapılmaz (imzasız dağıtım — OTA anahtarı yapılandırılmamış). Ayarlıysa
+	// hata dönerse swap REDDEDİLİR (kurcalanmış/forge staged ikili çalıştırılmaz — H4).
+	verify func(stagedPath string) error
 }
 
 // NewFileSwapper oluşturur.
 func NewFileSwapper(binaryPath, stageDir string) *FileSwapper {
 	return &FileSwapper{binaryPath: binaryPath, stageDir: stageDir}
 }
+
+// SetVerify, swap-anı yeniden-doğrulama kancasını ayarlar (bkz. update.VerifyStaged).
+func (s *FileSwapper) SetVerify(fn func(stagedPath string) error) { s.verify = fn }
 
 func (s *FileSwapper) stagedPath() string  { return filepath.Join(s.stageDir, "agent-staged") }
 func (s *FileSwapper) versionPath() string { return s.stagedPath() + ".version" }
@@ -40,9 +47,24 @@ func (s *FileSwapper) PendingStaged() (version, path string, ok bool) {
 	return string(ver), s.stagedPath(), true
 }
 
-// Swap, mevcut ikiliyi yedekler ve staged ikiliyi yerine koyar.
+func (s *FileSwapper) manifestPath() string { return s.stagedPath() + ".manifest" }
+func (s *FileSwapper) sigPath() string      { return s.stagedPath() + ".sig" }
+
+// Swap, mevcut ikiliyi yedekler ve staged ikiliyi yerine koyar. Yeniden-doğrulama kancası
+// ayarlıysa swap'tan ÖNCE staged ikili yeniden doğrulanır; başarısızsa swap REDDEDİLİR ve
+// kurcalanmış staged artefaktlar temizlenir (H4 — TOCTOU/forge koruması).
 func (s *FileSwapper) Swap() error {
 	staged := s.stagedPath()
+	if s.verify != nil {
+		if err := s.verify(staged); err != nil {
+			// Kurcalanmış/forge staged ikiliyi çalıştırma; temizle.
+			_ = os.Remove(staged)
+			_ = os.Remove(s.versionPath())
+			_ = os.Remove(s.manifestPath())
+			_ = os.Remove(s.sigPath())
+			return fmt.Errorf("watchdog: staged doğrulama başarısız, swap reddedildi: %w", err)
+		}
+	}
 	if exists(s.binaryPath) {
 		if err := copyFile(s.binaryPath, s.backupPath(), 0o755); err != nil {
 			return fmt.Errorf("watchdog: yedek alma: %w", err)
@@ -56,6 +78,8 @@ func (s *FileSwapper) Swap() error {
 		_ = os.Remove(staged)
 	}
 	_ = os.Remove(s.versionPath())
+	_ = os.Remove(s.manifestPath())
+	_ = os.Remove(s.sigPath())
 	return nil
 }
 
