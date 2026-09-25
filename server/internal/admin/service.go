@@ -12,6 +12,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -224,14 +225,14 @@ func (s *Service) guardScope(ctx context.Context, adminID, deviceID string, act 
 			return nil
 		}
 		metrics.IncScopeDenied()
-		_ = s.store.WriteAudit(ctx, adminID, "SCOPE_UNCONFIGURED_DENY:"+string(act), "device", deviceID)
+		s.audit(ctx, adminID, "SCOPE_UNCONFIGURED_DENY:"+string(act), "device", deviceID)
 		return fmt.Errorf("%w (%s): Scope/ROE motoru yapılandırılmadı — yüksek-etkili operasyon fail-closed reddedildi (kabul için KUT_SCOPE_ALLOW_UNCONFIGURED=1)", ErrOutOfScope, act)
 	}
 	// G-05/INV-044: yapılandırılmış motorda tenant bağı ZORUNLU. Boş tenant güvenlik
 	// nesnesinde implicit "default"a düşemez; yüksek-etkili operasyon fail-closed reddedilir.
 	if s.scopeTenant == "" && scope.ImpactOf(act) >= scope.HighImpact {
 		metrics.IncScopeDenied()
-		_ = s.store.WriteAudit(ctx, adminID, "TENANT_MISSING_DENY:"+string(act), "device", deviceID)
+		s.audit(ctx, adminID, "TENANT_MISSING_DENY:"+string(act), "device", deviceID)
 		return fmt.Errorf("%w (%s): tenant bağı yok — yüksek-etkili operasyon fail-closed reddedildi (INV-044)", ErrOutOfScope, act)
 	}
 	d := s.scopeEng.Authorize(scope.Target{Tenant: s.scopeTenant, DeviceID: deviceID}, act)
@@ -240,11 +241,11 @@ func (s *Service) guardScope(ctx context.Context, adminID, deviceID string, act 
 	}
 	if s.scopeEnforce {
 		metrics.IncScopeDenied()
-		_ = s.store.WriteAudit(ctx, adminID, "SCOPE_DENY:"+string(act), "device", deviceID)
+		s.audit(ctx, adminID, "SCOPE_DENY:"+string(act), "device", deviceID)
 		return fmt.Errorf("%w (%s): %s", ErrOutOfScope, act, d.Reason)
 	}
 	metrics.IncScopeWouldDeny()
-	_ = s.store.WriteAudit(ctx, adminID, "SCOPE_AUDIT:"+string(act), "device", deviceID)
+	s.audit(ctx, adminID, "SCOPE_AUDIT:"+string(act), "device", deviceID)
 	return nil
 }
 
@@ -274,7 +275,7 @@ func (s *Service) IssueEnrollmentToken(ctx context.Context, adminID string) (str
 	if err := s.store.SaveEnrollmentToken(ctx, idx, adminID, s.now().Add(s.tokenTTL)); err != nil {
 		return "", err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "ISSUE_ENROLLMENT_TOKEN", "device", "")
+	s.audit(ctx, adminID, "ISSUE_ENROLLMENT_TOKEN", "device", "")
 	return token, nil
 }
 
@@ -289,7 +290,7 @@ func (s *Service) RevokeEnrollmentToken(ctx context.Context, adminID, tokenID st
 	if err := s.store.RevokeEnrollmentToken(ctx, tokenID); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "REVOKE_ENROLLMENT_TOKEN", "token", tokenID)
+	s.audit(ctx, adminID, "REVOKE_ENROLLMENT_TOKEN", "token", tokenID)
 	return nil
 }
 
@@ -331,7 +332,7 @@ func (s *Service) ActivateMFA(ctx context.Context, adminID, code string) error {
 	if err := s.store.ActivateMFA(ctx, adminID); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "MFA_ENABLED", "admin", adminID)
+	s.audit(ctx, adminID, "MFA_ENABLED", "admin", adminID)
 	return nil
 }
 
@@ -352,7 +353,7 @@ func (s *Service) DisableMFA(ctx context.Context, adminID, code string) error {
 		return err
 	}
 	if enrolled {
-		_ = s.store.WriteAudit(ctx, adminID, "MFA_DISABLED", "admin", adminID)
+		s.audit(ctx, adminID, "MFA_DISABLED", "admin", adminID)
 	}
 	return nil
 }
@@ -374,7 +375,7 @@ func (s *Service) SetDeviceTags(ctx context.Context, adminID, deviceID string, t
 	if err := s.store.SetDeviceTags(ctx, deviceID, clean); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "SET_TAGS", "device", deviceID)
+	s.audit(ctx, adminID, "SET_TAGS", "device", deviceID)
 	return nil
 }
 
@@ -436,6 +437,19 @@ func (s *Service) RestartDevice(ctx context.Context, adminID, deviceID string) e
 // WipeDevice, uzaktan veri silme komutu kuyruğa ekler — YIKICI olduğundan ADMIN
 // gerektirir ve denetim izine yazılır. (Ajan bu sürümde gerçek silme yapmaz;
 // komut/RBAC/denetim akışı tamdır — bkz. deviceaction.Wipe.)
+// audit, tamper-evident denetim izine bir kayıt yazar. Yazım BAŞARISIZ olursa SESSİZCE
+// YUTMAZ: bir metrik artırır ve loglar (non-repudiation açığının tespit edilebilirliği —
+// güvenlik eylemi audit kaydı olmadan gerçekleşmişse izleme/uyarı bunu görür). Operasyonun
+// başarı/başarısızlığını DEĞİŞTİRMEZ: audit-store kesintisi meşru güvenlik operasyonlarını
+// bloklamamalıdır (fail-open kararı bilinçli); kayıp görünür kılınır.
+func (s *Service) audit(ctx context.Context, adminID, action, kind, target string) {
+	if err := s.store.WriteAudit(ctx, adminID, action, kind, target); err != nil {
+		metrics.IncAuditWriteFailure()
+		log.Printf("[audit] YAZIM BAŞARISIZ (non-repudiation riski): action=%s kind=%s target=%s admin=%s: %v",
+			action, kind, target, adminID, err)
+	}
+}
+
 func (s *Service) WipeDevice(ctx context.Context, adminID, deviceID string) error {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
 		return err
@@ -446,7 +460,7 @@ func (s *Service) WipeDevice(ctx context.Context, adminID, deviceID string) erro
 	if err := s.store.EnqueueCommand(ctx, deviceID, "WIPE", adminID); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "WIPE", "device", deviceID)
+	s.audit(ctx, adminID, "WIPE", "device", deviceID)
 	return nil
 }
 
@@ -476,7 +490,7 @@ func (s *Service) RequestWipe(ctx context.Context, adminID, deviceID, reason str
 	if err := s.store.SavePendingWipe(ctx, deviceID, adminID, strings.TrimSpace(reason)); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "WIPE_REQUEST", "device", deviceID)
+	s.audit(ctx, adminID, "WIPE_REQUEST", "device", deviceID)
 	return nil
 }
 
@@ -508,7 +522,7 @@ func (s *Service) ApproveWipe(ctx context.Context, approverID, deviceID string) 
 	if err := s.store.EnqueueCommand(ctx, deviceID, "WIPE", approverID); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, approverID, "WIPE_APPROVE", "device", deviceID)
+	s.audit(ctx, approverID, "WIPE_APPROVE", "device", deviceID)
 	return nil
 }
 
@@ -520,7 +534,7 @@ func (s *Service) CancelWipe(ctx context.Context, adminID, deviceID string) erro
 	if err := s.store.DeletePendingWipe(ctx, deviceID); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "WIPE_CANCEL", "device", deviceID)
+	s.audit(ctx, adminID, "WIPE_CANCEL", "device", deviceID)
 	return nil
 }
 
@@ -539,7 +553,7 @@ func (s *Service) UpdateEventCase(ctx context.Context, adminID, eventID, assigne
 	if err := s.store.SetEventCase(ctx, eventID, adminID, strings.TrimSpace(assignee), strings.TrimSpace(note)); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "EVENT_CASE", "event", eventID)
+	s.audit(ctx, adminID, "EVENT_CASE", "event", eventID)
 	return nil
 }
 
@@ -560,7 +574,7 @@ func (s *Service) CollectFile(ctx context.Context, adminID, deviceID, path strin
 	if err := s.store.EnqueueCommandParams(ctx, deviceID, "COLLECT_FILE", adminID, map[string]string{"path": path}); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "COLLECT_FILE", "device", deviceID)
+	s.audit(ctx, adminID, "COLLECT_FILE", "device", deviceID)
 	return nil
 }
 
@@ -579,7 +593,7 @@ func (s *Service) AckEvent(ctx context.Context, adminID, eventID, status string)
 	if err := s.store.SetEventAck(ctx, eventID, adminID, status); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "EVENT_"+status, "event", eventID)
+	s.audit(ctx, adminID, "EVENT_"+status, "event", eventID)
 	return nil
 }
 
@@ -609,7 +623,7 @@ func (s *Service) command(ctx context.Context, adminID, deviceID, cmdType, refle
 	if err := s.store.EnqueueCommand(ctx, deviceID, cmdType, adminID); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, cmdType, "device", deviceID)
+	s.audit(ctx, adminID, cmdType, "device", deviceID)
 	if reflectStatus != "" {
 		// Best-effort: komut kuyruğa girdiği için hata olsa da akışı bozma.
 		_ = s.store.SetDeviceStatus(ctx, deviceID, reflectStatus)
@@ -642,7 +656,7 @@ func (s *Service) EraseDevice(ctx context.Context, adminID, deviceID string) (Er
 	if err != nil {
 		return ErasureReport{}, err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "DATA_ERASURE", "device", deviceID)
+	s.audit(ctx, adminID, "DATA_ERASURE", "device", deviceID)
 	return ErasureReport{EventsDeleted: ev, CommandsDeleted: cmd, CertsRevoked: cert}, nil
 }
 
@@ -659,7 +673,7 @@ func (s *Service) AuthorizeExport(ctx context.Context, adminID, deviceID string)
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "DATA_EXPORT", "device", deviceID)
+	s.audit(ctx, adminID, "DATA_EXPORT", "device", deviceID)
 	return nil
 }
 
@@ -667,7 +681,7 @@ func (s *Service) AuthorizeExport(ctx context.Context, adminID, deviceID string)
 // izlenmesi gereken işlemler için). Kanıt gözetim zinciri (chain-of-custody):
 // hangi analistin hangi delili ne zaman indirdiği denetlenebilir kalır.
 func (s *Service) RecordAudit(ctx context.Context, adminID, action, targetType, targetID string) {
-	_ = s.store.WriteAudit(ctx, adminID, action, targetType, targetID)
+	s.audit(ctx, adminID, action, targetType, targetID)
 }
 
 // RevokeDevice, cihazın sertifikalarını iptal eder (OPERATOR+). İptal edilen
@@ -686,7 +700,7 @@ func (s *Service) RevokeDevice(ctx context.Context, adminID, deviceID string) er
 	if err := s.store.RevokeDeviceCerts(ctx, deviceID, "admin_revoke"); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "REVOKE_CERT", "device", deviceID)
+	s.audit(ctx, adminID, "REVOKE_CERT", "device", deviceID)
 	return nil
 }
 
@@ -699,7 +713,7 @@ func (s *Service) CreatePolicy(ctx context.Context, adminID, name, version strin
 	if err != nil {
 		return "", err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "CREATE_POLICY", "policy", id)
+	s.audit(ctx, adminID, "CREATE_POLICY", "policy", id)
 	return id, nil
 }
 
@@ -718,7 +732,7 @@ func (s *Service) AssignPolicy(ctx context.Context, adminID, deviceID, policyID 
 	if err := s.store.AssignPolicy(ctx, deviceID, policyID); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "ASSIGN_POLICY", "device", deviceID)
+	s.audit(ctx, adminID, "ASSIGN_POLICY", "device", deviceID)
 	// Cihazın açık politika akışını uyandır (anlık push).
 	if s.pub != nil {
 		s.pub.Publish(deviceID)
@@ -747,7 +761,7 @@ func (s *Service) AddPolicyRule(ctx context.Context, adminID, policyID string, i
 	if _, err := s.store.BumpPolicyVersion(ctx, policyID); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "ADD_POLICY_RULE", "policy", policyID)
+	s.audit(ctx, adminID, "ADD_POLICY_RULE", "policy", policyID)
 	// Politikaya atanmış her cihazın açık akışını uyandır (anlık push).
 	if s.pub != nil {
 		devices, err := s.store.DevicesForPolicy(ctx, policyID)

@@ -66,7 +66,7 @@ func (s *Service) CreateAdmin(ctx context.Context, adminID, email, password stri
 	if err != nil {
 		return "", err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "CREATE_ADMIN", "admin", newID)
+	s.audit(ctx, adminID, "CREATE_ADMIN", "admin", newID)
 	return newID, nil
 }
 
@@ -81,7 +81,7 @@ func (s *Service) SetAdminRole(ctx context.Context, adminID, targetID string, ro
 	if err := s.store.SetAdminRole(ctx, targetID, role); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "SET_ADMIN_ROLE", "admin", targetID)
+	s.audit(ctx, adminID, "SET_ADMIN_ROLE", "admin", targetID)
 	return nil
 }
 
@@ -94,7 +94,7 @@ func (s *Service) DeactivateAdmin(ctx context.Context, adminID, targetID string)
 	if err := s.store.DeactivateAdmin(ctx, targetID); err != nil {
 		return err
 	}
-	_ = s.store.WriteAudit(ctx, adminID, "DEACTIVATE_ADMIN", "admin", targetID)
+	s.audit(ctx, adminID, "DEACTIVATE_ADMIN", "admin", targetID)
 	return nil
 }
 
