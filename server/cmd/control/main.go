@@ -8,7 +8,10 @@
 package main
 
 import (
+	"context"
 	"log"
+	"os/signal"
+	"syscall"
 
 	"kut.corp/suite/server/internal/enterprise"
 	"kut.corp/suite/server/internal/eventbus"
@@ -21,6 +24,16 @@ func main() {
 	if err := enterprise.Enable(bus); err != nil {
 		log.Fatalf("enterprise katmanı etkinleştirilemedi: %v", err)
 	}
+	defer func() {
+		if err := enterprise.Shutdown(); err != nil {
+			log.Printf("kapanışta enterprise shutdown hatası: %v", err)
+		}
+	}()
+
 	// TODO(enterprise): control-plane servislerini (admin API, IAM, tenant, policy, case) kabla.
-	log.Println("kontrol düzlemi iskelesi hazır (tam kablolama sonraki faz)")
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	log.Println("kontrol düzlemi iskelesi hazır (tam kablolama sonraki faz); kapanış sinyali bekleniyor")
+	<-ctx.Done()
+	log.Println("kapanış sinyali alındı; temiz kapanıyor")
 }
