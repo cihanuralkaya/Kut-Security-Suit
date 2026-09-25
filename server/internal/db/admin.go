@@ -200,15 +200,25 @@ func (s *Store) ConsumePendingWipe(ctx context.Context, deviceID, approverID str
 	return existing, false, nil // self-approval (silme yok)
 }
 
+// auditChainLockKey, denetim hash-zinciri yazımlarını serileştiren advisory-lock anahtarıdır
+// (sabit, keyfi). READ COMMITTED altında iki eşzamanlı yazım aynı prev_hash'i okuyup zinciri
+// ÇATALLAYABİLİR; bu kilit okuma-değiştirme-yazma'yı sıralar.
+const auditChainLockKey int64 = 0x4155_4449_54 // "AUDIT"
+
 func (s *Store) WriteAudit(ctx context.Context, adminID, action, targetType, targetID string) error {
 	// Kurcalama-kanıtı hash zinciri (SEC C-1): önceki entry_hash okunur, yeni hash
-	// hesaplanır ve prev_hash+entry_hash+created_at ile eklenir — hepsi tek
-	// transaction'da (araya kayıt sıkışması/yarış olmadan sıralı zincir).
+	// hesaplanır ve prev_hash+entry_hash+created_at ile eklenir — hepsi tek transaction'da.
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("db: denetim tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	// Zincir RMW'sini serileştir (aksi halde eşzamanlı yazımlar çatallanır — yanlış
+	// "tampered" alarmı). Transaction-ömürlü kilit commit/rollback'te otomatik bırakılır.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, auditChainLockKey); err != nil {
+		return fmt.Errorf("db: denetim zinciri kilidi: %w", err)
+	}
 
 	var prev []byte
 	err = tx.QueryRow(ctx, `SELECT entry_hash FROM audit_log ORDER BY id DESC LIMIT 1`).Scan(&prev)
