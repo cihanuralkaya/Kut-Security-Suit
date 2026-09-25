@@ -12,3 +12,6 @@ import (
 
 // Register, Lite build'de derlenmez (enterprise seam yok).
 func Register(_ *eventbus.Bus) error { return errors.New("enterprise bus: derlenmedi") }
+
+// Close, Lite build'de no-op'tur (imza enterprise ile birebir aynı — stub-drift önlenir).
+func Close() error { return nil }

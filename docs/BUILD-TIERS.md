@@ -48,8 +48,12 @@ bilinçli dondurulur/versiyonlanır (contract-freeze).
 
 ## Module stratejisi (aşamalı)
 
-- **Şimdi (A):** tek module + build-tag. Enterprise henüz ağır dep EKLEMEDİ (iskele saf-Go).
-- **İlk gerçek ağır client geldiğinde (B):** `server/internal/enterprise/`'i **nested module**
+- **Şimdi (A):** tek module + build-tag. Enterprise henüz ağır dep EKLEMEDİ — dayanıklı bus'ın
+  ilk fazı **saf-Go dosya-tabanlı `DurableLog`**'tur (append-only JSONL, per-append fsync,
+  çok-nesilli rotasyon; `server/internal/enterprise/bus/durable.go`). At-least-once garantisi
+  "retention penceresi içinde"dir: pencere aşılırsa yalnız en eski nesil düşer.
+- **İlk gerçek ağır client geldiğinde (B):** Redpanda/Kafka producer'ı **aynı `DurableLog`
+  arayüzünü** (contract-freeze) uygular; o an `server/internal/enterprise/`'i **nested module**
   (`server/internal/enterprise/go.mod`) + `go.work`'e terfi et → kök `go.mod` tertemiz kalır
   (Lite grafiği kafka/clickhouse görmez). Bu adım, ileride Pattern 2'ye (ayrı overlay repo)
   geçişin provasıdır: alt-ağacı `git subtree split` ile private repoya çıkar, core'u
