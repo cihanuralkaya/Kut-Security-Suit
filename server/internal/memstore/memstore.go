@@ -567,6 +567,18 @@ func (s *Store) EraseDeviceData(_ context.Context, deviceID string) (int, int, i
 			certRev++
 		}
 	}
+
+	// KVKK/GDPR silme, cihazdan TOPLANAN dosya artefaktlarını da kaldırır: bu içerik
+	// (düz-metin) sıklıkla veri-sahibinin PII'sini taşır ve silme talebinin kapsamındadır.
+	// (Adli legal-hold ayrı bir saklama bayrağıyla ele alınmalıdır — bu akış onu üstlenmez.)
+	keptArt := s.artifacts[:0:0]
+	for _, a := range s.artifacts {
+		if a.deviceID != deviceID {
+			keptArt = append(keptArt, a)
+		}
+	}
+	s.artifacts = keptArt
+
 	return evDel, cmdDel, certRev, nil
 }
 
