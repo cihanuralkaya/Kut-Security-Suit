@@ -30,3 +30,14 @@ func Enable(b *eventbus.Bus) error {
 	log.Printf("KUT %s: ölçek katmanı etkin (seam'ler bağlandı)", Edition)
 	return nil
 }
+
+// Shutdown, Enable ile bağlanan enterprise kaynaklarını temiz kapatır (dayanıklı bus
+// kaydını boşaltıp kapatır). Enable'a simetriktir; süreç kapanışında çağrılmalıdır.
+// Idempotenttir (tekrar çağrı no-op).
+func Shutdown() error {
+	if err := bus.Close(); err != nil {
+		return err
+	}
+	log.Printf("KUT %s: ölçek katmanı temiz kapatıldı", Edition)
+	return nil
+}

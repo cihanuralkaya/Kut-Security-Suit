@@ -18,3 +18,6 @@ var ErrNotCompiled = errors.New("enterprise: bu build'de derlenmedi (-tags enter
 
 // Enable, Lite build'de no-op'tur ve ErrNotCompiled döner (imza enterprise ile birebir aynı).
 func Enable(_ *eventbus.Bus) error { return ErrNotCompiled }
+
+// Shutdown, Lite build'de no-op'tur (imza enterprise ile birebir aynı — stub-drift önlenir).
+func Shutdown() error { return nil }
