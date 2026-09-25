@@ -404,7 +404,7 @@ func (m *memStore) SaveSearch(_ context.Context, name, filterJSON, createdBy str
 func (m *memStore) ListSavedSearches(_ context.Context) ([]adminread.SavedSearchRow, error) {
 	return nil, nil
 }
-func (m *memStore) DeleteSavedSearch(_ context.Context, _, _ string) error { return nil }
+func (m *memStore) DeleteSavedSearch(_ context.Context, _, _ string) (bool, error) { return true, nil }
 func (m *memStore) QueryEvents(_ context.Context, f adminread.EventFilter) ([]adminread.EventRow, error) {
 	var out []adminread.EventRow
 	for _, e := range m.evtRows {

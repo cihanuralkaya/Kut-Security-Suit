@@ -1183,16 +1183,16 @@ func (s *Store) ListSavedSearches(_ context.Context) ([]adminread.SavedSearchRow
 
 // DeleteSavedSearch, verilen kimlikli kayıtlı aramayı YALNIZ owner (oluşturan) eşleşirse
 // siler — sahiplik kontrolü (IDOR önlemi: bir analist başkasının kayıtlı aramasını silemez).
-func (s *Store) DeleteSavedSearch(_ context.Context, id, owner string) error {
+func (s *Store) DeleteSavedSearch(_ context.Context, id, owner string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, r := range s.savedSrch {
 		if r.id == id && r.createdBy == owner {
 			s.savedSrch = append(s.savedSrch[:i], s.savedSrch[i+1:]...)
-			return nil
+			return true, nil
 		}
 	}
-	return nil
+	return false, nil // bulunamadı VEYA owner değil → silinmedi
 }
 
 func toSavedSearchRow(rec savedSearchRec, adminsByID map[string]*adminRec) adminread.SavedSearchRow {
