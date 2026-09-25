@@ -268,6 +268,11 @@ func New(adminSvc *admin.Service, reader *adminread.Service, auth AuthStore, ses
 		cases:     casemgmt.NewMemStore(),
 	}
 	s.detector.Store(detect.NewEngine(nil)) // atomik alan literal'de saklanamaz; kurulumda varsayılan
+	// SEC: MFA, AuthStore'un MFAStore'u da karşılamasına bağlıdır. Karşılamıyorsa iki-faktörlü
+	// doğrulama SESSİZCE devre dışı kalırdı — bunu görünür kıl (yapılandırma/regresyon uyarısı).
+	if _, ok := auth.(MFAStore); !ok {
+		log.Printf("[uyarı] AuthStore MFAStore'u karşılamıyor: iki-faktörlü doğrulama (TOTP) DEVRE DIŞI")
+	}
 	return s
 }
 
