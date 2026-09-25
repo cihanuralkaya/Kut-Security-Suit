@@ -59,6 +59,24 @@ jobs:
       - name: go test (-race)
         run: go test -race ./...
 
+      # Enterprise tier (build-tier deseni; bkz. docs/BUILD-TIERS.md): enterprise etiketiyle
+      # de derlenip test edilmeli — aksi halde //go:build enterprise stub'ları ile impl'leri
+      # imza olarak sapabilir (HashiCorp stub-drift tuzağı) ve Lite build sessizce kırılabilir.
+      - name: go build/test (enterprise tier)
+        run: |
+          go build -tags enterprise ./...
+          go test -tags enterprise ./server/internal/enterprise/... ./server/cmd/control/... ./server/cmd/ingest/...
+
+      # Zero-dep değişmezi (mekanik zorlama): Lite c2 binary'si HİÇBİR ağır altyapı
+      # bağımlılığını (Kafka/ClickHouse/object-store/cloud-SDK) derleme grafiğinde
+      # taşımamalı — hepsi enterprise tag'i arkasında kalmalı.
+      - name: Zero-dep guard (Lite)
+        run: |
+          if go list -deps ./server/cmd/c2 | grep -Eiq 'kafka|clickhouse|minio|aws-sdk|redpanda|segmentio|confluent'; then
+            echo "HATA: Lite c2 build grafiğine ağır altyapı bağımlılığı sızdı (enterprise tag'i arkasında olmalı)"; exit 1
+          fi
+          echo "OK: Lite c2 zero heavy-dep"
+
       - name: Uçtan uca smoke test
         run: bash scripts/smoke-test.sh
 
