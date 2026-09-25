@@ -65,9 +65,22 @@ func (s *Store) ActivateMFA(ctx context.Context, adminID string) error {
 
 // DisableMFA, TOTP sırrını siler ve MFA'yı kapatır.
 func (s *Store) DisableMFA(ctx context.Context, adminID string) error {
-	const q = `UPDATE admins SET mfa_secret = NULL, mfa_enrolled = FALSE WHERE id = $1::uuid`
+	const q = `UPDATE admins SET mfa_secret = NULL, mfa_enrolled = FALSE, mfa_last_step = 0 WHERE id = $1::uuid`
 	if _, err := s.pool.Exec(ctx, q, adminID); err != nil {
 		return fmt.Errorf("db: MFA kapatma: %w", err)
 	}
 	return nil
+}
+
+// ConsumeTOTPStep, TOTP tek-kullanım (anti-replay) zorlamasıdır. Verilen adım sayacı
+// yöneticinin son kabul edilen adımından BÜYÜKSE tek atomik UPDATE ile kaydeder ve
+// accepted=true döner; değilse (adım <= son, yani tekrar) satır güncellenmez → false.
+// Atomiklik veritabanı satır kilidiyle sağlanır (eşzamanlı tekrar tek-kazanan).
+func (s *Store) ConsumeTOTPStep(ctx context.Context, adminID string, step int64) (bool, error) {
+	const q = `UPDATE admins SET mfa_last_step = $2 WHERE id = $1::uuid AND $2 > mfa_last_step`
+	tag, err := s.pool.Exec(ctx, q, adminID, step)
+	if err != nil {
+		return false, fmt.Errorf("db: TOTP adım tüketimi: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
 }

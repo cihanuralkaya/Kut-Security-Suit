@@ -70,8 +70,13 @@ func TestMFAEnrollmentLifecycle(t *testing.T) {
 		t.Fatalf("etkinken geçersiz kod kapatmamalı: %v", err)
 	}
 
-	// Geçerli kod ile kapat → sır silinir + audit MFA_DISABLED.
-	if err := svc.DisableMFA(ctx, id, code); err != nil {
+	// Geçerli kod ile kapat → sır silinir + audit MFA_DISABLED. (Sonraki zaman-adımından
+	// kod: aktivasyon adımı tek-kullanım kuralıyla tüketildi, aynı kod tekrar kabul edilmez.)
+	code2, err := security.TOTPAt(secret, fixed.Add(30*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DisableMFA(ctx, id, code2); err != nil {
 		t.Fatalf("geçerli kod kapatmalı: %v", err)
 	}
 	if store.admins[id].mfaSecret != "" || store.admins[id].mfaEnrolled {
