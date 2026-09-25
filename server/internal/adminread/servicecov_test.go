@@ -43,8 +43,8 @@ func (r *richStore) SaveSearch(_ context.Context, name, filterJSON, createdBy st
 	r.saveCalls = append(r.saveCalls, row)
 	return row, nil
 }
-func (r *richStore) DeleteSavedSearch(_ context.Context, id string) error {
-	r.deletedIDs = append(r.deletedIDs, id)
+func (r *richStore) DeleteSavedSearch(_ context.Context, id, owner string) error {
+	r.deletedIDs = append(r.deletedIDs, id+"/"+owner)
 	return r.errDelete
 }
 func (r *richStore) ListDevices(ctx context.Context, limit int) ([]DeviceRow, error) {
@@ -316,11 +316,12 @@ func TestSavedSearchesPassthrough(t *testing.T) {
 func TestDeleteSavedSearch(t *testing.T) {
 	store := newRich(&memStore{})
 	svc := NewService(store, newCipher(t))
-	if err := svc.DeleteSavedSearch(context.Background(), "s1"); err != nil {
+	if err := svc.DeleteSavedSearch(context.Background(), "s1", "admin-1"); err != nil {
 		t.Fatal(err)
 	}
-	if len(store.deletedIDs) != 1 || store.deletedIDs[0] != "s1" {
-		t.Fatalf("silinen kimlik depoya iletilmeliydi: %+v", store.deletedIDs)
+	// Kimlik + owner (sahiplik) depoya iletilmeli.
+	if len(store.deletedIDs) != 1 || store.deletedIDs[0] != "s1/admin-1" {
+		t.Fatalf("silinen kimlik+owner depoya iletilmeliydi: %+v", store.deletedIDs)
 	}
 }
 

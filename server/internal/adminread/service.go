@@ -158,8 +158,9 @@ type Store interface {
 	SaveSearch(ctx context.Context, name, filterJSON, createdBy string) (SavedSearchRow, error)
 	// ListSavedSearches, kayıtlı aramaları en yeniden eskiye döner.
 	ListSavedSearches(ctx context.Context) ([]SavedSearchRow, error)
-	// DeleteSavedSearch, verilen kimlikli kayıtlı aramayı siler.
-	DeleteSavedSearch(ctx context.Context, id string) error
+	// DeleteSavedSearch, verilen kimlikli kayıtlı aramayı YALNIZ owner (oluşturan) eşleşirse
+	// siler (sahiplik kontrolü / IDOR önlemi).
+	DeleteSavedSearch(ctx context.Context, id, owner string) error
 }
 
 // SavedSearchRow, kalıcılaştırılmış bir threat-hunting sorgusudur.
@@ -950,9 +951,9 @@ func (s *Service) SavedSearches(ctx context.Context) ([]SavedSearchRow, error) {
 	return s.store.ListSavedSearches(ctx)
 }
 
-// DeleteSavedSearch, bir kayıtlı aramayı siler.
-func (s *Service) DeleteSavedSearch(ctx context.Context, id string) error {
-	return s.store.DeleteSavedSearch(ctx, id)
+// DeleteSavedSearch, bir kayıtlı aramayı YALNIZ owner (oluşturan) eşleşirse siler.
+func (s *Service) DeleteSavedSearch(ctx context.Context, id, owner string) error {
+	return s.store.DeleteSavedSearch(ctx, id, owner)
 }
 
 // TrendPoint, tek bir günün MTTD/MTTR ortalamalarıdır (trend çizgisi noktası).

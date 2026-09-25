@@ -2483,13 +2483,14 @@ func (s *Server) handleListSavedSearches(w http.ResponseWriter, r *http.Request,
 }
 
 // handleDeleteSavedSearch, bir kayıtlı aramayı siler.
-func (s *Server) handleDeleteSavedSearch(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleDeleteSavedSearch(w http.ResponseWriter, r *http.Request, adminID string) {
 	id := r.PathValue("id")
 	if strings.TrimSpace(id) == "" {
 		writeErr(w, http.StatusBadRequest, "kimlik zorunlu")
 		return
 	}
-	if respondErr(w, s.reader.DeleteSavedSearch(r.Context(), id)) {
+	// Sahiplik: yalnız kaydı oluşturan analist silebilir (IDOR önlemi).
+	if respondErr(w, s.reader.DeleteSavedSearch(r.Context(), id, adminID)) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
