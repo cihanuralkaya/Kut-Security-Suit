@@ -160,7 +160,7 @@ type Store interface {
 	ListSavedSearches(ctx context.Context) ([]SavedSearchRow, error)
 	// DeleteSavedSearch, verilen kimlikli kayıtlı aramayı YALNIZ owner (oluşturan) eşleşirse
 	// siler (sahiplik kontrolü / IDOR önlemi).
-	DeleteSavedSearch(ctx context.Context, id, owner string) error
+	DeleteSavedSearch(ctx context.Context, id, owner string) (deleted bool, err error)
 }
 
 // SavedSearchRow, kalıcılaştırılmış bir threat-hunting sorgusudur.
@@ -952,7 +952,7 @@ func (s *Service) SavedSearches(ctx context.Context) ([]SavedSearchRow, error) {
 }
 
 // DeleteSavedSearch, bir kayıtlı aramayı YALNIZ owner (oluşturan) eşleşirse siler.
-func (s *Service) DeleteSavedSearch(ctx context.Context, id, owner string) error {
+func (s *Service) DeleteSavedSearch(ctx context.Context, id, owner string) (bool, error) {
 	return s.store.DeleteSavedSearch(ctx, id, owner)
 }
 

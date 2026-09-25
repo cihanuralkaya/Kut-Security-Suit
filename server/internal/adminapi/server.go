@@ -2490,7 +2490,13 @@ func (s *Server) handleDeleteSavedSearch(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	// Sahiplik: yalnız kaydı oluşturan analist silebilir (IDOR önlemi).
-	if respondErr(w, s.reader.DeleteSavedSearch(r.Context(), id, adminID)) {
+	deleted, err := s.reader.DeleteSavedSearch(r.Context(), id, adminID)
+	if respondErr(w, err) {
+		return
+	}
+	if !deleted {
+		// Bulunamadı VEYA çağıran owner değil → yanıltıcı "deleted" dönme, 404 ver.
+		writeErr(w, http.StatusNotFound, "kayıtlı arama bulunamadı")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})

@@ -134,26 +134,26 @@ func TestSavedSearches(t *testing.T) {
 		t.Fatalf("en yeni arama ilk sırada olmalıydı: %+v", list[0])
 	}
 
-	// Sahiplik: BAŞKA bir owner ile silme no-op olmalı (IDOR önlemi).
-	if err := s.DeleteSavedSearch(ctx, r1.ID, "baska-admin"); err != nil {
-		t.Fatal(err)
+	// Sahiplik: BAŞKA bir owner ile silme no-op olmalı (IDOR önlemi) → deleted=false.
+	if ok, err := s.DeleteSavedSearch(ctx, r1.ID, "baska-admin"); err != nil || ok {
+		t.Fatalf("yanlış owner silme false dönmeli: ok=%v err=%v", ok, err)
 	}
 	if list, _ := s.ListSavedSearches(ctx); len(list) != 2 {
 		t.Fatalf("yanlış owner ile silme yapılmamalıydı, hâlâ 2 olmalı: %d", len(list))
 	}
 
-	// Delete r1 (doğru owner).
-	if err := s.DeleteSavedSearch(ctx, r1.ID, adminID); err != nil {
-		t.Fatal(err)
+	// Delete r1 (doğru owner) → deleted=true.
+	if ok, err := s.DeleteSavedSearch(ctx, r1.ID, adminID); err != nil || !ok {
+		t.Fatalf("doğru owner silme true dönmeli: ok=%v err=%v", ok, err)
 	}
 	list, _ = s.ListSavedSearches(ctx)
 	if len(list) != 1 || list[0].ID != r2.ID {
 		t.Fatalf("silmeden sonra yalnız r2 kalmalıydı: %+v", list)
 	}
 
-	// Bilinmeyen id silme no-op.
-	if err := s.DeleteSavedSearch(ctx, "yok", adminID); err != nil {
-		t.Fatalf("bilinmeyen id no-op olmalıydı: %v", err)
+	// Bilinmeyen id silme no-op → deleted=false.
+	if ok, err := s.DeleteSavedSearch(ctx, "yok", adminID); err != nil || ok {
+		t.Fatalf("bilinmeyen id false/no-op olmalı: ok=%v err=%v", ok, err)
 	}
 
 	// toSavedSearchRow: adminsByID eşleşmezse createdBy ham id kalır.

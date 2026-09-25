@@ -293,12 +293,13 @@ func (s *Store) ListSavedSearches(ctx context.Context) ([]adminread.SavedSearchR
 
 // DeleteSavedSearch, verilen kimlikli kayıtlı aramayı YALNIZ owner (created_by) eşleşirse
 // siler — sahiplik kontrolü (IDOR önlemi).
-func (s *Store) DeleteSavedSearch(ctx context.Context, id, owner string) error {
-	if _, err := s.pool.Exec(ctx,
-		`DELETE FROM saved_searches WHERE id = $1::uuid AND created_by = NULLIF($2,'')::uuid`, id, owner); err != nil {
-		return fmt.Errorf("db: kayıtlı arama silme: %w", err)
+func (s *Store) DeleteSavedSearch(ctx context.Context, id, owner string) (bool, error) {
+	tag, err := s.pool.Exec(ctx,
+		`DELETE FROM saved_searches WHERE id = $1::uuid AND created_by = NULLIF($2,'')::uuid`, id, owner)
+	if err != nil {
+		return false, fmt.Errorf("db: kayıtlı arama silme: %w", err)
 	}
-	return nil
+	return tag.RowsAffected() > 0, nil // owner değil/bulunamadı → 0 satır → false
 }
 
 func (s *Store) ListAudit(ctx context.Context, limit int) ([]adminread.AuditRow, error) {
