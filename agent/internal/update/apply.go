@@ -2,6 +2,7 @@ package update
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,6 +49,20 @@ func Prepare(ctx context.Context, m otawire.Manifest, signature []byte, v *Verif
 		return nil, err
 	}
 	if err := os.WriteFile(path+".version", []byte(m.TargetVersion), 0o644); err != nil {
+		return nil, err
+	}
+	// İmzalı manifesto + imzayı staged ikilinin yanına yaz: watchdog (AYRI süreç),
+	// swap'tan HEMEN ÖNCE imzayı + SHA-256'yı YENİDEN doğrular. Böylece stage↔swap
+	// arasında staged dosyanın kurcalanması (TOCTOU) yakalanır — imzasız/bozuk ikili
+	// SYSTEM watchdog tarafından çalıştırılamaz (inceleme #5 / H4).
+	mj, err := json.Marshal(m)
+	if err != nil {
+		return nil, fmt.Errorf("update: manifesto serileştirme: %w", err)
+	}
+	if err := os.WriteFile(path+".manifest", mj, 0o644); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path+".sig", signature, 0o644); err != nil {
 		return nil, err
 	}
 	return &StagedUpdate{Version: m.TargetVersion, Path: path}, nil

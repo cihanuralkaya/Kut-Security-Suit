@@ -11,16 +11,20 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
 	"kut.corp/suite/agent/internal/liveness"
 	"kut.corp/suite/agent/internal/standdown"
+	"kut.corp/suite/agent/internal/update"
 	"kut.corp/suite/agent/internal/watchdog"
 )
 
@@ -54,6 +58,26 @@ func main() {
 
 	runner := watchdog.NewExecRunner(agentBin)
 	swapper := watchdog.NewFileSwapper(agentBin, stageDir)
+	// OTA imza anahtarı yapılandırılmışsa, swap-anı YENİDEN doğrulama kancasını kur: staged
+	// ikili, swap'tan hemen önce imza + SHA-256 ile yeniden doğrulanır (H4 — ayrı SYSTEM
+	// süreci kurcalanmış/forge bir ikiliyi çalıştırmaz). KUT_UPDATE_PUBKEY ajanla aynı env.
+	if raw := strings.TrimSpace(os.Getenv("KUT_UPDATE_PUBKEY")); raw != "" {
+		var pubs []ed25519.PublicKey
+		for _, k := range strings.Split(raw, ",") {
+			if k = strings.TrimSpace(k); k == "" {
+				continue
+			}
+			if b, err := base64.StdEncoding.DecodeString(k); err == nil && len(b) == ed25519.PublicKeySize {
+				pubs = append(pubs, ed25519.PublicKey(b))
+			}
+		}
+		if v, err := update.NewVerifierMulti(pubs...); err == nil {
+			swapper.SetVerify(func(stagedPath string) error { return update.VerifyStaged(stagedPath, v) })
+			log.Println("OTA swap-anı yeniden-doğrulama ETKİN (imza + SHA-256)")
+		} else {
+			log.Printf("OTA public key ayrıştırılamadı, swap-anı yeniden-doğrulama DEVRE DIŞI: %v", err)
+		}
+	}
 	sup := watchdog.NewSupervisor(runner, swapper, watchdog.Options{
 		BaseBackoff: time.Second,
 		MaxBackoff:  30 * time.Second,

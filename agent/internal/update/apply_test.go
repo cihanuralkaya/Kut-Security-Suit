@@ -102,3 +102,46 @@ func TestPrepareRejectsHashMismatch(t *testing.T) {
 		t.Fatalf("ErrHashMismatch beklenirdi, dönen: %v", err)
 	}
 }
+
+// TestVerifyStaged, swap-anı yeniden doğrulamanın (H4) geçerli staged seti kabul ettiğini,
+// staged ikili veya imza kurcalanınca reddettiğini, ve yanlış anahtarla doğrulamanın
+// başarısız olduğunu doğrular.
+func TestVerifyStaged(t *testing.T) {
+	payload := []byte("YENİ AJAN İKİLİSİ v1.5.0")
+	ts := payloadServer(t, payload)
+	defer ts.Close()
+	m, sig, pub := signedManifest(t, ts.URL, payload)
+	v, _ := NewVerifier(pub)
+	stageDir := t.TempDir()
+	su, err := Prepare(context.Background(), m, sig, v, tlsDL(ts), stageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Geçerli staged set → kabul.
+	if err := VerifyStaged(su.Path, v); err != nil {
+		t.Fatalf("geçerli staged set doğrulanmalı: %v", err)
+	}
+
+	// Staged ikili kurcalanmış → ErrHashMismatch.
+	if err := os.WriteFile(su.Path, []byte("KÖTÜ AMAÇLI İKİLİ"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyStaged(su.Path, v); err != ErrHashMismatch {
+		t.Fatalf("kurcalanmış staged ikili ErrHashMismatch dönmeli: %v", err)
+	}
+
+	// İmza yanlış anahtarla doğrulanırsa → ErrBadSignature.
+	otherPub, _, _ := ed25519.GenerateKey(rand.Reader)
+	ov, _ := NewVerifier(otherPub)
+	// İkiliyi geri yaz (hash geçsin ki imza kapısına ulaşsın).
+	_ = os.WriteFile(su.Path, payload, 0o755)
+	if err := VerifyStaged(su.Path, ov); err != ErrBadSignature {
+		t.Fatalf("yanlış anahtar ErrBadSignature dönmeli: %v", err)
+	}
+
+	// nil doğrulayıcı → hata.
+	if err := VerifyStaged(su.Path, nil); err == nil {
+		t.Fatal("nil doğrulayıcı hata dönmeli")
+	}
+}
