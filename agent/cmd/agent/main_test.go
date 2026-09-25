@@ -205,3 +205,30 @@ func TestPersistenceTrackerEmit(t *testing.T) {
 		t.Fatalf("boş girdi listesi olay üretmemeli: %d", n)
 	}
 }
+
+// TestProtectedCollectPath, COLLECT_FILE'ın ajanın KENDİ veri dizinini (mTLS anahtarı/
+// sertifikası) toplamayı reddettiğini doğrular — ele geçmiş C2'nin ajan kimliğini
+// sızdırmasını engeller. Dizin dışı yollar toplanabilir.
+func TestProtectedCollectPath(t *testing.T) {
+	dataDir := t.TempDir()
+	// Ajanın kendi anahtarı/sertifikası ve alt yolları → REDDET.
+	for _, p := range []string{
+		filepath.Join(dataDir, "agent.key"),
+		filepath.Join(dataDir, "agent.crt"),
+		filepath.Join(dataDir, "updates", "staged"),
+		dataDir,
+	} {
+		if !protectedCollectPath(p, dataDir) {
+			t.Errorf("korumalı yol reddedilmeliydi: %s", p)
+		}
+	}
+	// Veri dizini dışındaki meşru forensic hedefler → izin.
+	outside := filepath.Join(t.TempDir(), "evidence.log")
+	if protectedCollectPath(outside, dataDir) {
+		t.Errorf("dizin dışı yol toplanabilmeliydi: %s", outside)
+	}
+	// Boş dataDir → koruma yok (yapılandırılmamış), ama panik/yanlış-pozitif olmamalı.
+	if protectedCollectPath(outside, "") {
+		t.Error("boş dataDir'de dizin-dışı yol reddedilmemeli")
+	}
+}
