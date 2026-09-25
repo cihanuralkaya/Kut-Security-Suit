@@ -561,7 +561,7 @@ func run() error {
 		}
 		// Sunucudan gelen komutları işle (karantina, imzalı script vb.).
 		// ctx (hbCtx değil) geçilir: uzun scriptler heartbeat penceresini bloklamamalı.
-		handleCommands(ctx, resp.GetPendingCommands(), quar, scriptVerifier, buf, cli, safeMode, clog)
+		handleCommands(ctx, resp.GetPendingCommands(), quar, scriptVerifier, buf, cli, safeMode, clog, cfg.dataDir)
 		// Politika uygulaması: yasaklı süreçleri sonlandır (Faz 3).
 		if n, err := monitor.Tick(engine.Load()); err != nil {
 			log.Printf("enforcement hatası: %v", err)
@@ -728,7 +728,7 @@ func checkUpdate(ctx context.Context, cli kutv1.AgentServiceClient, ident *ident
 
 // handleCommands, sunucudan gelen anlık komutları uygular (karantina, imzalı
 // script, adli dosya toplama).
-func handleCommands(ctx context.Context, cmds []*kutv1.Command, quar *quarantine.Manager, sv *script.Verifier, buf *collector.Buffer, cli kutv1.AgentServiceClient, safeMode bool, clog *cmdlog.Log) {
+func handleCommands(ctx context.Context, cmds []*kutv1.Command, quar *quarantine.Manager, sv *script.Verifier, buf *collector.Buffer, cli kutv1.AgentServiceClient, safeMode bool, clog *cmdlog.Log, dataDir string) {
 	for _, c := range cmds {
 		id := c.GetCommandId()
 		// İDEMPOTENCY: komut daha önce yürütüldüyse (en-az-bir-kez teslimde yeniden
@@ -761,7 +761,7 @@ func handleCommands(ctx context.Context, cmds []*kutv1.Command, quar *quarantine
 			go runSignedScript(ctx, c, sv, buf)
 		case kutv1.Command_COMMAND_TYPE_COLLECT_FILE:
 			// Dosya okuma/yükleme bloklamasın; arka planda.
-			go collectFile(ctx, c, buf, cli)
+			go collectFile(ctx, c, buf, cli, dataDir)
 		case kutv1.Command_COMMAND_TYPE_LOCK:
 			doDeviceAction(buf, safeMode, "LOCK", "ekran kilitleme", deviceaction.Lock)
 		case kutv1.Command_COMMAND_TYPE_RESTART:
@@ -861,9 +861,39 @@ const maxCollectBytes = 3 << 20 // 3 MiB
 // collectFile, COLLECT_FILE komutunun hedef dosyasını (boyut-sınırlı) okur,
 // SHA-256'sını hesaplar ve UploadArtifact ile sunucuya yükler. Başarı/başarısızlık
 // bir SYSTEM olayı olarak da bildirilir (konsol görünürlüğü).
-func collectFile(ctx context.Context, c *kutv1.Command, buf *collector.Buffer, cli kutv1.AgentServiceClient) {
+// protectedCollectPath, istenen yolun ajanın KENDİ veri dizini içinde olup olmadığını döner.
+// O dizin ajanın mTLS özel anahtarını/sertifikasını ve iç durumunu barındırır; COLLECT_FILE
+// ile toplanması, ele geçmiş/sahte bir C2'nin ajan kimliğini sızdırmasına yol açardı.
+// Çözülemeyen yol güvenli tarafta reddedilir. Windows'ta karşılaştırma büyük/küçük harf
+// duyarsızdır.
+func protectedCollectPath(path, dataDir string) bool {
+	ap, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return true // fail-closed
+	}
+	dataDir = strings.TrimSpace(dataDir)
+	if dataDir == "" {
+		return false
+	}
+	ad, err := filepath.Abs(filepath.Clean(dataDir))
+	if err != nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		ap, ad = strings.ToLower(ap), strings.ToLower(ad)
+	}
+	return ap == ad || strings.HasPrefix(ap, ad+string(os.PathSeparator))
+}
+
+func collectFile(ctx context.Context, c *kutv1.Command, buf *collector.Buffer, cli kutv1.AgentServiceClient, dataDir string) {
 	path := c.GetParams().GetFields()["path"].GetStringValue()
 	if path == "" {
+		return
+	}
+	if protectedCollectPath(path, dataDir) {
+		buf.Add(collector.Event{Category: "SECURITY", Severity: "HIGH",
+			Message: "dosya toplama REDDEDİLDİ (korumalı ajan veri dizini): " + path, OccurredAt: time.Now(),
+			Details: map[string]any{"path": path, "error": "protected_path"}})
 		return
 	}
 	info, err := os.Stat(path)
