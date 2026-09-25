@@ -291,9 +291,11 @@ func (s *Store) ListSavedSearches(ctx context.Context) ([]adminread.SavedSearchR
 	return out, rows.Err()
 }
 
-// DeleteSavedSearch, verilen kimlikli kayıtlı aramayı siler.
-func (s *Store) DeleteSavedSearch(ctx context.Context, id string) error {
-	if _, err := s.pool.Exec(ctx, `DELETE FROM saved_searches WHERE id = $1::uuid`, id); err != nil {
+// DeleteSavedSearch, verilen kimlikli kayıtlı aramayı YALNIZ owner (created_by) eşleşirse
+// siler — sahiplik kontrolü (IDOR önlemi).
+func (s *Store) DeleteSavedSearch(ctx context.Context, id, owner string) error {
+	if _, err := s.pool.Exec(ctx,
+		`DELETE FROM saved_searches WHERE id = $1::uuid AND created_by = NULLIF($2,'')::uuid`, id, owner); err != nil {
 		return fmt.Errorf("db: kayıtlı arama silme: %w", err)
 	}
 	return nil

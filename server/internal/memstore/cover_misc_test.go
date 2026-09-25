@@ -134,8 +134,16 @@ func TestSavedSearches(t *testing.T) {
 		t.Fatalf("en yeni arama ilk sırada olmalıydı: %+v", list[0])
 	}
 
-	// Delete r1.
-	if err := s.DeleteSavedSearch(ctx, r1.ID); err != nil {
+	// Sahiplik: BAŞKA bir owner ile silme no-op olmalı (IDOR önlemi).
+	if err := s.DeleteSavedSearch(ctx, r1.ID, "baska-admin"); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := s.ListSavedSearches(ctx); len(list) != 2 {
+		t.Fatalf("yanlış owner ile silme yapılmamalıydı, hâlâ 2 olmalı: %d", len(list))
+	}
+
+	// Delete r1 (doğru owner).
+	if err := s.DeleteSavedSearch(ctx, r1.ID, adminID); err != nil {
 		t.Fatal(err)
 	}
 	list, _ = s.ListSavedSearches(ctx)
@@ -144,7 +152,7 @@ func TestSavedSearches(t *testing.T) {
 	}
 
 	// Bilinmeyen id silme no-op.
-	if err := s.DeleteSavedSearch(ctx, "yok"); err != nil {
+	if err := s.DeleteSavedSearch(ctx, "yok", adminID); err != nil {
 		t.Fatalf("bilinmeyen id no-op olmalıydı: %v", err)
 	}
 

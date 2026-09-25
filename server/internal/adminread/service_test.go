@@ -146,7 +146,7 @@ func (m *memStore) SaveSearch(_ context.Context, name, filterJSON, createdBy str
 func (m *memStore) ListSavedSearches(_ context.Context) ([]SavedSearchRow, error) {
 	return nil, nil
 }
-func (m *memStore) DeleteSavedSearch(_ context.Context, _ string) error { return nil }
+func (m *memStore) DeleteSavedSearch(_ context.Context, _, _ string) error { return nil }
 func (m *memStore) QueryEvents(_ context.Context, f EventFilter) ([]EventRow, error) {
 	var out []EventRow
 	for _, e := range m.events {
