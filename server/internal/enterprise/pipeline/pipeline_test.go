@@ -4,6 +4,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ func (f *fakeAnalytics) Insert(_ context.Context, evs []model.Event) error {
 	f.inserted = append(f.inserted, evs...)
 	return nil
 }
-func (f *fakeAnalytics) CountBySeverity(context.Context, time.Time) (map[string]uint64, error) {
+func (f *fakeAnalytics) CountBySeverity(context.Context, string, time.Time) (map[string]uint64, error) {
 	return nil, nil
 }
 func (f *fakeAnalytics) Close() error { return nil }
@@ -178,6 +179,27 @@ func TestProcessAllNilSinks(t *testing.T) {
 	n, err := p.ProcessAll(context.Background())
 	if err != nil || n != 3 {
 		t.Fatalf("nil sink: n=%d err=%v", n, err)
+	}
+}
+
+// WithTenant: tenant taşımayan olaylara sunucu-tarafı kiracı atanmalı (analitik satırı + arşiv anahtarı).
+func TestProcessAllTenantBinding(t *testing.T) {
+	an := &fakeAnalytics{}
+	ar := newFakeArchive()
+	p := New(&fakeSource{notices: sampleNotices()}, an, ar).WithTenant("acme")
+
+	if _, err := p.ProcessAll(context.Background()); err != nil {
+		t.Fatalf("ProcessAll: %v", err)
+	}
+	for i, e := range an.inserted {
+		if e.TenantID != "acme" {
+			t.Fatalf("analitik kayıt[%d] tenant=%q, beklenen acme", i, e.TenantID)
+		}
+	}
+	for k := range ar.objects {
+		if !strings.HasPrefix(k, "events/acme/") {
+			t.Fatalf("arşiv anahtarı tenant prefix'i taşımıyor: %q", k)
+		}
 	}
 }
 

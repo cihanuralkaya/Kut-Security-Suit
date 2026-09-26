@@ -51,7 +51,7 @@ func TestClickHouseInsertAndCount(t *testing.T) {
 	// ClickHouse yazımı asenkron birleştirebilir; kısa bir tutarlılık beklemesi.
 	var counts map[string]uint64
 	for attempt := 0; attempt < 20; attempt++ {
-		counts, err = s.CountBySeverity(ctx, base.Add(-time.Minute))
+		counts, err = s.CountBySeverity(ctx, "t1", base.Add(-time.Minute))
 		if err != nil {
 			t.Fatalf("CountBySeverity: %v", err)
 		}
@@ -62,6 +62,15 @@ func TestClickHouseInsertAndCount(t *testing.T) {
 	}
 	if counts["high"] != 2 || counts["low"] != 1 {
 		t.Fatalf("beklenen {high:2, low:1}, alınan %v", counts)
+	}
+
+	// Tenant izolasyonu: başka bir kiracıyla sorgu, t1'in olaylarını GÖRMEMELİ.
+	other, err := s.CountBySeverity(ctx, "baska-tenant", base.Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("CountBySeverity(other): %v", err)
+	}
+	if len(other) != 0 {
+		t.Fatalf("tenant izolasyonu kırık: başka kiracı t1 verisini gördü: %v", other)
 	}
 }
 

@@ -82,6 +82,20 @@ Modül stratejisi:
   Pattern 2'ye (ayrı overlay repo) geçişin provasıdır: alt-ağacı `git subtree split` ile private repoya
   çıkar, core'u `require kut.corp/suite vX.Y.Z` ile import et. Arayüzler sabit → geçiş taşıma, rewrite değil.
 
+## Multi-tenant izolasyon (veri-düzlemi)
+
+Kiracı (tenant) SUNUCU-TARAFI bağlanır, client'tan asla güvenilmez: ingest daemon'u `KUT_TENANT`
+ile yapılandırılır ve tenant taşımayan olayların `tenant_id`'sini doldurur (araştırma ilkesi).
+İzolasyon her tier'da `tenant_id` ile yapısaldır:
+- **ClickHouse:** tablo `ORDER BY (tenant_id, occurred_at)`; sorgular tenant-kapsamlı
+  (`CountBySeverity(tenant, …)` → `WHERE tenant_id = ?`), böylece bir kiracı diğerinin verisini göremez.
+- **Arşiv (S3):** anahtarlar `events/{tenant}/{tarih}/{event_id}.json` — prefix izolasyonu.
+- **Vaka deposu:** `casemgmt` zaten kiracı-kapsamlıdır (CaseAlertSink olay tenant'ını geçirir).
+
+Altyapı-seviyesi sertleştirme (ClickHouse row-policy/quota, S3 prefix IAM, bus tenant ACL/partition
+key) DAĞITIM konfigürasyonudur — kod bunları hazırlar (tenant her satır/anahtar/vakada), operatör
+broker/DB tarafında zorlar.
+
 ## CI
 
 CI iki tier'ı da derler/test eder ve **zero-dep guard** koşar:

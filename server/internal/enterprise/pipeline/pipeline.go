@@ -160,6 +160,7 @@ type Pipeline struct {
 	detector  Detector                 // nil olabilir
 	alerts    AlertSink                // nil olabilir
 	normalize Normalizer
+	tenant    string // sunucu-tarafı bağlanan kiracı (boşsa dokunulmaz)
 }
 
 // New, bir pipeline kurar. normalize nil ise DefaultNormalize kullanılır.
@@ -183,6 +184,14 @@ func (p *Pipeline) WithDetection(d Detector, sink AlertSink) *Pipeline {
 	return p
 }
 
+// WithTenant, SUNUCU-TARAFI kiracıyı ayarlar: normalize edilmiş her olayın tenant_id'si boşsa
+// bu değerle doldurulur (araştırma ilkesi: tenant ingest'te bağlanır, client'tan güvenilmez).
+// Böylece tüm downstream tiers (ClickHouse satırı, S3 prefix'i, vaka kiracısı) tenant-atıflı olur.
+func (p *Pipeline) WithTenant(tenant string) *Pipeline {
+	p.tenant = tenant
+	return p
+}
+
 // ProcessAll, kaynaktaki tüm bildirimleri (en eskiden en yeniye) tüketir: her birini normalize
 // eder, arşive idempotent yazar (event_id anahtarlı) ve toplu olarak analitik deposuna ekler.
 // İşlenen kayıt sayısını döner. İdempotenttir: aynı olayların yeniden işlenmesi (dedup anahtarı
@@ -196,6 +205,10 @@ func (p *Pipeline) ProcessAll(ctx context.Context) (int, error) {
 			return err
 		}
 		e := p.normalize(n)
+		// Sunucu-tarafı kiracı bağlama: olay tenant taşımıyorsa yapılandırılan kiracıyı ata.
+		if e.TenantID == "" && p.tenant != "" {
+			e.TenantID = p.tenant
+		}
 		if p.archive != nil {
 			data, err := json.Marshal(e)
 			if err != nil {
