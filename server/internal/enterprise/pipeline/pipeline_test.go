@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"kut.corp/suite/server/internal/casemgmt"
 	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/eventbus"
+	"kut.corp/suite/server/internal/mitre"
 	"kut.corp/suite/server/internal/model"
 )
 
@@ -203,5 +205,60 @@ func TestProcessAllDetectionNoSink(t *testing.T) {
 	p := New(&fakeSource{notices: sampleNotices()}, nil, nil).WithDetection(fakeDetector{}, nil)
 	if _, err := p.ProcessAll(context.Background()); err != nil {
 		t.Fatalf("sink nil detection: %v", err)
+	}
+}
+
+// CaseAlertSink: alarm → çekirdek casemgmt.Store'da vaka; alanlar doğru eşlenmeli.
+func TestCaseAlertSink(t *testing.T) {
+	store := casemgmt.NewMemStore()
+	sink := NewCaseAlertSink(store)
+
+	alerts := []Alert{{
+		Event: model.Event{EventID: "evt_1", DeviceID: "d1", Severity: "high"},
+		Detection: detect.Detection{
+			RuleID: "R1", RuleName: "şüpheli komut", Severity: "HIGH",
+			Technique: mitre.Technique{ID: "T1059"},
+		},
+	}}
+	if err := sink.Emit(context.Background(), alerts); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+
+	// Tenant boştu → fallback "default" ile oluşturulmuş olmalı.
+	cases, err := store.List(fallbackTenant)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(cases) != 1 {
+		t.Fatalf("vaka sayısı=%d, beklenen 1", len(cases))
+	}
+	c := cases[0]
+	if c.Severity != casemgmt.SeverityHigh {
+		t.Fatalf("önem eşleme hatalı: %s", c.Severity)
+	}
+	if len(c.MITRE) != 1 || c.MITRE[0] != "T1059" {
+		t.Fatalf("MITRE eşleme hatalı: %v", c.MITRE)
+	}
+	if len(c.EvidenceRefs) != 1 || c.EvidenceRefs[0] != "evt_1" {
+		t.Fatalf("kanıt referansı hatalı: %v", c.EvidenceRefs)
+	}
+}
+
+// CaseAlertSink idempotent: aynı alarmın yeniden işlenmesi çift vaka üretmemeli, hata dönmemeli.
+func TestCaseAlertSinkIdempotent(t *testing.T) {
+	store := casemgmt.NewMemStore()
+	sink := NewCaseAlertSink(store)
+	alerts := []Alert{{
+		Event:     model.Event{EventID: "evt_9", DeviceID: "d9", Severity: "low"},
+		Detection: detect.Detection{RuleID: "R2", RuleName: "x", Severity: "LOW"},
+	}}
+	for i := 0; i < 3; i++ {
+		if err := sink.Emit(context.Background(), alerts); err != nil {
+			t.Fatalf("Emit %d: %v", i, err)
+		}
+	}
+	cases, _ := store.List(fallbackTenant)
+	if len(cases) != 1 {
+		t.Fatalf("idempotency kırık: %d vaka", len(cases))
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"kut.corp/suite/server/internal/db"
 	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/enterprise"
 	"kut.corp/suite/server/internal/enterprise/analytics"
@@ -69,6 +70,19 @@ func main() {
 
 	p := pipeline.New(src, an, ar)
 
+	// Alarm sink'i: DB varsa alarmlar KALICI vaka deposuna (control-plane konsoluyla paylaşımlı)
+	// yazılır; yoksa loglanır.
+	var alertSink pipeline.AlertSink = pipeline.LogAlertSink{}
+	if dsn := os.Getenv("KUT_DATABASE_URL"); dsn != "" {
+		dbStore, err := db.New(context.Background(), dsn)
+		if err != nil {
+			log.Fatalf("vaka deposu (DB) açılamadı: %v", err)
+		}
+		defer dbStore.Close()
+		alertSink = pipeline.NewCaseAlertSink(dbStore.CaseStore())
+		log.Println("alarm sink: kalıcı vaka deposu (PostgreSQL, konsolla paylaşımlı)")
+	}
+
 	// Detection stage (opsiyonel): KUT_DETECT_RULES_FILE ayarlıysa çekirdek tespit motorunu
 	// yeniden kullan (sıfırdan yazma). İmza pubkey'i ayarlıysa fail-closed doğrulanır.
 	if rf := os.Getenv("KUT_DETECT_RULES_FILE"); rf != "" {
@@ -76,7 +90,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("tespit kuralları yüklenemedi: %v", err)
 		}
-		p.WithDetection(detect.NewEngine(rules), pipeline.LogAlertSink{})
+		p.WithDetection(detect.NewEngine(rules), alertSink)
 		log.Printf("detection stage etkin (%d kural)", len(rules))
 	}
 
