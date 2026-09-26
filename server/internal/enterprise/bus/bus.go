@@ -58,8 +58,13 @@ func Register(b *eventbus.Bus) error {
 	return nil
 }
 
-// openBackend, KUT_BUS_BACKEND'e göre dayanıklı kaydı açar: "file" (varsayılan) veya
-// "jetstream". İkincil dönen değer, log için insan-okur backend açıklamasıdır.
+// OpenDurableLog, KUT_BUS_BACKEND'e göre dayanıklı kaydı açar — TÜKETİCİLER (ör. ingest
+// veri-düzlemi) için. Register üretici-tarafı sink'i kurar; tüketici bu fonksiyonla AYNI
+// backend'e (aynı dosya/stream/topic) kendi tanıtıcısını açıp Replay ile drenaj yapar.
+func OpenDurableLog() (DurableLog, string, error) { return openBackend() }
+
+// openBackend, KUT_BUS_BACKEND'e göre dayanıklı kaydı açar: "file" (varsayılan), "jetstream"
+// veya "kafka". İkincil dönen değer, log için insan-okur backend açıklamasıdır.
 func openBackend() (DurableLog, string, error) {
 	switch os.Getenv("KUT_BUS_BACKEND") {
 	case "jetstream", "nats":
