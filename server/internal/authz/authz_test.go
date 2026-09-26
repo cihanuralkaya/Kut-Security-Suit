@@ -1,11 +1,36 @@
 package authz
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"kut.corp/suite/server/internal/scope"
 )
+
+// checkRate, hits map'i tavanı aşınca süresi dolmuş anahtarları süpürmeli (bellek sızıntısı yok).
+func TestCheckRateSweepsIdleKeys(t *testing.T) {
+	old := rateKeyCap
+	rateKeyCap = 3
+	defer func() { rateKeyCap = old }()
+
+	g := NewGateway(Policy{HighImpactPerMin: 100}) // yüksek sınır → hep izin ver, kaydet
+	base := time.Now()
+	g.now = func() time.Time { return base }
+
+	for i := 0; i < 5; i++ { // 5 farklı principal → 5 boşta anahtar
+		g.checkRate(Request{Requester: AI, Principal: fmt.Sprintf("p%d", i)})
+	}
+	if len(g.hits) != 5 {
+		t.Fatalf("kurulum: 5 anahtar beklenir, %d", len(g.hits))
+	}
+	base = base.Add(2 * time.Minute) // tüm girdiler pencere dışına çıksın
+	g.checkRate(Request{Requester: AI, Principal: "pNew"})
+	// 5 bayat anahtar süpürülmeli; yalnız pNew kalmalı.
+	if len(g.hits) != 1 {
+		t.Fatalf("boşta anahtarlar süpürülmedi: %d anahtar kaldı", len(g.hits))
+	}
+}
 
 func TestLowImpactBypassesGateway(t *testing.T) {
 	g := NewGateway(DefaultPolicy())

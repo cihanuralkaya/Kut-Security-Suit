@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	neturl "net/url"
@@ -184,5 +185,8 @@ func (n *WebhookNotifier) post(a Alert) {
 		log.Printf("notify: webhook POST başarısız: %v", err)
 		return
 	}
+	// Gövdeyi EOF'a kadar boşalt (sınırlı) → transport bağlantıyı havuza iade eder
+	// (keep-alive). Aksi halde alarm-fırtınasında her POST yeni TCP+TLS el sıkışması yapar.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 	_ = resp.Body.Close()
 }

@@ -153,6 +153,10 @@ func (g *Gateway) checkBlastRadius(req Request) Decision {
 	return allow()
 }
 
+// rateKeyCap, hits map'i için fırsatçı-süpürme tetikleme tavanıdır (bellek sınırlama).
+// Aşılınca süresi dolmuş anahtarlar temizlenir. Test edilebilirlik için var (sabit değil).
+var rateKeyCap = 8192
+
 // checkRate, talepçi başına yüksek-etkili operasyon hızını sınırlar (kayan 60s
 // penceresi). Sınır aşılırsa kalıcı RED değil — geçici; talepçi beklemeli.
 func (g *Gateway) checkRate(req Request) Decision {
@@ -165,6 +169,24 @@ func (g *Gateway) checkRate(req Request) Decision {
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	// Fırsatçı süpürme: hits map'i bir tavanı aşarsa, TÜM girdileri süresi dolmuş
+	// anahtarları sil. Aksi halde seyrek erişilen principal'lar (AI/SOAR/kural/playbook
+	// kimlikleri) map'te sonsuza dek kalır — süreç-ömrü boyunca bellek sızıntısı. O(n)
+	// yalnız tavan aşımında (nadir); amortize maliyet düşük.
+	if len(g.hits) > rateKeyCap {
+		for k, ts := range g.hits {
+			stale := true
+			for _, t := range ts {
+				if t.After(cutoff) {
+					stale = false
+					break
+				}
+			}
+			if stale {
+				delete(g.hits, k)
+			}
+		}
+	}
 	// Pencere dışını buda.
 	kept := g.hits[key][:0]
 	for _, t := range g.hits[key] {
