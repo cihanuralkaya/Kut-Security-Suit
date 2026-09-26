@@ -6,7 +6,8 @@ KUT logosu ve türetilen uygulama ikonları `assets/` altında bulunur:
 
 | Dosya | Açıklama |
 |-------|----------|
-| `assets/kut-logo.png` | Ana logo bandı (1697×927) — README başlığı, sosyal önizleme. |
+| `assets/kut-logo.png` | Ana logo (1024×1024, kalkan+alev+kelime-marka) — README başlığı. |
+| `assets/kut-social-preview.png` | GitHub Social Preview / Open Graph görseli (1280×640). **Settings → General → Social preview**'e ELLE yüklenir (API/git ile ayarlanamaz); Topics kartlarında + link önizlemelerinde görünür. |
 | `assets/kut.ico` | Çok-boyutlu Windows ikonu (16/32/48/64/128/256, PNG-gömülü). |
 | `assets/kut-icon-256.png` | Kare ikon önizlemesi (kalkan) — 256×256. |
 

@@ -17,7 +17,7 @@ func TestEvaluateFullData(t *testing.T) {
 		"firewall":        0.8, // %80 cihazda fw açık
 	})
 	// Her çerçeve iki kontrolü de eşler → ortalama (%90+%80)/2 = %85.
-	for _, fw := range []string{CIS, NIST, ISO, KVKK} {
+	for _, fw := range []string{CIS, NIST, ISO, KVKK, GDPR} {
 		sc, ok := fwScore(rep, fw)
 		if !ok {
 			t.Fatalf("%s çerçevesi eksik", fw)

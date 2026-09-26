@@ -78,7 +78,8 @@ type Server struct {
 	health        func(context.Context) error
 	partReady     func(context.Context) (bool, error) // /readyz olay-partition hazırlığı (yalnız DB; nil → atla)
 	loginLim      *loginLimiter
-	notice        string
+	notice        string // TR/KVKK gizlilik metni
+	noticeEN      string // EN/GDPR gizlilik metni (/api/notice?lang=en)
 	dummyHash     string // SEC-004: bilinmeyen e-postada sabit-zaman için sahte Argon2 hash
 	sseConns      int64  // SEC-007: aktif SSE bağlantı sayısı (atomik)
 	auditVerify   func(context.Context) error
@@ -249,6 +250,17 @@ const defaultPrivacyNotice = "KVKK Aydınlatma: Bu cihaz kuruma aittir ve kurums
 	"Veriler at-rest şifrelenir, erişim RBAC ile sınırlıdır ve saklama süresi " +
 	"sonunda silinir. Veri sahibi erişim/silme talepleri için IT ile iletişime geçin."
 
+// defaultPrivacyNoticeEN, GDPR çerçeveli İngilizce gizlilik metni (İngilizce dil seçeneği
+// seçildiğinde /api/notice?lang=en döner). KVKK ve GDPR işlevsel eşdeğerdir (aynı veri-sahibi
+// hakları: erişim/dışa-aktarma/silme + saklama + at-rest şifreleme).
+const defaultPrivacyNoticeEN = "Privacy Notice (GDPR): This device is company-owned and within " +
+	"corporate endpoint security/management (EDR/MDM) scope. During business use, device " +
+	"health/security telemetry (running processes, network discovery, security events) is " +
+	"processed under the EU General Data Protection Regulation (GDPR) and corporate policy, " +
+	"on the legal bases of legitimate interest and legal obligation for information security. " +
+	"Data is encrypted at rest, access is restricted via RBAC, and it is erased at the end of " +
+	"the retention period. For data-subject requests (access/portability/erasure), contact IT."
+
 // New oluşturur. Giriş ucu varsayılan olarak istemci başına 5 başarısız
 // denemeden sonra 15 dk kilitlenir (kaba-kuvvet koruması).
 func New(adminSvc *admin.Service, reader *adminread.Service, auth AuthStore, sessions *security.SessionSigner, ttl time.Duration) *Server {
@@ -263,6 +275,7 @@ func New(adminSvc *admin.Service, reader *adminread.Service, auth AuthStore, ses
 		now:       time.Now,
 		loginLim:  newLoginLimiter(5, 15*time.Minute),
 		notice:    defaultPrivacyNotice,
+		noticeEN:  defaultPrivacyNoticeEN,
 		dummyHash: dummyHash,
 		gateway:   authz.NewGateway(authz.DefaultPolicy()),
 		cases:     casemgmt.NewMemStore(),
@@ -312,11 +325,18 @@ func (s *Server) SetBrain(b *aibrain.Brain) { s.brain = b }
 // /api/agentsec/telemetry kapalı. Bu uç session değil, ed25519 İMZA ile kimlik doğrular.
 func (s *Server) SetAgentTrust(v *aisec.TrustVerifier) { s.agentTrust = v }
 
-// SetPrivacyNotice, KVKK aydınlatma metnini ayarlar (boş verilirse varsayılan
+// SetPrivacyNotice, KVKK/TR aydınlatma metnini ayarlar (boş verilirse varsayılan
 // korunur). Kurulum, kurumsal metni buradan geçebilir.
 func (s *Server) SetPrivacyNotice(text string) {
 	if text = strings.TrimSpace(text); text != "" {
 		s.notice = text
+	}
+}
+
+// SetPrivacyNoticeEN, GDPR/EN gizlilik metnini ayarlar (boş verilirse varsayılan korunur).
+func (s *Server) SetPrivacyNoticeEN(text string) {
+	if text = strings.TrimSpace(text); text != "" {
+		s.noticeEN = text
 	}
 }
 
@@ -619,10 +639,15 @@ func (s *Server) authed(h func(http.ResponseWriter, *http.Request, string)) http
 	}
 }
 
-// handleNotice, KVKK aydınlatma metnini döner (kimlik doğrulamasız — giriş
-// öncesi konsolda gösterilir, şeffaflık gereği herkese açıktır).
-func (s *Server) handleNotice(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"notice": s.notice})
+// handleNotice, gizlilik aydınlatma metnini döner (kimlik doğrulamasız — giriş öncesi
+// konsolda gösterilir, şeffaflık gereği herkese açıktır). `?lang=en` GDPR/EN metnini,
+// aksi halde KVKK/TR metnini döner (İngilizce dil seçeneği). Dönen `lang` alanı seçili dili belirtir.
+func (s *Server) handleNotice(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("lang") == "en" {
+		writeJSON(w, http.StatusOK, map[string]string{"notice": s.noticeEN, "lang": "en"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"notice": s.notice, "lang": "tr"})
 }
 
 // handleHealthz, süreç canlılığı (liveness): süreç yanıt veriyorsa 200.
