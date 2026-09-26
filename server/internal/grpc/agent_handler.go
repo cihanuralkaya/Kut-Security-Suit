@@ -408,14 +408,20 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 	// KRİTİK kurcalama olayı üret. Best-effort; heartbeat'i kesmez.
 	if bh := req.GetBinaryHash(); bh != "" {
 		if tampered, terr := h.devices.RecordAgentBinary(ctx, deviceID, agentVersion, bh); terr == nil && tampered {
+			// Sunucu-üretilen kurcalama olayına cihazın kiracısını ata (nadir yol → lookup ucuz).
+			evTenant, _ := h.devices.TenantForDevice(ctx, deviceID)
+			if evTenant == "" {
+				evTenant = h.tenant
+			}
 			ev := model.Event{
 				Category: "SECURITY", Severity: "CRITICAL",
+				TenantID:   evTenant,
 				Message:    "ajan ikilisi sürüm değişmeden değişti — olası kurcalama/takas (öz-tasdik)",
 				OccurredAt: now,
 				Details:    `{"self_attestation":true,"binary_hash":"` + bh + `","agent_version":"` + agentVersion + `"}`,
 			}
 			_, _ = h.events.SaveEvents(ctx, deviceID, []model.Event{ev})
-			h.publishEvent(h.tenant, deviceID, ev.Severity, ev.Message)
+			h.publishEvent(evTenant, deviceID, ev.Severity, ev.Message)
 			metrics.IncAlertRaised()
 			h.alerter.Notify(notify.Alert{
 				DeviceID: deviceID, Category: ev.Category, Severity: ev.Severity,
@@ -495,10 +501,17 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 		if err != nil {
 			return err
 		}
+		// Etkin kiracı: cihazın kiracısı, yoksa sunucu-varsayılan. Olaylara SAVE'DEN ÖNCE
+		// damgalanır → hem event_logs (çekirdek depo) hem downstream (data-plane) tenant-atıflı.
+		effTenant := deviceTenant
+		if effTenant == "" {
+			effTenant = h.tenant
+		}
 		domainEvents := make([]model.Event, 0, len(batch.GetEvents()))
 		for _, e := range batch.GetEvents() {
 			domainEvents = append(domainEvents, model.Event{
 				Sequence:   e.GetSequence(),
+				TenantID:   effTenant,
 				Category:   dbCategory(e.GetCategory()),
 				Severity:   dbSeverity(e.GetSeverity()),
 				Message:    e.GetMessage(),
@@ -512,10 +525,7 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 		}
 		metrics.AddEventsIngested(len(domainEvents))
 		for _, e := range domainEvents {
-			if deviceTenant != "" {
-				e.TenantID = deviceTenant // per-device kiracı (server-side); ProcessEvent bunu korur
-			}
-			h.ProcessEvent(stream.Context(), deviceID, e)
+			h.ProcessEvent(stream.Context(), deviceID, e) // olaylar zaten effTenant ile damgalı
 		}
 		// Otomatik müdahale (SOAR): kritik olay geldiyse cihazı otomatik karantinaya
 		// al (akış başına bir kez; noop responder'da maliyetsiz). Hata olay-alımını

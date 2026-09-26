@@ -408,7 +408,8 @@ func TestDetailsJSON(t *testing.T) {
 // per-device kiracı, sunucu-varsayılan kiracıyı EZMELİ (çok-tenant izolasyonu).
 func TestReportEventsBindsPerDeviceTenant(t *testing.T) {
 	adm := &tenantAdmin{}
-	h := newTestHandler(&fakeDevices{tenant: "acme"}, &fakeEvents{}, &fakeUpdates{})
+	ev := &fakeEvents{}
+	h := newTestHandler(&fakeDevices{tenant: "acme"}, ev, &fakeUpdates{})
 	h.SetAlerter(&fakeAlerter{})
 	h.SetAdminNotifier(adm)
 	h.SetTenant("server-default") // per-device "acme" bunu ezmeli
@@ -423,5 +424,9 @@ func TestReportEventsBindsPerDeviceTenant(t *testing.T) {
 	}
 	if adm.lastTenant != "acme" {
 		t.Fatalf("per-device kiracı 'acme' beklenir (server-default'u ezmeli), alınan %q", adm.lastTenant)
+	}
+	// Kaydedilen olay da kiracıyı taşımalı (event_logs.tenant_id — çekirdek depo tenant-atıflı).
+	if len(ev.saved) == 0 || len(ev.saved[0]) == 0 || ev.saved[0][0].TenantID != "acme" {
+		t.Fatalf("kaydedilen olay 'acme' kiracısını taşımalı: %+v", ev.saved)
 	}
 }
