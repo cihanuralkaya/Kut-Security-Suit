@@ -10,12 +10,16 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/enterprise"
 	"kut.corp/suite/server/internal/enterprise/analytics"
 	"kut.corp/suite/server/internal/enterprise/archive"
@@ -64,6 +68,18 @@ func main() {
 	}
 
 	p := pipeline.New(src, an, ar)
+
+	// Detection stage (opsiyonel): KUT_DETECT_RULES_FILE ayarlıysa çekirdek tespit motorunu
+	// yeniden kullan (sıfırdan yazma). İmza pubkey'i ayarlıysa fail-closed doğrulanır.
+	if rf := os.Getenv("KUT_DETECT_RULES_FILE"); rf != "" {
+		rules, err := loadDetectRules(rf)
+		if err != nil {
+			log.Fatalf("tespit kuralları yüklenemedi: %v", err)
+		}
+		p.WithDetection(detect.NewEngine(rules), pipeline.LogAlertSink{})
+		log.Printf("detection stage etkin (%d kural)", len(rules))
+	}
+
 	interval := envDuration("KUT_INGEST_INTERVAL", defaultDrainInterval)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -88,6 +104,19 @@ func main() {
 		case <-ticker.C:
 		}
 	}
+}
+
+// loadDetectRules, tespit kural dosyasını yükler; KUT_DETECT_RULES_PUBKEY ayarlıysa YALNIZ
+// Ed25519 imzası doğrulanmış kuralları kabul eder (kurcalamaya karşı fail-closed) — c2 ile aynı semantik.
+func loadDetectRules(path string) ([]detect.Rule, error) {
+	if pk := os.Getenv("KUT_DETECT_RULES_PUBKEY"); pk != "" {
+		raw, err := base64.StdEncoding.DecodeString(pk)
+		if err != nil || len(raw) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("KUT_DETECT_RULES_PUBKEY geçersiz Ed25519 açık anahtar")
+		}
+		return detect.LoadRulesFileSigned(path, ed25519.PublicKey(raw))
+	}
+	return detect.LoadRulesFile(path)
 }
 
 func envOr(key, def string) string {

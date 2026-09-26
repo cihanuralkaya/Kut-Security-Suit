@@ -8,9 +8,33 @@ import (
 	"testing"
 	"time"
 
+	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/eventbus"
 	"kut.corp/suite/server/internal/model"
 )
+
+// fakeDetector, "high" önem düzeyindeki olaylara tek bir tespit üretir.
+type fakeDetector struct{}
+
+func (fakeDetector) Evaluate(ev model.Event) []detect.Detection {
+	if ev.Severity == "high" {
+		return []detect.Detection{{RuleID: "R1", RuleName: "yüksek önem", Severity: "HIGH"}}
+	}
+	return nil
+}
+
+// fakeAlertSink, üretilen alarmları toplar.
+type fakeAlertSink struct {
+	mu     sync.Mutex
+	alerts []Alert
+}
+
+func (f *fakeAlertSink) Emit(_ context.Context, a []Alert) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.alerts = append(f.alerts, a...)
+	return nil
+}
 
 // --- sahte (fake) bağımlılıklar: gerçek backend'ler ayrıca konteynere karşı test edilir;
 // burada pipeline MANTIĞI izole doğrulanır (konteynersiz, hızlı) ---
@@ -152,5 +176,32 @@ func TestProcessAllNilSinks(t *testing.T) {
 	n, err := p.ProcessAll(context.Background())
 	if err != nil || n != 3 {
 		t.Fatalf("nil sink: n=%d err=%v", n, err)
+	}
+}
+
+// Detection stage: yalnız eşleşen (high) olaylar alarm üretmeli; alarm tetikleyen olayı taşımalı.
+func TestProcessAllDetection(t *testing.T) {
+	sink := &fakeAlertSink{}
+	p := New(&fakeSource{notices: sampleNotices()}, nil, nil).WithDetection(fakeDetector{}, sink)
+
+	n, err := p.ProcessAll(context.Background())
+	if err != nil || n != 3 {
+		t.Fatalf("ProcessAll: n=%d err=%v", n, err)
+	}
+	// sampleNotices'te bir tane "high" var (d1) → tam 1 alarm.
+	if len(sink.alerts) != 1 {
+		t.Fatalf("alarm sayısı=%d, beklenen 1", len(sink.alerts))
+	}
+	a := sink.alerts[0]
+	if a.Detection.RuleID != "R1" || a.Event.DeviceID != "d1" || a.Event.EventID == "" {
+		t.Fatalf("alarm içeriği hatalı: %+v", a)
+	}
+}
+
+// Detector var ama sink nil ise (veya tersi) detection atlanır, panik olmaz.
+func TestProcessAllDetectionNoSink(t *testing.T) {
+	p := New(&fakeSource{notices: sampleNotices()}, nil, nil).WithDetection(fakeDetector{}, nil)
+	if _, err := p.ProcessAll(context.Background()); err != nil {
+		t.Fatalf("sink nil detection: %v", err)
 	}
 }
