@@ -168,6 +168,7 @@ CREATE TABLE event_logs (
     id          UUID NOT NULL DEFAULT uuid_generate_v4(),
     device_id   UUID NOT NULL,               -- FK partition'lı tabloda pratik
                                              -- nedenlerle uygulama katmanında doğrulanır
+    tenant_id   VARCHAR(63) NOT NULL DEFAULT '',  -- çok-tenant: olayın kiracısı (server-side; cihazdan)
     category    event_category NOT NULL,
     severity    severity NOT NULL DEFAULT 'INFO',
     message     TEXT NOT NULL,

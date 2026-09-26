@@ -380,12 +380,12 @@ func (s *Store) SaveEvents(ctx context.Context, deviceID string, evs []model.Eve
 	defer tx.Rollback(ctx) // commit sonrası no-op
 
 	const q = `
-		INSERT INTO event_logs (device_id, category, severity, message, occurred_at, details)
-		VALUES ($1, $2::event_category, $3::severity, $4, $5, NULLIF($6, '')::jsonb)`
+		INSERT INTO event_logs (device_id, tenant_id, category, severity, message, occurred_at, details)
+		VALUES ($1, $2, $3::event_category, $4::severity, $5, $6, NULLIF($7, '')::jsonb)`
 	batch := &pgx.Batch{}
 	var last uint64
 	for _, e := range evs {
-		batch.Queue(q, deviceID, e.Category, e.Severity, e.Message, e.OccurredAt, e.Details)
+		batch.Queue(q, deviceID, e.TenantID, e.Category, e.Severity, e.Message, e.OccurredAt, e.Details)
 		if e.Sequence > last {
 			last = e.Sequence
 		}
