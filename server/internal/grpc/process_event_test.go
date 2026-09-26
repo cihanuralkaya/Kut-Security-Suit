@@ -28,6 +28,38 @@ func newProcHandler(rules []detect.Rule) (*AgentHandler, *fakeAlerter, *fakeAdmi
 	return h, al, adm
 }
 
+// tenantAdmin, hem AdminNotifier hem AdminTenantNotifier'ı karşılar (kiracı-atıflı yol testi).
+type tenantAdmin struct {
+	lastTenant string
+	events     int
+	tenantHits int
+}
+
+func (t *tenantAdmin) PublishEvent(string, string, string) { t.events++ }
+func (t *tenantAdmin) PublishDevice(string)                {}
+func (t *tenantAdmin) PublishTenantEvent(tenant, _, _, _ string) {
+	t.lastTenant = tenant
+	t.tenantHits++
+}
+func (t *tenantAdmin) PublishTenantDevice(string, string) {}
+
+// SetTenant + kiracı-farkındalı admin: ProcessEvent olayı sunucu kiracısıyla atıflayıp
+// PublishTenantEvent'i çağırmalı (klasik PublishEvent'i DEĞİL).
+func TestProcessEventBindsServerTenant(t *testing.T) {
+	h, _, _ := newProcHandler([]detect.Rule{})
+	adm := &tenantAdmin{}
+	h.SetAdminNotifier(adm)
+	h.SetTenant("acme")
+	h.ProcessEvent(context.Background(), "dev1", model.Event{Category: "x", Message: "y", Severity: "LOW"})
+	if adm.tenantHits != 1 || adm.lastTenant != "acme" {
+		t.Fatalf("kiracı-atıflı yayın beklenir (tenant=acme): hits=%d tenant=%q events=%d",
+			adm.tenantHits, adm.lastTenant, adm.events)
+	}
+	if adm.events != 0 {
+		t.Fatalf("kiracı-farkındalı admin'de klasik PublishEvent çağrılmamalı, events=%d", adm.events)
+	}
+}
+
 // procCorrSink, korelatör için minimal Sink sahtesidir.
 type procCorrSink struct{ opened int }
 
