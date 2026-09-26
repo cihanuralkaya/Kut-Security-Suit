@@ -269,6 +269,11 @@ func ParseJWKS(data []byte) (map[string]*rsa.PublicKey, error) {
 			return nil, fmt.Errorf("iam: JWKS anahtarı eksik n/e [kid=%s]", k.Kid)
 		}
 		n := new(big.Int).SetBytes(nBytes)
+		// Zayıf-anahtar tabanı (fail-closed): meşru hiçbir IdP <2048-bit RSA kullanmaz;
+		// zayıf bir modülüs, kurcalanmış/yanlış-yapılandırılmış bir JWKS göstergesidir → reddet.
+		if n.BitLen() < 2048 {
+			return nil, fmt.Errorf("iam: JWKS RSA anahtarı çok zayıf (<2048 bit) [kid=%s]: %d bit", k.Kid, n.BitLen())
+		}
 		e := new(big.Int).SetBytes(eBytes)
 		if !e.IsInt64() || e.Int64() > int64(^uint32(0)) {
 			return nil, fmt.Errorf("iam: JWKS üssü (e) çok büyük [kid=%s]", k.Kid)
