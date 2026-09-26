@@ -43,6 +43,7 @@ type Normalizer func(eventbus.Notice) model.Event
 // güvence altına alır (idempotens/dedup temeli). Üretici zenginleştikçe bu eşleme genişletilebilir.
 func DefaultNormalize(n eventbus.Notice) model.Event {
 	e := model.Event{
+		TenantID:   n.TenantID, // per-event kiracı (üretici sunucu-tarafı bağladıysa); boşsa WithTenant fallback'i uygular
 		DeviceID:   n.DeviceID,
 		Severity:   n.Severity,
 		Message:    n.Message,

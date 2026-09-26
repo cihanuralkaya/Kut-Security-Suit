@@ -203,6 +203,25 @@ func TestProcessAllTenantBinding(t *testing.T) {
 	}
 }
 
+// Per-event tenant (Notice.TenantID) WithTenant fallback'ine ÜSTÜN gelmeli (çok-tenant akış).
+func TestProcessAllPerEventTenantOverridesFallback(t *testing.T) {
+	an := &fakeAnalytics{}
+	src := &fakeSource{notices: []eventbus.Notice{
+		{Type: "event", DeviceID: "d1", TenantID: "acme", At: time.Unix(1, 0).UTC()}, // per-event kiracı
+		{Type: "event", DeviceID: "d2", At: time.Unix(2, 0).UTC()},                   // kiracısız → fallback
+	}}
+	p := New(src, an, nil).WithTenant("fallback")
+	if _, err := p.ProcessAll(context.Background()); err != nil {
+		t.Fatalf("ProcessAll: %v", err)
+	}
+	if an.inserted[0].TenantID != "acme" {
+		t.Fatalf("per-event kiracı korunmalı: %q", an.inserted[0].TenantID)
+	}
+	if an.inserted[1].TenantID != "fallback" {
+		t.Fatalf("kiracısız olay fallback almalı: %q", an.inserted[1].TenantID)
+	}
+}
+
 // Detection stage: yalnız eşleşen (high) olaylar alarm üretmeli; alarm tetikleyen olayı taşımalı.
 func TestProcessAllDetection(t *testing.T) {
 	sink := &fakeAlertSink{}

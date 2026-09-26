@@ -65,3 +65,30 @@ func TestBusCancelIsIdempotentAndStopsDelivery(t *testing.T) {
 	}
 	b.PublishEvent("dev-1", "LOW", "x") // panik üretmemeli
 }
+
+// PublishTenantEvent kiracıyı Notice'e taşımalı; kiracısız PublishEvent boş TenantID vermeli.
+func TestPublishTenantPropagatesTenant(t *testing.T) {
+	b := New()
+	ch, cancel := b.Subscribe()
+	defer cancel()
+
+	b.PublishTenantEvent("acme", "dev1", "HIGH", "boom")
+	select {
+	case n := <-ch:
+		if n.TenantID != "acme" || n.DeviceID != "dev1" || n.Type != "event" {
+			t.Fatalf("kiracı taşınmadı: %+v", n)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("bildirim gelmedi")
+	}
+
+	b.PublishEvent("dev2", "LOW", "x") // kiracısız → boş
+	select {
+	case n := <-ch:
+		if n.TenantID != "" {
+			t.Fatalf("kiracısız yayında TenantID boş olmalı: %q", n.TenantID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("bildirim gelmedi")
+	}
+}
