@@ -9,6 +9,7 @@
 package bus
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -32,11 +33,7 @@ func Register(b *eventbus.Bus) error {
 	if b == nil {
 		return nil
 	}
-	path := os.Getenv("KUT_BUS_LOG")
-	if path == "" {
-		path = defaultLogPath
-	}
-	dl, err := NewFileLog(path)
+	dl, desc, err := openBackend()
 	if err != nil {
 		return err
 	}
@@ -57,8 +54,36 @@ func Register(b *eventbus.Bus) error {
 		}
 		b.Deliver(n) // Deliver sink'i ÇAĞIRMAZ (yerel fan-out) → recursion yok.
 	})
-	log.Printf("KUT Enterprise bus: seam bağlandı (dayanıklı kayıt %q)", path)
+	log.Printf("KUT Enterprise bus: seam bağlandı (%s)", desc)
 	return nil
+}
+
+// openBackend, KUT_BUS_BACKEND'e göre dayanıklı kaydı açar: "file" (varsayılan) veya
+// "jetstream". İkincil dönen değer, log için insan-okur backend açıklamasıdır.
+func openBackend() (DurableLog, string, error) {
+	switch os.Getenv("KUT_BUS_BACKEND") {
+	case "jetstream", "nats":
+		url := os.Getenv("KUT_NATS_URL") // boş → gömülü sunucu
+		store := os.Getenv("KUT_NATS_STORE")
+		dl, err := NewJetStreamLog(url, store)
+		if err != nil {
+			return nil, "", err
+		}
+		if url == "" {
+			return dl, "jetstream backend: gömülü sunucu", nil
+		}
+		return dl, fmt.Sprintf("jetstream backend: %s", url), nil
+	default: // "file" veya boş
+		path := os.Getenv("KUT_BUS_LOG")
+		if path == "" {
+			path = defaultLogPath
+		}
+		dl, err := NewFileLog(path)
+		if err != nil {
+			return nil, "", err
+		}
+		return dl, fmt.Sprintf("dosya kaydı %q", path), nil
+	}
 }
 
 // Close, aktif dayanıklı kaydı boşaltıp kapatır (süreç kapanışında çağrılır). Idempotenttir.

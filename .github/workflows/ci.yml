@@ -72,7 +72,7 @@ jobs:
       # taşımamalı — hepsi enterprise tag'i arkasında kalmalı.
       - name: Zero-dep guard (Lite)
         run: |
-          if go list -deps ./server/cmd/c2 | grep -Eiq 'kafka|clickhouse|minio|aws-sdk|redpanda|segmentio|confluent'; then
+          if go list -deps ./server/cmd/c2 | grep -Eiq 'kafka|clickhouse|minio|aws-sdk|redpanda|segmentio|confluent|nats-io'; then
             echo "HATA: Lite c2 build grafiğine ağır altyapı bağımlılığı sızdı (enterprise tag'i arkasında olmalı)"; exit 1
           fi
           echo "OK: Lite c2 zero heavy-dep"

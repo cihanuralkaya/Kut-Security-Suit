@@ -76,7 +76,7 @@ Tek dil: **Go**. Ajan ↔ C2 iletişimi **gRPC + mTLS** (TLS 1.3).
 
 ## Gereksinimler (geliştirme)
 
-- Go 1.25+
+- Go 1.26+
 - [buf](https://buf.build) (proto üretimi) veya protoc + eklentiler
 - PostgreSQL 14+ (`uuid-ossp`, `pgcrypto` eklentileri)
 
@@ -223,7 +223,7 @@ Single language: **Go**. Agent ↔ C2 communication over **gRPC + mTLS** (TLS 1.
 
 ## Requirements (development)
 
-- Go 1.25+
+- Go 1.26+
 - [buf](https://buf.build) (proto generation) or protoc + plugins
 - PostgreSQL 14+ (`uuid-ossp`, `pgcrypto` extensions)
 
