@@ -14,8 +14,8 @@ kanıtlandı** (`server/internal/e2e`). Kernel-seviye tamper koruması bilinçli
 olarak kapsam dışıdır (bkz. aşağıda).
 
 - Dil: **Go** (tek dil), iletişim **gRPC + mTLS**, TLS 1.3.
-- ~25 600 satır üretim Go + kapsamlı test.
-- **715 test fonksiyonu / 90 test paketi**, tümü geçiyor (`go test ./...`).
+- ~43 300 satır üretim Go + kapsamlı test.
+- **1088 test fonksiyonu (+16 fuzz) / 111 test paketi**, tümü geçiyor (`go test ./...`).
 - Cross-compile doğrulandı: Windows (native), Linux, macOS.
 - **Bellek-içi demo modu** canlı çalıştırıldı (`KUT_DATABASE_URL` boş): gerçek
   enrollment, gerçek ağ keşfi, tüm admin/konsol akışları uçtan uca denendi.
@@ -284,8 +284,8 @@ mTLS gRPC and real cryptography (`server/internal/e2e`). Kernel-level tamper
 protection is deliberately out of scope (see below).
 
 - Language: **Go** (single language), communication over **gRPC + mTLS**, TLS 1.3.
-- ~15,000 lines of production Go + comprehensive tests.
-- **715 test functions / 90 test packages**, all passing (`go test ./...`).
+- ~43,300 lines of production Go + comprehensive tests.
+- **1088 test functions (+16 fuzz) / 111 test packages**, all passing (`go test ./...`).
 - Cross-compilation verified: Windows (native), Linux, macOS.
 - **In-memory demo mode** run live (`KUT_DATABASE_URL` empty): real enrollment, real
   network discovery, all admin/console flows exercised end-to-end.

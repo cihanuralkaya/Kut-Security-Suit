@@ -417,6 +417,10 @@ POST /v1/score/sequence → 200 {"score":0..100,"rationale":"...","source":"llm:
 
 ### 5.5 Çekirdekten opsiyonel bağlama (env ile)
 
+> **Not (durum):** Aşağıdaki çok-uçlu env şeması PLANDIR — henüz uygulanmadı. Mevcut
+> implementasyon (`server/internal/aibrain`, `services/ai`) tek uç kullanır: `KUT_AI_URL`
+> (+ opsiyonel `KUT_AI_KEY`/`KUT_AI_MODEL`). Bu bölüm ileriki ayrıştırma tasarımıdır.
+
 ```go
 // Config, dış AI servislerini opsiyonel bağlar. Tüm alanlar boşsa LOCAL stub kullanılır.
 type Config struct {

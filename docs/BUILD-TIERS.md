@@ -1,7 +1,7 @@
 # Build Tiers — KUT Lite ve KUT Enterprise
 
 KUT tek bir kod tabanından iki dağıtım katmanı üretir. Ayrı repo/fork YOKTUR — fark yalnız
-**derleme etiketi (`//go:build enterprise`) + çalışma modu (`KUT_MODE`)**. Bu, GitLab CE/EE
+**derleme etiketi (`//go:build enterprise`) + ayrı binary'ler** (`cmd/c2` vs `cmd/control`+`cmd/ingest`). Bu, GitLab CE/EE
 (`ee/` dizini) ve HashiCorp (build-tag) desenidir ve reponun mevcut `//go:build onnx`
 opsiyonel-backend emsalini (bkz. `docs/ONNX.md`) altyapıya uygular.
 
@@ -12,7 +12,7 @@ opsiyonel-backend emsalini (bkz. `docs/ONNX.md`) altyapıya uygular.
 | Derleme | `go build ./...` | `go build -tags enterprise ./...` |
 | Binary | `cmd/c2` (tek binary) | `cmd/control` + `cmd/ingest` |
 | Depolama | yalnız PostgreSQL | + dayanıklı bus (NATS JetStream / Kafka) + analytics (ClickHouse) + object-store |
-| Çalışma modu | `KUT_MODE` boş/`lite` | `KUT_MODE=scale` |
+| Seçim | (varsayılan build) | `-tags enterprise` + ayrı binary'ler |
 | Dış bağımlılık | **sıfır ağır dep** (pgx/grpc taban) | ağır infra istemcileri (yalnız enterprise tag'i arkasında) |
 
 ## Değişmez kural (zero-dep korunur)

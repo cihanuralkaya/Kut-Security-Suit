@@ -27,7 +27,7 @@ Tek dil: **Go**. Ajan ↔ C2 iletişimi **gRPC + mTLS** (TLS 1.3).
 > **Durum: özellik-tam, CI yeşil, dağıtıma hazır.** Ayrıntılı yetenek matrisi ve
 > ne-nasıl-doğrulandı için **[docs/STATUS.md](docs/STATUS.md)**.
 >
-> - **1067 test (+16 fuzz) / 108 paket** geçiyor; **CI** (`.github/workflows/ci.yml`) her
+> - **1088 test (+16 fuzz) / 111 paket** geçiyor; **CI** (`.github/workflows/ci.yml`) her
 >   push'ta `go vet` + `-race` test + **uçtan uca smoke** + **gerçek PostgreSQL'e karşı DB
 >   testi** + çapraz derleme + **her iki derleme katmanı (Lite/Enterprise)** çalıştırır — hepsi yeşil.
 > - Uçtan uca kanıtlı zincir: enroll (PKI) → mTLS heartbeat (sunucu-saati) → olay →
@@ -123,7 +123,8 @@ Tüm ayarlar ortam değişkenleriyle yapılır. Tam liste + açıklama:
   (SOC uyarı, Slack/Teams), `KUT_AUTO_RESPONSE` (SOAR oto-karantina), `KUT_IOC_FILE`
   (tehdit istihbaratı), `KUT_DETECT_RULES_FILE` (özel tespit kuralları),
   `KUT_METRICS_TOKEN` (Prometheus), `KUT_LOG_FORMAT=json` (SIEM),
-  `KUT_WIPE_DUAL_CONTROL=1` (dört-göz WIPE), **Scope/ROE guardrail** (§4):
+  **çift-kontrol (dört-göz) WIPE varsayılan AÇIK** — tek-admin doğrudan WIPE'a
+  izin vermek için `KUT_WIPE_SINGLE_ADMIN_UNSAFE=1` (güvensiz), **Scope/ROE guardrail** (§4):
   `KUT_SCOPE_ENFORCE=1` + `KUT_SCOPE_ALLOW_DEVICES/TENANTS/NETWORKS/DOMAINS/…`
   ve `KUT_SCOPE_ALLOW_DESTRUCTIVE=1` (bkz. [docs/V2-GAP-ANALYSIS.md](docs/V2-GAP-ANALYSIS.md)).
 - **Ajan:** bağlantı (`KUT_ENROLL_ADDR`/`KUT_AGENT_ADDR`/`KUT_SERVER_NAME`/`KUT_CA_PEM`),
@@ -175,7 +176,7 @@ Single language: **Go**. Agent ↔ C2 communication over **gRPC + mTLS** (TLS 1.
 > **Status: feature-complete, CI green, deployment-ready.** For the detailed
 > capability matrix and what-was-verified-how, see **[docs/STATUS.md](docs/STATUS.md)**.
 >
-> - **1067 tests (+16 fuzz) / 108 packages** pass; **CI** (`.github/workflows/ci.yml`) runs
+> - **1088 tests (+16 fuzz) / 111 packages** pass; **CI** (`.github/workflows/ci.yml`) runs
 >   `go vet` + `-race` tests + **end-to-end smoke** + **DB test against a real PostgreSQL** +
 >   cross-compilation + **both build tiers (Lite/Enterprise)** on every push — all green.
 > - End-to-end proven chain: enroll (PKI) → mTLS heartbeat (server-clock) → event →
