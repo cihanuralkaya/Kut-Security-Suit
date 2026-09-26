@@ -38,7 +38,10 @@ server/internal/
     analytics/                                (AnalyticsStore seam; nötr arayüz + ClickHouse impl)
       analytics.go         (build-tag'siz: AnalyticsStore arayüzü + tipler)
       clickhouse.go        //go:build enterprise   (ClickHouse impl; KUT_CLICKHOUSE_DSN)
-    (sonra) blob/  secretsprov/  …             (aynı impl+stub deseni)
+    archive/                                  (Archive seam; nötr arayüz + S3/MinIO impl)
+      archive.go           (build-tag'siz: Archive arayüzü Put/Get/List/Delete)
+      s3.go                //go:build enterprise   (minio-go; KUT_S3_*)
+    (sonra) secretsprov/  …                     (aynı impl+stub deseni)
 server/cmd/
   c2/       (Lite tek binary — default)
   control/  main.go //go:build enterprise | main_stub.go //go:build !enterprise
