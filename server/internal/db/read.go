@@ -83,6 +83,7 @@ func (s *Store) QueryEvents(ctx context.Context, f adminread.EventFilter) ([]adm
 		   AND ($4 = '' OR message ILIKE '%' || $4 || '%')
 		   AND ($5::timestamptz IS NULL OR created_at >= $5)
 		   AND ($6::timestamptz IS NULL OR created_at <= $6)
+		   AND ($8 = '' OR tenant_id = $8)
 		 ORDER BY created_at DESC
 		 LIMIT $7`
 	var since, until *time.Time
@@ -92,7 +93,7 @@ func (s *Store) QueryEvents(ctx context.Context, f adminread.EventFilter) ([]adm
 	if !f.Until.IsZero() {
 		until = &f.Until
 	}
-	rows, err := s.pool.Query(ctx, q, f.DeviceID, f.Severity, f.Category, f.MessageContains, since, until, f.Limit)
+	rows, err := s.pool.Query(ctx, q, f.DeviceID, f.Severity, f.Category, f.MessageContains, since, until, f.Limit, f.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: olay sorgusu: %w", err)
 	}

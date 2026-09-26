@@ -666,6 +666,7 @@ func (s *Service) Incidents(ctx context.Context, limit int) ([]IncidentRow, erro
 // sorgusunun ölçütleridir. Boş string / sıfır zaman = o alan filtrelenmez.
 type EventFilter struct {
 	DeviceID        string
+	TenantID        string // çok-tenant izolasyonu: boş değilse yalnız bu kiracının olayları (server-side ayarlanır)
 	Severity        string
 	Category        string
 	MessageContains string    // mesajda alt-dize (ILIKE); büyük/küçük harf duyarsız
