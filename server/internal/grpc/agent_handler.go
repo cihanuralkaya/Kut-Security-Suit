@@ -37,6 +37,10 @@ type DeviceRegistry interface {
 	// TouchHeartbeat, last_seen ve metrikleri günceller; cihazın SUNUCUDAKI
 	// geçerli politika sürümünü döner.
 	TouchHeartbeat(ctx context.Context, deviceID, agentVersion, osVersion string, at time.Time) (currentPolicyVersion string, err error)
+	// TenantForDevice, cihazın SUNUCU-TARAFI bağlı kiracısını döner (enrollment'ta atanır;
+	// çok-tenant izolasyonu). Boş → tek-tenant (çağıran sunucu kiracısına düşer). Kimlik
+	// mTLS ile doğrulanmış deviceID'den okunur — client kiracıyı belirleyemez.
+	TenantForDevice(ctx context.Context, deviceID string) (string, error)
 	// PendingCommands, cihaz için bekleyen komutları döner (karantina vb.).
 	PendingCommands(ctx context.Context, deviceID string) ([]*kutv1.Command, error)
 	// AckCommands, ajanın heartbeat'te bildirdiği (yürütmeyi tamamladığı) komutları
@@ -477,6 +481,9 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 	if err != nil {
 		return status.Error(codes.Unauthenticated, "kimlik doğrulanamadı")
 	}
+	// Cihazın kiracısını SUNUCU-TARAFI çöz (mTLS ile doğrulanmış deviceID'den; akış başına
+	// bir kez, uzun-ömürlü akışta amortize ucuz). Boşsa ProcessEvent sunucu kiracısına düşer.
+	deviceTenant, _ := h.devices.TenantForDevice(stream.Context(), deviceID)
 
 	var lastAccepted uint64
 	autoTriggered := false // akış başına en çok bir kez otomatik karantina
@@ -505,6 +512,9 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 		}
 		metrics.AddEventsIngested(len(domainEvents))
 		for _, e := range domainEvents {
+			if deviceTenant != "" {
+				e.TenantID = deviceTenant // per-device kiracı (server-side); ProcessEvent bunu korur
+			}
 			h.ProcessEvent(stream.Context(), deviceID, e)
 		}
 		// Otomatik müdahale (SOAR): kritik olay geldiyse cihazı otomatik karantinaya

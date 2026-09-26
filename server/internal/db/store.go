@@ -112,6 +112,20 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, tokenIndex []byte, _
 	return boundDeviceID, tenantID, nil
 }
 
+// TenantForDevice, cihazın kiracısını döner (enrollment'ta bağlanan). Cihaz yoksa boş
+// döner (hata değil) — çağıran sunucu kiracısına düşer.
+func (s *Store) TenantForDevice(ctx context.Context, deviceID string) (string, error) {
+	var tenant string
+	err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM devices WHERE id = $1`, deviceID).Scan(&tenant)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("db: cihaz kiracısı: %w", err)
+	}
+	return tenant, nil
+}
+
 // UpsertEnrollingDevice, cihazı oluşturur/günceller ve device_id döner.
 func (s *Store) UpsertEnrollingDevice(ctx context.Context, in enroll.DeviceEnrollment) (string, error) {
 	if in.PreferredDeviceID != "" {

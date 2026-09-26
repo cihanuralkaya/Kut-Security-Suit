@@ -403,3 +403,25 @@ func TestDetailsJSON(t *testing.T) {
 		t.Errorf("dolu struct JSON üretmeli, %q", got)
 	}
 }
+
+// ReportEvents, cihazın SUNUCU-TARAFI kiracısını (TenantForDevice) çözüp olaya atamalı ve bu
+// per-device kiracı, sunucu-varsayılan kiracıyı EZMELİ (çok-tenant izolasyonu).
+func TestReportEventsBindsPerDeviceTenant(t *testing.T) {
+	adm := &tenantAdmin{}
+	h := newTestHandler(&fakeDevices{tenant: "acme"}, &fakeEvents{}, &fakeUpdates{})
+	h.SetAlerter(&fakeAlerter{})
+	h.SetAdminNotifier(adm)
+	h.SetTenant("server-default") // per-device "acme" bunu ezmeli
+	stream := &fakeStream{
+		ctx: peerCtx("dev-1"),
+		batches: []*kutv1.EventBatch{
+			{Events: []*kutv1.Event{{Sequence: 1, Message: "x", OccurredAt: timestamppb.New(time.Now())}}},
+		},
+	}
+	if err := h.ReportEvents(stream); err != nil {
+		t.Fatalf("beklenmeyen hata: %v", err)
+	}
+	if adm.lastTenant != "acme" {
+		t.Fatalf("per-device kiracı 'acme' beklenir (server-default'u ezmeli), alınan %q", adm.lastTenant)
+	}
+}

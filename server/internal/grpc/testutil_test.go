@@ -81,10 +81,15 @@ type fakeDevices struct {
 
 	acked    []string
 	outcomes []model.CommandOutcome
+
+	tenant string // TenantForDevice döndürür (çok-tenant testleri)
 }
 
 func (f *fakeDevices) TouchHeartbeat(_ context.Context, _, _, _ string, _ time.Time) (string, error) {
 	return f.policyVer, f.touchErr
+}
+func (f *fakeDevices) TenantForDevice(_ context.Context, _ string) (string, error) {
+	return f.tenant, nil
 }
 func (f *fakeDevices) PendingCommands(_ context.Context, _ string) ([]*kutv1.Command, error) {
 	return f.pending, f.pendErr

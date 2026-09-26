@@ -264,6 +264,16 @@ func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollm
 	return id, nil
 }
 
+// TenantForDevice, cihazın kiracısını döner (enrollment'ta bağlanan; yoksa boş).
+func (s *Store) TenantForDevice(_ context.Context, deviceID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if d, ok := s.devices[deviceID]; ok {
+		return d.tenant, nil
+	}
+	return "", nil
+}
+
 func (s *Store) SaveCertificate(_ context.Context, c enroll.CertRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
