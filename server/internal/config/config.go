@@ -58,6 +58,11 @@ type Config struct {
 	// TenantID, bu dağıtımın kiracı kimliğidir (çok-kiracılı temel; Faz 1).
 	// KUT_TENANT_ID; belirtilmezse "default" (tek-kiracılı, geriye uyumlu).
 	TenantID string
+	// TenantEnforce, çok-müşteri SaaS için sıkı kiracı zorlamasıdır (KUT_TENANT_ENFORCE=1).
+	// Açıkken, kiracıya bağlı OLMAYAN bir cihazın olayları REDDEDİLİR (sunucu-varsayılana
+	// sessizce atıflanıp cross-tenant karışma yaratmaz; INV-044 missing→DENY). Varsayılan
+	// kapalı → tek-tenant/geriye-uyumlu (kiracısız cihaz sunucu kiracısına düşer).
+	TenantEnforce bool
 }
 
 // Load, ortam değişkenlerinden Config üretir ve doğrular.
@@ -149,6 +154,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: KUT_TENANT_ID geçersiz: %w", err)
 	}
 	c.TenantID = string(tid)
+	c.TenantEnforce = os.Getenv("KUT_TENANT_ENFORCE") == "1"
 
 	// KUT_DATABASE_URL boşsa sunucu bellek-içi DEMO deposuyla başlar (kalıcılık yok).
 	return c, nil

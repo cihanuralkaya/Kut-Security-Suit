@@ -146,31 +146,36 @@ func (noopResponder) AutoQuarantine(context.Context, string, string) error { ret
 // AgentHandler, AgentService gRPC sunucusunu uygular.
 type AgentHandler struct {
 	kutv1.UnimplementedAgentServiceServer
-	devices    DeviceRegistry
-	events     EventSink
-	policies   PolicyProvider
-	updates    UpdateProvider
-	notifier   PolicyNotifier
-	admin      AdminNotifier
-	alerter    notify.Notifier
-	responder  AutoResponder
-	detector   atomic.Pointer[detect.Engine] // tespit motoru (canlı hot-reload için atomik)
-	correlator *correlate.Correlator         // olay korelasyonu (nil = gruplama/bastırma yok)
-	chain      *correlate.ChainDetector      // çok-sinyal korelasyon (nil = kapalı)
-	threshold  *threshold.Gate               // tekrar-eşiği kapısı (kural bazlı brute-force/tarama)
-	detbits    *detbits.Store                // çok-aşamalı tespit durum bitleri (flowbits/xbits)
-	iocSet     atomic.Pointer[ioc.Set]       // tehdit istihbaratı göstergeleri (nil = kapalı; canlı hot-reload için atomik)
-	artifacts  ArtifactSink                  // adli/IR dosya toplama deposu
-	graph      *entitygraph.Graph            // varlık/tehdit grafı — olaylardan kenar besler (nil = kapalı)
-	seqModel   *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli — canlı öğrenir (nil = kapalı)
-	tenant     string                        // sunucu-tarafı kiracı (KUT_TENANT_ID); olaylara atanır (boş = tek-tenant)
-	now        func() time.Time
+	devices       DeviceRegistry
+	events        EventSink
+	policies      PolicyProvider
+	updates       UpdateProvider
+	notifier      PolicyNotifier
+	admin         AdminNotifier
+	alerter       notify.Notifier
+	responder     AutoResponder
+	detector      atomic.Pointer[detect.Engine] // tespit motoru (canlı hot-reload için atomik)
+	correlator    *correlate.Correlator         // olay korelasyonu (nil = gruplama/bastırma yok)
+	chain         *correlate.ChainDetector      // çok-sinyal korelasyon (nil = kapalı)
+	threshold     *threshold.Gate               // tekrar-eşiği kapısı (kural bazlı brute-force/tarama)
+	detbits       *detbits.Store                // çok-aşamalı tespit durum bitleri (flowbits/xbits)
+	iocSet        atomic.Pointer[ioc.Set]       // tehdit istihbaratı göstergeleri (nil = kapalı; canlı hot-reload için atomik)
+	artifacts     ArtifactSink                  // adli/IR dosya toplama deposu
+	graph         *entitygraph.Graph            // varlık/tehdit grafı — olaylardan kenar besler (nil = kapalı)
+	seqModel      *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli — canlı öğrenir (nil = kapalı)
+	tenant        string                        // sunucu-tarafı kiracı (KUT_TENANT_ID); olaylara atanır (boş = tek-tenant)
+	tenantEnforce bool                          // sıkı çok-tenant: kiracısız cihazın olaylarını reddet (INV-044)
+	now           func() time.Time
 }
 
 // SetTenant, bu sunucunun kiracı kimliğini ayarlar (sunucu-tarafı bağlama). Ayarlıysa,
 // kimlik-doğrulanmış cihazlardan gelen olaylar bu kiracıyla atıflanır (asla client'tan).
 // Boş → tek-tenant (Notice.TenantID boş kalır). Gerçek çok-tenant'ta ileride cihaz-başına çözülür.
 func (h *AgentHandler) SetTenant(t string) { h.tenant = t }
+
+// SetTenantEnforce, sıkı çok-tenant zorlamasını açar/kapatır. Açıkken, kiracıya bağlı
+// olmayan bir cihazın olayları reddedilir (sunucu-varsayılana düşmez; INV-044 missing→DENY).
+func (h *AgentHandler) SetTenantEnforce(on bool) { h.tenantEnforce = on }
 
 // SetEntityGraph, varlık/tehdit grafını bağlar. Bağlıysa ProcessEvent, olaylardan
 // (DNS→alan, bağlantı→IP) cihaz-merkezli kenarlar besler (pivot/hunting temeli).
@@ -505,6 +510,10 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 		// damgalanır → hem event_logs (çekirdek depo) hem downstream (data-plane) tenant-atıflı.
 		effTenant := deviceTenant
 		if effTenant == "" {
+			// Sıkı çok-tenant: kiracısız cihazı sunucu-varsayılana atıflama — REDDET (INV-044).
+			if h.tenantEnforce {
+				return status.Error(codes.FailedPrecondition, "kiracı zorunlu: cihaz bir kiracıya bağlı değil")
+			}
 			effTenant = h.tenant
 		}
 		domainEvents := make([]model.Event, 0, len(batch.GetEvents()))

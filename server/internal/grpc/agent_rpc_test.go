@@ -430,3 +430,39 @@ func TestReportEventsBindsPerDeviceTenant(t *testing.T) {
 		t.Fatalf("kaydedilen olay 'acme' kiracısını taşımalı: %+v", ev.saved)
 	}
 }
+
+// Sıkı çok-tenant: kiracıya bağlı OLMAYAN cihazın olayları reddedilmeli (INV-044 missing→DENY).
+func TestReportEventsTenantEnforceRejectsUnbound(t *testing.T) {
+	h := newTestHandler(&fakeDevices{}, &fakeEvents{}, &fakeUpdates{}) // cihaz kiracısı ""
+	h.SetAlerter(&fakeAlerter{})
+	h.SetTenantEnforce(true) // h.tenant "" + cihaz kiracısı yok → reddet
+	stream := &fakeStream{
+		ctx: peerCtx("dev-1"),
+		batches: []*kutv1.EventBatch{
+			{Events: []*kutv1.Event{{Sequence: 1, Message: "x", OccurredAt: timestamppb.New(time.Now())}}},
+		},
+	}
+	if err := h.ReportEvents(stream); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("kiracısız cihaz FailedPrecondition ile reddedilmeli, alınan: %v", err)
+	}
+}
+
+// Sıkı çok-tenant AÇIK ama cihazın kiracısı VARSA olaylar kabul edilmeli.
+func TestReportEventsTenantEnforceAllowsBound(t *testing.T) {
+	ev := &fakeEvents{}
+	h := newTestHandler(&fakeDevices{tenant: "acme"}, ev, &fakeUpdates{})
+	h.SetAlerter(&fakeAlerter{})
+	h.SetTenantEnforce(true)
+	stream := &fakeStream{
+		ctx: peerCtx("dev-1"),
+		batches: []*kutv1.EventBatch{
+			{Events: []*kutv1.Event{{Sequence: 1, Message: "x", OccurredAt: timestamppb.New(time.Now())}}},
+		},
+	}
+	if err := h.ReportEvents(stream); err != nil {
+		t.Fatalf("kiracıya bağlı cihaz kabul edilmeli: %v", err)
+	}
+	if len(ev.saved) == 0 || ev.saved[0][0].TenantID != "acme" {
+		t.Fatalf("kaydedilen olay 'acme' taşımalı: %+v", ev.saved)
+	}
+}
