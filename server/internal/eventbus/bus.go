@@ -16,6 +16,11 @@ type Notice struct {
 	Severity string    `json:"severity,omitempty"`
 	Message  string    `json:"message,omitempty"`
 	At       time.Time `json:"at"`
+	// TenantID (opsiyonel): olayı üreten kimlik-doğrulanmış cihazın kiracısı. SUNUCU-TARAFI
+	// bağlanır (asla client'tan), çok-tenant veri-düzlemi izolasyonu için dayanıklı bus üzerinden
+	// ingest'e taşınır. Boş → tek-tenant (ingest yapılandırılan KUT_TENANT'a düşer). Alan additive:
+	// tüm DurableLog backend'leri JSON serileştirir → geriye-uyumlu; frozen DurableLog imzası değişmez.
+	TenantID string `json:"tenant_id,omitempty"`
 }
 
 // Bus, abonelere bildirim yayınlar.
@@ -94,14 +99,26 @@ func (b *Bus) emit(n Notice) {
 	sink(n)
 }
 
-// PublishEvent, yeni bir olay bildirir (grpc.AdminNotifier arayüzü).
+// PublishEvent, yeni bir olay bildirir (grpc.AdminNotifier arayüzü). Kiracısız
+// (tek-tenant) — tenant-farkındalı üreticiler PublishTenantEvent kullanmalı.
 func (b *Bus) PublishEvent(deviceID, severity, message string) {
-	b.emit(Notice{Type: "event", DeviceID: deviceID, Severity: severity, Message: message, At: time.Now().UTC()})
+	b.PublishTenantEvent("", deviceID, severity, message)
 }
 
-// PublishDevice, bir cihazın yaşam sinyali/durum değişimini bildirir.
+// PublishDevice, bir cihazın yaşam sinyali/durum değişimini bildirir (kiracısız).
 func (b *Bus) PublishDevice(deviceID string) {
-	b.emit(Notice{Type: "device", DeviceID: deviceID, At: time.Now().UTC()})
+	b.PublishTenantDevice("", deviceID)
+}
+
+// PublishTenantEvent, kiracı-atıflı bir olay bildirir. tenant SUNUCU-TARAFI belirlenmeli
+// (kimlik-doğrulanmış cihazdan), client yükünden değil. Boş tenant → tek-tenant davranış.
+func (b *Bus) PublishTenantEvent(tenant, deviceID, severity, message string) {
+	b.emit(Notice{Type: "event", TenantID: tenant, DeviceID: deviceID, Severity: severity, Message: message, At: time.Now().UTC()})
+}
+
+// PublishTenantDevice, kiracı-atıflı bir cihaz durum değişimi bildirir.
+func (b *Bus) PublishTenantDevice(tenant, deviceID string) {
+	b.emit(Notice{Type: "device", TenantID: tenant, DeviceID: deviceID, At: time.Now().UTC()})
 }
 
 // SubscriberCount, aktif abone sayısını döner (test/gözlem için).
