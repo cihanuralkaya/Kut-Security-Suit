@@ -229,6 +229,49 @@ jobs:
           KUT_S3_SECRET_KEY: test
         run: go test -tags enterprise -run S3 ./server/internal/enterprise/archive/
 
+  enterprise-pipeline-e2e:
+    name: Enterprise pipeline e2e (ClickHouse + S3)
+    runs-on: ubuntu-latest
+    needs: test
+    # Veri-düzlemi hattını GERÇEK backend'lere karşı uçtan uca doğrular: dosya bus → pipeline →
+    # ClickHouse + s3mock. Birim testleri (sahtelerle) kompozisyonu kanıtlayamaz; bu job kapatır.
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:latest-alpine
+        env:
+          CLICKHOUSE_SKIP_USER_SETUP: "1"
+        ports:
+          - 9000:9000
+          - 8123:8123
+        options: >-
+          --health-cmd "clickhouse-client --query 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      s3mock:
+        image: adobe/s3mock:latest
+        ports:
+          - 9090:9090
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: S3 mock hazır bekle
+        run: |
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://localhost:9090/ 2>/dev/null; then echo "s3mock hazır"; break; fi
+            sleep 2
+          done
+      - name: Pipeline uçtan uca testi (enterprise)
+        env:
+          KUT_CLICKHOUSE_DSN: clickhouse://default:@localhost:9000/default
+          KUT_S3_ENDPOINT: localhost:9090
+          KUT_S3_ACCESS_KEY: test
+          KUT_S3_SECRET_KEY: test
+        run: go test -tags enterprise -run TestPipelineE2E ./server/internal/enterprise/pipeline/
+
   security:
     name: Güvenlik (govulncheck + fuzz + SBOM)
     runs-on: ubuntu-latest
