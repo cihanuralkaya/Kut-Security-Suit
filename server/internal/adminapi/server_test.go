@@ -71,7 +71,7 @@ func newMemStore() *memStore {
 func (m *memStore) AdminRole(_ context.Context, id string) (admin.Role, error) {
 	return m.roles[id], nil
 }
-func (m *memStore) SaveEnrollmentToken(_ context.Context, _ []byte, createdBy string, expiresAt time.Time) error {
+func (m *memStore) SaveEnrollmentToken(_ context.Context, _ []byte, createdBy, _ string, expiresAt time.Time) error {
 	m.tokenSeq++
 	// createdBy admin id'sini e-postaya çöz (db LEFT JOIN davranışını taklit et).
 	var email string

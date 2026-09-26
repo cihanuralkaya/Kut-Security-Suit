@@ -1060,7 +1060,21 @@ func clientIP(r *http.Request) string {
 }
 
 func (s *Server) handleIssueToken(w http.ResponseWriter, r *http.Request, adminID string) {
-	token, err := s.adminSvc.IssueEnrollmentToken(r.Context(), adminID)
+	// Çok-tenant SaaS: token'ın kiracısı opsiyonel gövdeden ({"tenant_id":"..."}) seçilir;
+	// boş/gövdesiz → dağıtımın varsayılan kiracısı (s.tenantID). Kiracı SUNUCU tarafında token'a
+	// mühürlenir ve enroll'da cihaza bağlanır — ajan/client kiracıyı belirleyemez. (Hangi
+	// kiracıyı seçebileceğinin admin-başına kapsamla sıkılaştırılması ayrı bir dilim.)
+	tenant := s.tenantID
+	var body struct {
+		TenantID string `json:"tenant_id"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body) // opsiyonel; boş gövde tolere edilir
+	}
+	if t := strings.TrimSpace(body.TenantID); t != "" {
+		tenant = t
+	}
+	token, err := s.adminSvc.IssueEnrollmentToken(r.Context(), adminID, tenant)
 	if respondErr(w, err) {
 		return
 	}

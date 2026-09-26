@@ -116,7 +116,7 @@ func (p *fakePublisher) Publish(deviceID string) { p.published = append(p.publis
 func (m *memStore) AdminRole(_ context.Context, adminID string) (Role, error) {
 	return m.roles[adminID], nil
 }
-func (m *memStore) SaveEnrollmentToken(_ context.Context, idx []byte, createdBy string, _ time.Time) error {
+func (m *memStore) SaveEnrollmentToken(_ context.Context, idx []byte, createdBy, _ string, _ time.Time) error {
 	m.tokens[string(idx)] = createdBy
 	return nil
 }
@@ -709,7 +709,7 @@ func TestIssueEnrollmentTokenStoresHMACIndex(t *testing.T) {
 	store.roles["op1"] = RoleOperator
 	svc, bidx := newService(t, store)
 
-	token, err := svc.IssueEnrollmentToken(context.Background(), "op1")
+	token, err := svc.IssueEnrollmentToken(context.Background(), "op1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -875,7 +875,7 @@ func TestTokenIndexPrefixMatchesEnrollFlow(t *testing.T) {
 	store := newMemStore()
 	store.roles["op1"] = RoleOperator
 	svc, bidx := newService(t, store)
-	token, _ := svc.IssueEnrollmentToken(context.Background(), "op1")
+	token, _ := svc.IssueEnrollmentToken(context.Background(), "op1", "")
 	// enroll tarafı da tokenIndex = bidx.Compute("enroll-token:"+token) hesaplar.
 	if _, ok := store.tokens[string(bidx.Compute("enroll-token:"+token))]; !ok {
 		t.Fatal("admin ve enroll aynı indeks şemasını kullanmalı")

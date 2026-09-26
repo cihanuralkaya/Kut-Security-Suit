@@ -51,11 +51,11 @@ func (s *Store) AdminRole(ctx context.Context, adminID string) (admin.Role, erro
 }
 
 // SaveEnrollmentToken, admin tarafından üretilen token'ın HMAC indeksini saklar.
-func (s *Store) SaveEnrollmentToken(ctx context.Context, tokenIndex []byte, createdBy string, expiresAt time.Time) error {
+func (s *Store) SaveEnrollmentToken(ctx context.Context, tokenIndex []byte, createdBy, tenantID string, expiresAt time.Time) error {
 	const q = `
-		INSERT INTO enrollment_tokens (token_hash, created_by, expires_at)
-		VALUES ($1, NULLIF($2,'')::uuid, $3)`
-	_, err := s.pool.Exec(ctx, q, tokenIndex, createdBy, expiresAt)
+		INSERT INTO enrollment_tokens (token_hash, created_by, tenant_id, expires_at)
+		VALUES ($1, NULLIF($2,'')::uuid, $3, $4)`
+	_, err := s.pool.Exec(ctx, q, tokenIndex, createdBy, tenantID, expiresAt)
 	if err != nil {
 		return fmt.Errorf("db: enrollment token kaydı: %w", err)
 	}
