@@ -193,6 +193,39 @@ jobs:
           KUT_CLICKHOUSE_DSN: clickhouse://default:@localhost:9000/default
         run: go test -tags enterprise -run ClickHouse ./server/internal/enterprise/analytics/
 
+  enterprise-s3:
+    name: Enterprise archive (MinIO/S3)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      # MinIO (S3-uyumlu) nesne deposu. `server /data` başlatma komutu gerektirdiğinden
+      # (GHA servis konteynerleri özel komut desteklemez) docker run ile başlatılır. Bu leg,
+      # KUT_S3_ENDPOINT ayarlı olmadan hep SKIP olan arşiv testlerini GERÇEKTEN koşturur
+      # (archive/s3.go, minio-go). Proto gerekmez: archive paketi gen/'i import etmez.
+      - name: MinIO başlat
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data
+          echo "MinIO sağlığı bekleniyor..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/ready >/dev/null 2>&1; then
+              echo "minio hazır"; break
+            fi
+            sleep 2
+          done
+      - name: S3 arşiv entegrasyon testi (enterprise)
+        env:
+          KUT_S3_ENDPOINT: localhost:9000
+          KUT_S3_ACCESS_KEY: minioadmin
+          KUT_S3_SECRET_KEY: minioadmin
+        run: go test -tags enterprise -run S3 ./server/internal/enterprise/archive/
+
   security:
     name: Güvenlik (govulncheck + fuzz + SBOM)
     runs-on: ubuntu-latest
