@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/kut-logo.png" alt="KUT Security Suite" width="220">
+</p>
+
 # KUT Security Suite — Kurumsal Uç Nokta Güvenliği ve Ajan Yönetim Sistemi
 # KUT Security Suite — Corporate Endpoint Security & Agent Management System
 
@@ -23,9 +27,9 @@ Tek dil: **Go**. Ajan ↔ C2 iletişimi **gRPC + mTLS** (TLS 1.3).
 > **Durum: özellik-tam, CI yeşil, dağıtıma hazır.** Ayrıntılı yetenek matrisi ve
 > ne-nasıl-doğrulandı için **[docs/STATUS.md](docs/STATUS.md)**.
 >
-> - **715 test / 90 paket** geçiyor; **CI** (`.github/workflows/ci.yml`) her push'ta
->   `go vet` + test + **uçtan uca smoke** + **gerçek PostgreSQL'e karşı DB testi** +
->   çapraz derleme çalıştırır — hepsi yeşil.
+> - **1067 test (+16 fuzz) / 108 paket** geçiyor; **CI** (`.github/workflows/ci.yml`) her
+>   push'ta `go vet` + `-race` test + **uçtan uca smoke** + **gerçek PostgreSQL'e karşı DB
+>   testi** + çapraz derleme + **her iki derleme katmanı (Lite/Enterprise)** çalıştırır — hepsi yeşil.
 > - Uçtan uca kanıtlı zincir: enroll (PKI) → mTLS heartbeat (sunucu-saati) → olay →
 >   politika push → OTA imza + rollout → komut teslimi → tek-kullanımlık token
 >   (`server/internal/e2e`, `make e2e`).
@@ -135,7 +139,8 @@ Bkz. [docs/architecture.md](docs/architecture.md) — fazlara bölünmüş plan.
 İnceleme bulguları ve karşılığında alınan kararlar [docs/threat-model.md](docs/threat-model.md)
 içinde. Harici log alımı entegrasyonu için [docs/INGEST.md](docs/INGEST.md);
 ONNX model entegrasyonu için [docs/ONNX.md](docs/ONNX.md); çekirdek-seviye kurcalama
-koruması tasarımı için [docs/KERNEL-TAMPER.md](docs/KERNEL-TAMPER.md); marka ve
+koruması tasarımı için [docs/KERNEL-TAMPER.md](docs/KERNEL-TAMPER.md); Lite/Enterprise
+derleme katmanları için [docs/BUILD-TIERS.md](docs/BUILD-TIERS.md); marka ve
 uygulama ikonu üretimi için [docs/BRANDING.md](docs/BRANDING.md).
 
 ## Sürüm doğrulama / Release verification
@@ -170,9 +175,9 @@ Single language: **Go**. Agent ↔ C2 communication over **gRPC + mTLS** (TLS 1.
 > **Status: feature-complete, CI green, deployment-ready.** For the detailed
 > capability matrix and what-was-verified-how, see **[docs/STATUS.md](docs/STATUS.md)**.
 >
-> - **715 tests / 90 packages** pass; **CI** (`.github/workflows/ci.yml`) runs
->   `go vet` + tests + **end-to-end smoke** + **DB test against a real PostgreSQL** +
->   cross-compilation on every push — all green.
+> - **1067 tests (+16 fuzz) / 108 packages** pass; **CI** (`.github/workflows/ci.yml`) runs
+>   `go vet` + `-race` tests + **end-to-end smoke** + **DB test against a real PostgreSQL** +
+>   cross-compilation + **both build tiers (Lite/Enterprise)** on every push — all green.
 > - End-to-end proven chain: enroll (PKI) → mTLS heartbeat (server-clock) → event →
 >   policy push → OTA signature + rollout → command delivery → single-use token
 >   (`server/internal/e2e`, `make e2e`).
@@ -278,7 +283,8 @@ See [docs/architecture.md](docs/architecture.md) — a phased plan. Review findi
 and the decisions taken in response are in [docs/threat-model.md](docs/threat-model.md).
 For external log ingest integration, see [docs/INGEST.md](docs/INGEST.md); for ONNX
 model integration, see [docs/ONNX.md](docs/ONNX.md); for kernel-level tamper-protection
-design, see [docs/KERNEL-TAMPER.md](docs/KERNEL-TAMPER.md); for branding and application
+design, see [docs/KERNEL-TAMPER.md](docs/KERNEL-TAMPER.md); for the Lite/Enterprise build
+tiers, see [docs/BUILD-TIERS.md](docs/BUILD-TIERS.md); for branding and application
 icon generation, see [docs/BRANDING.md](docs/BRANDING.md).
 
 ## Release verification
