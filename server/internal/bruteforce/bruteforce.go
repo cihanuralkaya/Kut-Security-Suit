@@ -127,22 +127,26 @@ func Analyze(attempts []Attempt, minAttempts int, window time.Duration) []Findin
 		as := byDev[dev]
 		sort.Slice(as, func(i, j int) bool { return as[i].At.Before(as[j].At) })
 		best, lo := 0, 0
+		bestLo, bestHi := 0, -1 // best'i SAĞLAYAN pencere (atıf yalnız bu dilimden hesaplanır)
 		for hi := 0; hi < len(as); hi++ {
 			for as[hi].At.Sub(as[lo].At) > window {
 				lo++
 			}
 			if n := hi - lo + 1; n > best {
 				best = n
+				bestLo, bestHi = lo, hi
 			}
 		}
 		if best < minAttempts {
 			continue
 		}
-		// Öznitelik: cihaz için (batch = tek pencere) farklı kaynak IP / hedef hesap
-		// sayıları ve en sık saldırgan IP. Çok sayıda hedef → parola-püskürtme sinyali.
+		// Öznitelik: farklı kaynak IP / hedef hesap sayıları ve en sık saldırgan IP —
+		// YALNIZ best'i sağlayan pencereden (as[bestLo:bestHi+1]). Batch birden çok pencere
+		// kapsıyorsa tüm batch'ten hesaplamak atıf alanlarını şişirir (yanlış SOC verisi).
+		// Çok sayıda hedef → parola-püskürtme sinyali.
 		srcCount := map[string]int{}
 		targets := map[string]bool{}
-		for _, a := range as {
+		for _, a := range as[bestLo : bestHi+1] {
 			if a.SourceIP != "" {
 				srcCount[a.SourceIP]++
 			}

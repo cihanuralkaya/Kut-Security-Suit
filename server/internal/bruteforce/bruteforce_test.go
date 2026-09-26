@@ -5,6 +5,38 @@ import (
 	"time"
 )
 
+// Batch birden çok pencere kapsadığında atıf (kaynak/hedef/top) YALNIZ best'i sağlayan
+// pencereden hesaplanmalı — tüm batch'ten değil (aksi halde SOC'a şişirilmiş atıf gider).
+func TestAnalyzeAttributionUsesBestWindowOnly(t *testing.T) {
+	base := time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
+	window := 5 * time.Minute
+	var at []Attempt
+	// Pencere-1 (yoğun kampanya): tek kaynak srcA, tek hedef user1, 4 deneme (best).
+	for i := 0; i < 4; i++ {
+		at = append(at, Attempt{DeviceID: "h", At: base.Add(time.Duration(i) * time.Minute),
+			SourceIP: "srcA", TargetUser: "user1"})
+	}
+	// Pencere-2 (çok sonra, best'e dahil DEĞİL): farklı kaynaklar/hedefler.
+	at = append(at,
+		Attempt{DeviceID: "h", At: base.Add(30 * time.Minute), SourceIP: "srcB", TargetUser: "user2"},
+		Attempt{DeviceID: "h", At: base.Add(31 * time.Minute), SourceIP: "srcC", TargetUser: "user3"},
+	)
+
+	out := Analyze(at, 3, window)
+	if len(out) != 1 {
+		t.Fatalf("1 bulgu beklenir, %d", len(out))
+	}
+	f := out[0]
+	if f.Count != 4 {
+		t.Fatalf("best pencere sayısı 4 beklenir, %d", f.Count)
+	}
+	// Atıf yalnız pencere-1'den: 1 kaynak, 1 hedef, top=srcA (batch'ten olsaydı 3/3 olurdu).
+	if f.DistinctSources != 1 || f.DistinctTargets != 1 || f.TopSource != "srcA" {
+		t.Fatalf("atıf best-pencereden hesaplanmalı: sources=%d targets=%d top=%q (beklenen 1/1/srcA)",
+			f.DistinctSources, f.DistinctTargets, f.TopSource)
+	}
+}
+
 func TestAnalyzeFlagsBurst(t *testing.T) {
 	base := time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
 	// host-A: 6 deneme 5dk içinde → kampanya. host-B: 2 deneme → altında.
