@@ -71,7 +71,7 @@ type RuleView struct {
 // Store, admin işlemlerinin ihtiyaç duyduğu kalıcılıktır.
 type Store interface {
 	AdminRole(ctx context.Context, adminID string) (Role, error)
-	SaveEnrollmentToken(ctx context.Context, tokenIndex []byte, createdBy string, expiresAt time.Time) error
+	SaveEnrollmentToken(ctx context.Context, tokenIndex []byte, createdBy, tenantID string, expiresAt time.Time) error
 	// RevokeEnrollmentToken, kullanılmamış bir enrollment token'ı iptal eder
 	// (used_at damgalar). Zaten kullanılmış/yok token için sessizdir (no-op).
 	RevokeEnrollmentToken(ctx context.Context, tokenID string) error
@@ -267,7 +267,7 @@ func (s *Service) require(ctx context.Context, adminID string, min Role) error {
 
 // IssueEnrollmentToken, tek kullanımlık bir kayıt token'ı üretir (OPERATOR+).
 // Ham token YALNIZ burada döner (bir kez gösterilir); DB'de HMAC indeksi saklanır.
-func (s *Service) IssueEnrollmentToken(ctx context.Context, adminID string) (string, error) {
+func (s *Service) IssueEnrollmentToken(ctx context.Context, adminID, tenantID string) (string, error) {
 	if err := s.require(ctx, adminID, RoleOperator); err != nil {
 		return "", err
 	}
@@ -276,7 +276,7 @@ func (s *Service) IssueEnrollmentToken(ctx context.Context, adminID string) (str
 		return "", err
 	}
 	idx := s.bidx.Compute("enroll-token:" + token)
-	if err := s.store.SaveEnrollmentToken(ctx, idx, adminID, s.now().Add(s.tokenTTL)); err != nil {
+	if err := s.store.SaveEnrollmentToken(ctx, idx, adminID, tenantID, s.now().Add(s.tokenTTL)); err != nil {
 		return "", err
 	}
 	s.audit(ctx, adminID, "ISSUE_ENROLLMENT_TOKEN", "device", "")

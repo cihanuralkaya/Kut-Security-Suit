@@ -17,7 +17,7 @@ func TestEnrollmentTokenConsume(t *testing.T) {
 
 	idx := []byte("tok-index-1")
 	exp := time.Now().Add(time.Hour)
-	if err := s.SaveEnrollmentToken(ctx, idx, adminID, exp); err != nil {
+	if err := s.SaveEnrollmentToken(ctx, idx, adminID, "", exp); err != nil {
 		t.Fatal(err)
 	}
 
@@ -42,7 +42,7 @@ func TestEnrollmentTokenConsume(t *testing.T) {
 
 	// Süresi geçmiş token.
 	idx2 := []byte("tok-index-2")
-	if err := s.SaveEnrollmentToken(ctx, idx2, adminID, time.Now().Add(-time.Minute)); err != nil {
+	if err := s.SaveEnrollmentToken(ctx, idx2, adminID, "", time.Now().Add(-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.ConsumeEnrollmentToken(ctx, idx2, time.Now()); err != enroll.ErrInvalidToken {
@@ -58,7 +58,7 @@ func TestRevokeEnrollmentToken(t *testing.T) {
 	adminID := s.SeedAdmin("op@x", "h", "OPERATOR")
 
 	idx := []byte("tok-rev")
-	if err := s.SaveEnrollmentToken(ctx, idx, adminID, time.Now().Add(time.Hour)); err != nil {
+	if err := s.SaveEnrollmentToken(ctx, idx, adminID, "", time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -96,7 +96,7 @@ func TestListEnrollmentTokens(t *testing.T) {
 	// Üç token; createdAt farkı için araya ufak uyku yerine artan expiry değil,
 	// createdAt time.Now() ile üretildiğinden sıralamayı ID setiyle doğrularız.
 	for i, idx := range [][]byte{[]byte("a"), []byte("b"), []byte("c")} {
-		if err := s.SaveEnrollmentToken(ctx, idx, adminID, time.Now().Add(time.Duration(i)*time.Hour)); err != nil {
+		if err := s.SaveEnrollmentToken(ctx, idx, adminID, "", time.Now().Add(time.Duration(i)*time.Hour)); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(time.Millisecond)
@@ -124,5 +124,22 @@ func TestListEnrollmentTokens(t *testing.T) {
 	limited, _ := s.ListEnrollmentTokens(ctx, 2)
 	if len(limited) != 2 {
 		t.Fatalf("limit=2 uygulanmalıydı: %d", len(limited))
+	}
+}
+
+// SaveEnrollmentToken kiracıyı saklamalı; ConsumeEnrollmentToken onu döndürmeli (çok-tenant).
+func TestEnrollmentTokenCarriesTenant(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	idx := []byte("tok-tenant-idx")
+	if err := s.SaveEnrollmentToken(ctx, idx, "op1", "acme", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	dev, tenant, err := s.ConsumeEnrollmentToken(ctx, idx, time.Now())
+	if err != nil {
+		t.Fatalf("tüketim: %v", err)
+	}
+	if dev != "" || tenant != "acme" {
+		t.Fatalf("kiracı taşınmadı: dev=%q tenant=%q (beklenen tenant=acme)", dev, tenant)
 	}
 }

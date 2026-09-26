@@ -463,11 +463,11 @@ func (s *Store) AdminRole(_ context.Context, adminID string) (admin.Role, error)
 	return admin.Role(""), nil
 }
 
-func (s *Store) SaveEnrollmentToken(_ context.Context, tokenIndex []byte, createdBy string, expiresAt time.Time) error {
+func (s *Store) SaveEnrollmentToken(_ context.Context, tokenIndex []byte, createdBy, tenantID string, expiresAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tokens[hex.EncodeToString(tokenIndex)] = &tokenInfo{
-		id: randID("etok-"), createdBy: createdBy, expiresAt: expiresAt, createdAt: time.Now(),
+		id: randID("etok-"), createdBy: createdBy, tenant: tenantID, expiresAt: expiresAt, createdAt: time.Now(),
 	}
 	return nil
 }
