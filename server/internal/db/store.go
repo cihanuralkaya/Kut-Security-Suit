@@ -91,7 +91,7 @@ var _ enroll.Store = (*Store)(nil)
 
 // ConsumeEnrollmentToken, token'ı ATOMİK olarak doğrular ve kullanılmış işaretler.
 // Tek bir UPDATE ... RETURNING ile yarış koşulu olmadan tek-kullanım garanti edilir.
-func (s *Store) ConsumeEnrollmentToken(ctx context.Context, tokenIndex []byte, _ time.Time) (string, error) {
+func (s *Store) ConsumeEnrollmentToken(ctx context.Context, tokenIndex []byte, _ time.Time) (string, string, error) {
 	// Zaman çıpası olarak DB'nin now()'ı kullanılır (tek otorite); domain
 	// arayüzündeki time.Time parametresi burada gerekmez.
 	const q = `
@@ -100,16 +100,16 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, tokenIndex []byte, _
 		 WHERE token_hash = $1
 		   AND used_at IS NULL
 		   AND expires_at > now()
-	 RETURNING COALESCE(device_id::text, '')`
-	var boundDeviceID string
-	err := s.pool.QueryRow(ctx, q, tokenIndex).Scan(&boundDeviceID)
+	 RETURNING COALESCE(device_id::text, ''), tenant_id`
+	var boundDeviceID, tenantID string
+	err := s.pool.QueryRow(ctx, q, tokenIndex).Scan(&boundDeviceID, &tenantID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", enroll.ErrInvalidToken
+		return "", "", enroll.ErrInvalidToken
 	}
 	if err != nil {
-		return "", fmt.Errorf("db: token tüketme: %w", err)
+		return "", "", fmt.Errorf("db: token tüketme: %w", err)
 	}
-	return boundDeviceID, nil
+	return boundDeviceID, tenantID, nil
 }
 
 // UpsertEnrollingDevice, cihazı oluşturur/günceller ve device_id döner.
@@ -123,12 +123,13 @@ func (s *Store) UpsertEnrollingDevice(ctx context.Context, in enroll.DeviceEnrol
 			       mac_address_bidx = $5,
 			       os_platform = $6,
 			       agent_version = $7,
+			       tenant_id = $8,
 			       status = 'ACTIVE'
 			 WHERE id = $1
 		 RETURNING id::text`
 		var id string
 		err := s.pool.QueryRow(ctx, upd, in.PreferredDeviceID, in.HostnameEnc, in.MACEnc,
-			in.OSInfoEnc, in.MACBlindIndex, in.OSPlatform, in.AgentVersion).Scan(&id)
+			in.OSInfoEnc, in.MACBlindIndex, in.OSPlatform, in.AgentVersion, in.TenantID).Scan(&id)
 		if err != nil {
 			return "", fmt.Errorf("db: cihaz güncelleme: %w", err)
 		}
@@ -138,19 +139,20 @@ func (s *Store) UpsertEnrollingDevice(ctx context.Context, in enroll.DeviceEnrol
 	const ins = `
 		INSERT INTO devices
 			(hostname_encrypted, mac_address_encrypted, os_info_encrypted,
-			 mac_address_bidx, os_platform, agent_version, status)
-		VALUES ($1,$2,$3,$4,$5,$6,'ACTIVE')
+			 mac_address_bidx, os_platform, agent_version, tenant_id, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,'ACTIVE')
 		ON CONFLICT (mac_address_bidx) DO UPDATE SET
 			hostname_encrypted = EXCLUDED.hostname_encrypted,
 			mac_address_encrypted = EXCLUDED.mac_address_encrypted,
 			os_info_encrypted = EXCLUDED.os_info_encrypted,
 			os_platform = EXCLUDED.os_platform,
 			agent_version = EXCLUDED.agent_version,
+			tenant_id = EXCLUDED.tenant_id,
 			status = 'ACTIVE'
 	 RETURNING id::text`
 	var id string
 	err := s.pool.QueryRow(ctx, ins, in.HostnameEnc, in.MACEnc, in.OSInfoEnc,
-		in.MACBlindIndex, in.OSPlatform, in.AgentVersion).Scan(&id)
+		in.MACBlindIndex, in.OSPlatform, in.AgentVersion, in.TenantID).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("db: cihaz ekleme: %w", err)
 	}

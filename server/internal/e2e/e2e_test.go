@@ -358,15 +358,15 @@ func (m *memStore) addToken(idx []byte) {
 	m.tokens[string(idx)] = true
 }
 
-func (m *memStore) ConsumeEnrollmentToken(_ context.Context, idx []byte, _ time.Time) (string, error) {
+func (m *memStore) ConsumeEnrollmentToken(_ context.Context, idx []byte, _ time.Time) (string, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	k := string(idx)
 	if !m.tokens[k] || m.used[k] {
-		return "", enroll.ErrInvalidToken
+		return "", "", enroll.ErrInvalidToken
 	}
 	m.used[k] = true
-	return "", nil
+	return "", "", nil
 }
 
 func (m *memStore) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollment) (string, error) {

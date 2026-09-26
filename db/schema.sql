@@ -68,6 +68,7 @@ CREATE TABLE devices (
     agent_binary_hash      CHAR(64),                  -- ajan ikilisinin SHA-256'sı (öz-tasdik, #4)
     agent_binary_version   VARCHAR(50),               -- yukarıdaki hash'in ait olduğu sürüm (kurcalama teşhisi)
     status                 device_status NOT NULL DEFAULT 'PENDING_ENROLLMENT',
+    tenant_id              VARCHAR(63) NOT NULL DEFAULT '',  -- çok-tenant: cihazın kiracısı (enrollment token'dan bağlanır; boş = tek-tenant)
     current_policy_version VARCHAR(64),
     tags                   TEXT[] NOT NULL DEFAULT '{}',   -- filo gruplama/etiketleme
     last_seen              TIMESTAMPTZ,
@@ -86,6 +87,7 @@ CREATE TABLE enrollment_tokens (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     token_hash  BYTEA NOT NULL UNIQUE,
     created_by  UUID,                       -- admins.id (aşağıda FK)
+    tenant_id   VARCHAR(63) NOT NULL DEFAULT '',  -- çok-tenant: bu token'la kaydolan cihazın kiracısı
     device_id   UUID REFERENCES devices(id) ON DELETE SET NULL,
     expires_at  TIMESTAMPTZ NOT NULL,
     used_at     TIMESTAMPTZ,                -- NULL => henüz kullanılmadı

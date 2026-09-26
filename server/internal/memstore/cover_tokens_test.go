@@ -22,7 +22,7 @@ func TestEnrollmentTokenConsume(t *testing.T) {
 	}
 
 	// İlk tüketim başarılı (boundDev boş → "" döner, hata yok).
-	dev, err := s.ConsumeEnrollmentToken(ctx, idx, time.Now())
+	dev, _, err := s.ConsumeEnrollmentToken(ctx, idx, time.Now())
 	if err != nil {
 		t.Fatalf("geçerli token tüketilmeliydi: %v", err)
 	}
@@ -31,12 +31,12 @@ func TestEnrollmentTokenConsume(t *testing.T) {
 	}
 
 	// İkinci tüketim: used=true → ErrInvalidToken.
-	if _, err := s.ConsumeEnrollmentToken(ctx, idx, time.Now()); err != enroll.ErrInvalidToken {
+	if _, _, err := s.ConsumeEnrollmentToken(ctx, idx, time.Now()); err != enroll.ErrInvalidToken {
 		t.Fatalf("ikinci tüketim ErrInvalidToken dönmeliydi: %v", err)
 	}
 
 	// Bilinmeyen token.
-	if _, err := s.ConsumeEnrollmentToken(ctx, []byte("yok"), time.Now()); err != enroll.ErrInvalidToken {
+	if _, _, err := s.ConsumeEnrollmentToken(ctx, []byte("yok"), time.Now()); err != enroll.ErrInvalidToken {
 		t.Fatalf("bilinmeyen token ErrInvalidToken dönmeliydi: %v", err)
 	}
 
@@ -45,7 +45,7 @@ func TestEnrollmentTokenConsume(t *testing.T) {
 	if err := s.SaveEnrollmentToken(ctx, idx2, adminID, time.Now().Add(-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ConsumeEnrollmentToken(ctx, idx2, time.Now()); err != enroll.ErrInvalidToken {
+	if _, _, err := s.ConsumeEnrollmentToken(ctx, idx2, time.Now()); err != enroll.ErrInvalidToken {
 		t.Fatalf("süresi geçmiş token ErrInvalidToken dönmeliydi: %v", err)
 	}
 }
@@ -76,7 +76,7 @@ func TestRevokeEnrollmentToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Artık tüketilemez.
-	if _, err := s.ConsumeEnrollmentToken(ctx, idx, time.Now()); err != enroll.ErrInvalidToken {
+	if _, _, err := s.ConsumeEnrollmentToken(ctx, idx, time.Now()); err != enroll.ErrInvalidToken {
 		t.Fatalf("iptal edilen token tüketilememeliydi: %v", err)
 	}
 

@@ -42,6 +42,7 @@ type device struct {
 	binaryHash    string // ajan ikilisi SHA-256 (öz-tasdik, #4)
 	binaryVersion string // yukarıdaki hash'in ait olduğu sürüm
 	status        string
+	tenant        string // çok-tenant: cihazın kiracısı (enrollment token'dan)
 	policyVersion string
 	policyID      string
 	lastSeen      time.Time
@@ -51,6 +52,7 @@ type device struct {
 type tokenInfo struct {
 	id        string
 	createdBy string
+	tenant    string // çok-tenant: bu token'la kaydolan cihazın kiracısı
 	expiresAt time.Time
 	used      bool
 	boundDev  string
@@ -227,15 +229,15 @@ func (s *Store) SeedDemoPolicy() (id, version string) {
 
 // --- enroll.Store ---
 
-func (s *Store) ConsumeEnrollmentToken(_ context.Context, tokenIndex []byte, now time.Time) (string, error) {
+func (s *Store) ConsumeEnrollmentToken(_ context.Context, tokenIndex []byte, now time.Time) (string, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.tokens[hex.EncodeToString(tokenIndex)]
 	if !ok || t.used || now.After(t.expiresAt) {
-		return "", enroll.ErrInvalidToken
+		return "", "", enroll.ErrInvalidToken
 	}
 	t.used = true
-	return t.boundDev, nil
+	return t.boundDev, t.tenant, nil
 }
 
 func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollment) (string, error) {
@@ -257,7 +259,7 @@ func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollm
 	s.devices[id] = &device{
 		id: id, hostnameEnc: in.HostnameEnc, macEnc: in.MACEnc, osEnc: in.OSInfoEnc,
 		macBidx: in.MACBlindIndex, osPlatform: in.OSPlatform, agentVersion: in.AgentVersion,
-		status: "ACTIVE", lastSeen: time.Now(),
+		tenant: in.TenantID, status: "ACTIVE", lastSeen: time.Now(),
 	}
 	return id, nil
 }
