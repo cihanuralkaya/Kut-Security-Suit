@@ -56,7 +56,7 @@ Tek dil: **Go**. Ajan ↔ C2 iletişimi **gRPC + mTLS** (TLS 1.3).
 >   (erişim/dışa aktarma + silme, denetim korunur).
 > - **Konsol:** gömülü tek-sayfa SOC paneli — cihazlar/olaylar/politikalar/yöneticiler,
 >   cihaz etiketleme, **canlı SSE push**, önem grafiği, arama, CSV dışa aktarma,
->   sağlık uçları (`/healthz`, `/readyz`).
+>   **TR/EN dil seçeneği** (GDPR/KVKK dil-duyarlı gizlilik metni), sağlık uçları (`/healthz`, `/readyz`).
 > - **Dağıtım:** çapraz derleme + tek-dosya istemci installer üreteci (token gömülü
 >   veya kod girişli, Win/Linux) + sunucu kurulum betikleri — bkz.
 >   **[deploy/README.md](deploy/README.md)**.
@@ -202,6 +202,7 @@ Single language: **Go**. Agent ↔ C2 communication over **gRPC + mTLS** (TLS 1.
 > - **Data protection (KVKK/GDPR-style):** at-rest encryption + partition-based
 >   retention; **data-subject rights** (access/export + erasure, audit preserved).
 > - **Console:** embedded single-page SOC dashboard — devices/events/policies/admins,
+>   **TR/EN language toggle** (GDPR/KVKK language-aware privacy notice),
 >   device tagging, **live SSE push**, severity chart, search, CSV export, health
 >   endpoints (`/healthz`, `/readyz`).
 > - **Deployment:** cross-compilation + single-file client installer generator (token

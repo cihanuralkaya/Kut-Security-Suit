@@ -303,21 +303,22 @@
 <!-- LOGIN -->
 <div id="login">
   <div class="login-card">
-    <div class="brand"><span class="logo-img" role="img" aria-label="KUT"></span><span>KUT Komuta Merkezi<span class="sub">Endpoint Security · MDM</span></span></div>
-    <h1>Yönetici Girişi</h1>
-    <p class="hint">Kurumsal uç nokta güvenlik ve ajan yönetim konsolu.</p>
-    <label for="l-email">E-posta</label>
+    <div style="text-align:right;margin-bottom:4px"><button id="lang-toggle-login" class="icon-btn" type="button" aria-label="Language / Dil">EN</button></div>
+    <div class="brand"><span class="logo-img" role="img" aria-label="KUT"></span><span><span data-i18n="app.brand">KUT Komuta Merkezi</span><span class="sub">Endpoint Security · MDM</span></span></div>
+    <h1 data-i18n="login.title">Yönetici Girişi</h1>
+    <p class="hint" data-i18n="login.hint">Kurumsal uç nokta güvenlik ve ajan yönetim konsolu.</p>
+    <label for="l-email" data-i18n="login.email">E-posta</label>
     <input id="l-email" type="email" autocomplete="username" placeholder="admin@sirket.local">
-    <label for="l-pass">Parola</label>
+    <label for="l-pass" data-i18n="login.pass">Parola</label>
     <input id="l-pass" type="password" autocomplete="current-password" placeholder="••••••••">
     <div id="l-mfa-row" style="display:none">
-      <label for="l-code">Doğrulama kodu (2FA)</label>
+      <label for="l-code" data-i18n="login.mfa">Doğrulama kodu (2FA)</label>
       <input id="l-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
     </div>
-    <button id="l-btn" class="btn block">Giriş Yap</button>
+    <button id="l-btn" class="btn block" data-i18n="login.btn">Giriş Yap</button>
     <div id="l-err" class="err"></div>
     <details style="margin-top:16px">
-      <summary style="cursor:pointer;font-size:12px;color:var(--muted);list-style:none">🔒 KVKK Aydınlatma Metni</summary>
+      <summary data-i18n="login.notice" style="cursor:pointer;font-size:12px;color:var(--muted);list-style:none">🔒 KVKK Aydınlatma Metni</summary>
       <p id="notice-text" style="font-size:11.5px;color:var(--faint);line-height:1.55;margin:8px 0 0"></p>
     </details>
   </div>
@@ -326,14 +327,15 @@
 <!-- APP -->
 <div id="app">
   <header class="top">
-    <div class="brand"><span class="logo-img" role="img" aria-label="KUT"></span>KUT Komuta Merkezi</div>
-    <span id="page-title" class="page-title">Genel Bakış</span>
+    <div class="brand"><span class="logo-img" role="img" aria-label="KUT"></span><span data-i18n="app.brand">KUT Komuta Merkezi</span></div>
+    <span id="page-title" class="page-title" data-i18n="nav.overview">Genel Bakış</span>
     <span class="sp"></span>
     <span id="live" class="live"><span class="dot"></span><span id="live-txt">bağlanıyor…</span></span>
     <div class="seg" title="Otomatik yenileme">
-      <button id="rf-on" class="on">Canlı</button>
-      <button id="rf-off">Durdur</button>
+      <button id="rf-on" class="on" data-i18n="app.live">Canlı</button>
+      <button id="rf-off" data-i18n="app.stop">Durdur</button>
     </div>
+    <button id="lang-toggle" class="icon-btn" type="button" aria-label="Language / Dil">EN</button>
     <button id="theme-toggle" class="icon-btn" type="button" aria-label="Temayı değiştir">🌙</button>
     <div class="settings-wrap">
       <button id="settings-btn" class="icon-btn" type="button" aria-label="Görünüm ayarları"
@@ -363,12 +365,12 @@
   </header>
 
   <aside class="sidebar" id="sidebar">
-    <button class="nav-item active" data-nav="overview" type="button"><span class="ic">📊</span><span class="lbl">Genel Bakış</span></button>
-    <button class="nav-item" data-nav="devices" type="button"><span class="ic">💻</span><span class="lbl">Cihazlar</span></button>
-    <button class="nav-item" data-nav="policies" type="button"><span class="ic">🎫</span><span class="lbl">Politika &amp; Kayıt</span></button>
+    <button class="nav-item active" data-nav="overview" type="button"><span class="ic">📊</span><span class="lbl" data-i18n="nav.overview">Genel Bakış</span></button>
+    <button class="nav-item" data-nav="devices" type="button"><span class="ic">💻</span><span class="lbl" data-i18n="nav.devices">Cihazlar</span></button>
+    <button class="nav-item" data-nav="policies" type="button"><span class="ic">🎫</span><span class="lbl" data-i18n="nav.policies">Politika &amp; Kayıt</span></button>
     <div class="nav-sep"></div>
-    <button class="nav-item" data-nav="security" type="button"><span class="ic">🛡️</span><span class="lbl">Güvenlik</span></button>
-    <button class="nav-item" data-nav="admin" type="button"><span class="ic">👥</span><span class="lbl">Yönetim</span></button>
+    <button class="nav-item" data-nav="security" type="button"><span class="ic">🛡️</span><span class="lbl" data-i18n="nav.security">Güvenlik</span></button>
+    <button class="nav-item" data-nav="admin" type="button"><span class="ic">👥</span><span class="lbl" data-i18n="nav.admin">Yönetim</span></button>
   </aside>
 
   <main data-active="overview">
@@ -938,6 +940,55 @@
   function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
   function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
   function lsDel(k){ try { localStorage.removeItem(k); } catch(e){} }
+
+  // --- i18n: TR kaynak DOM'da; EN sözlüğü aşağıda. Dil tercihi localStorage'da.
+  // Statik kabuk (login/nav/header) çevrilir; derin içerik t() ile artımlı genişletilir.
+  var LANG_KEY = "kut_lang";
+  var I18N_EN = {
+    "app.brand": "KUT Command Center",
+    "login.title": "Administrator Sign-in",
+    "login.hint": "Corporate endpoint security & agent management console.",
+    "login.email": "Email",
+    "login.pass": "Password",
+    "login.mfa": "Verification code (2FA)",
+    "login.btn": "Sign in",
+    "login.notice": "🔒 Privacy Notice (GDPR)",
+    "nav.overview": "Overview",
+    "nav.devices": "Devices",
+    "nav.policies": "Policy & Enrollment",
+    "nav.security": "Security",
+    "nav.admin": "Administration",
+    "app.live": "Live",
+    "app.stop": "Stop"
+  };
+  function curLang(){ return lsGet(LANG_KEY)==="en" ? "en" : "tr"; }
+  // t(key, tr): dinamik JS metinleri için — EN seçiliyse sözlükten, yoksa TR geri-düşüş.
+  function t(key, tr){ return (curLang()==="en" && I18N_EN[key]!==undefined) ? I18N_EN[key] : tr; }
+  function applyI18n(){
+    var en = curLang()==="en";
+    try { document.documentElement.lang = en ? "en" : "tr"; } catch(e){}
+    var nodes = document.querySelectorAll("[data-i18n]");
+    for(var i=0;i<nodes.length;i++){
+      var el=nodes[i], k=el.getAttribute("data-i18n");
+      // Orijinal TR metnini bir kez sakla → dile geri dönüşte kaynak korunur (yalnız EN sözlüğü gerekir).
+      if(!el.hasAttribute("data-i18n-tr")) el.setAttribute("data-i18n-tr", el.textContent);
+      el.textContent = en ? (I18N_EN[k]!==undefined ? I18N_EN[k] : el.getAttribute("data-i18n-tr"))
+                          : el.getAttribute("data-i18n-tr");
+    }
+  }
+  function updateLangBtn(){
+    var lang = curLang();
+    ["lang-toggle","lang-toggle-login"].forEach(function(id){
+      var b=document.getElementById(id); if(!b) return;
+      b.textContent = lang==="en" ? "TR" : "EN"; // HEDEF dili gösterir
+      b.title = lang==="en" ? "Türkçe'ye geç" : "Switch to English";
+    });
+  }
+  function toggleLang(){
+    lsSet(LANG_KEY, curLang()==="en" ? "tr" : "en");
+    applyI18n(); updateLangBtn();
+    if(typeof loadNotice==="function") loadNotice(); // gizlilik metnini yeni dile göre yenile
+  }
   function hexToRgb(h){
     h = String(h||"").trim().replace(/^#/,"");
     if(h.length===3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
@@ -985,6 +1036,7 @@
   // --- ERKEN UYGULA: FOUC'u en aza indir (script gövde sonunda olsa da) ---
   applyThemeMode(storedMode());
   (function(){ var a=currentAccent(); if(a) applyAccent(a); })();
+  applyI18n(); // erken uygula: kayıtlı dil tercihini FOUC olmadan uygula (login dahil)
 
   function updateThemeToggleIcon(){
     var btn=$("theme-toggle"); if(!btn) return;
@@ -1050,6 +1102,11 @@
     var tt=$("theme-toggle");
     if(tt) tt.addEventListener("click", function(){
       setThemeMode(effectiveTheme()==="dark" ? "light" : "dark");
+    });
+    // Dil değiştir (TR/EN) — header ve login düğmeleri.
+    updateLangBtn();
+    ["lang-toggle","lang-toggle-login"].forEach(function(id){
+      var lb=$(id); if(lb) lb.addEventListener("click", toggleLang);
     });
     var sb=$("settings-btn");
     if(sb) sb.addEventListener("click", function(){
@@ -2789,7 +2846,12 @@
   function setView(v, fromHash){
     if(!NAV_TITLES[v]) v="overview";
     var m=document.querySelector("main"); if(m) m.setAttribute("data-active",v);
-    var pt=$("page-title"); if(pt) pt.textContent=NAV_TITLES[v];
+    var pt=$("page-title");
+    if(pt){ // i18n-uyumlu: data-i18n anahtarı + açık TR baseline + anlık t() gösterimi
+      pt.setAttribute("data-i18n","nav."+v);
+      pt.setAttribute("data-i18n-tr", NAV_TITLES[v]);
+      pt.textContent = t("nav."+v, NAV_TITLES[v]);
+    }
     document.querySelectorAll(".nav-item[data-nav]").forEach(function(b){ b.classList.toggle("active", b.dataset.nav===v); });
     try{ localStorage.setItem("xdr_view",v); }catch(e){}
     // Paylaşılabilir/yer-imlenebilir derin bağlantı: URL hash'ini bölüme eşle.
@@ -2856,10 +2918,13 @@
   bindActions();
   setupAppearance();
 
-  // KVKK aydınlatma metnini yükle (public, giriş öncesi).
-  fetch("/api/notice").then(function(r){ return r.json(); }).then(function(d){
-    if(d && d.notice) $("notice-text").textContent=d.notice;
-  }).catch(function(){});
+  // Gizlilik aydınlatma metnini yükle (public, giriş öncesi). Dile göre: TR=KVKK, EN=GDPR.
+  function loadNotice(){
+    fetch("/api/notice?lang=" + curLang()).then(function(r){ return r.json(); }).then(function(d){
+      if(d && d.notice){ var n=$("notice-text"); if(n) n.textContent=d.notice; }
+    }).catch(function(){});
+  }
+  loadNotice();
 
   // Sayfa yenilendiğinde oturumu geri yükle (token geçersizse 401 → login).
   try {
