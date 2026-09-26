@@ -166,6 +166,11 @@ jobs:
     services:
       clickhouse:
         image: clickhouse/clickhouse-server:latest-alpine
+        # Yeni ClickHouse imajları env yoksa 'default' kullanıcının AĞ erişimini kapatır
+        # ("disabling network access for user 'default'"). SKIP_USER_SETUP, default kullanıcıya
+        # boş parola + ağ erişimi verir (CI'ın belgelenmiş yolu) — DSN default:@ kalır.
+        env:
+          CLICKHOUSE_SKIP_USER_SETUP: "1"
         ports:
           - 9000:9000
           - 8123:8123
