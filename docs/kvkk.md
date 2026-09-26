@@ -63,4 +63,22 @@ counterpart) are built into the design from the start.
       `server/internal/retention` (runs daily in C2; `KUT_RETENTION_DAYS`, default 90
       days). Elapsed monthly `event_logs` partitions are dropped and future months are
       pre-created.
+
+## GDPR data-subject rights → KUT features
+
+GDPR is a first-class compliance framework in KUT (appears in `GET /api/compliance/frameworks`),
+and the console offers a **language toggle (TR/EN)**; selecting English serves the GDPR-framed
+privacy notice.
+
+| GDPR right / article | KUT feature |
+|---|---|
+| Art. 13/14 — Information (notice) | Privacy notice at `GET /api/notice?lang=en` (GDPR/English) shown pre-login |
+| Art. 15 — Right of access | `GET /api/devices/{id}/export` — full JSON of all data held about a device |
+| Art. 20 — Data portability | same export endpoint (machine-readable JSON) |
+| Art. 17 — Right to erasure | `POST /api/devices/{id}/erase` — removes collected artifacts incl. plaintext PII |
+| Art. 5(1)(e) — Storage limitation | time-partitioned retention (`KUT_RETENTION_DAYS`, automatic partition DROP) |
+| Art. 32 — Security of processing | at-rest field encryption, mTLS (TLS 1.3), RBAC, immutable hash-chained audit — mapped under GDPR in `complianceframework` |
+| Art. 25 — Data protection by design | data minimization (metadata, not content), purpose limitation, encryption by default |
+
+KVKK and GDPR are functionally equivalent for this system; the same endpoints and controls satisfy both.
 - [ ] Operational counterpart of data-subject request (access/erasure) processes.

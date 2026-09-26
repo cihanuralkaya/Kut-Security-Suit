@@ -1,7 +1,7 @@
 // Package complianceframework, KUT güvenlik-duruşu kontrollerini tanınmış uyum
-// çerçevelerine (CIS, NIST CSF, ISO 27001, KVKK) eşler ve filo duruşundan çerçeve
-// başına uyum yüzdesi hesaplar. Böylece "ISO 27001 %88, NIST %84, CIS %91, KVKK %93"
-// gibi denetçi-dostu bir görünüm üretilir. Eşleme SAF ve testlidir.
+// çerçevelerine (CIS, NIST CSF, ISO 27001, KVKK, GDPR) eşler ve filo duruşundan çerçeve
+// başına uyum yüzdesi hesaplar. Böylece "ISO 27001 %88, NIST %84, CIS %91, KVKK %93,
+// GDPR %90" gibi denetçi-dostu bir görünüm üretilir. Eşleme SAF ve testlidir.
 package complianceframework
 
 import "sort"
@@ -12,6 +12,7 @@ const (
 	NIST = "NIST CSF"
 	ISO  = "ISO 27001:2022"
 	KVKK = "KVKK"
+	GDPR = "GDPR"
 )
 
 // ControlMap, bir KUT kontrolünün çerçeve karşılıklarıdır.
@@ -28,12 +29,14 @@ var Crosswalk = []ControlMap{
 		Control: "disk_encryption", Title: "Sistem diski şifrelemesi",
 		Refs: map[string]string{
 			CIS: "3.11", NIST: "PR.DS-1", ISO: "A.8.24", KVKK: "md.12 (veri güvenliği)",
+			GDPR: "Art.32 (işlemenin güvenliği)",
 		},
 	},
 	{
 		Control: "firewall", Title: "Ana bilgisayar güvenlik duvarı",
 		Refs: map[string]string{
 			CIS: "4.5", NIST: "PR.AC-5", ISO: "A.8.20", KVKK: "md.12 (veri güvenliği)",
+			GDPR: "Art.32 (işlemenin güvenliği)",
 		},
 	},
 }
@@ -82,7 +85,7 @@ func Evaluate(passRatio map[string]float64) Report {
 		ctrls []string
 	}
 	byFw := map[string]*acc{}
-	fwOrder := []string{CIS, NIST, ISO, KVKK}
+	fwOrder := []string{CIS, NIST, ISO, KVKK, GDPR}
 	for _, cm := range Crosswalk {
 		for fw, ref := range cm.Refs {
 			a := byFw[fw]
