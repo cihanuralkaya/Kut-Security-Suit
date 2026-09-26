@@ -11,7 +11,7 @@ opsiyonel-backend emsalini (bkz. `docs/ONNX.md`) altyapıya uygular.
 |---|---|---|
 | Derleme | `go build ./...` | `go build -tags enterprise ./...` |
 | Binary | `cmd/c2` (tek binary) | `cmd/control` + `cmd/ingest` |
-| Depolama | yalnız PostgreSQL | + dayanıklı bus (Kafka/Redpanda) + analytics (ClickHouse) + object-store |
+| Depolama | yalnız PostgreSQL | + dayanıklı bus (NATS JetStream / Kafka) + analytics (ClickHouse) + object-store |
 | Çalışma modu | `KUT_MODE` boş/`lite` | `KUT_MODE=scale` |
 | Dış bağımlılık | **sıfır ağır dep** (pgx/grpc taban) | ağır infra istemcileri (yalnız enterprise tag'i arkasında) |
 
@@ -48,16 +48,26 @@ bilinçli dondurulur/versiyonlanır (contract-freeze).
 
 ## Module stratejisi (aşamalı)
 
-- **Şimdi (A):** tek module + build-tag. Enterprise henüz ağır dep EKLEMEDİ — dayanıklı bus'ın
-  ilk fazı **saf-Go dosya-tabanlı `DurableLog`**'tur (append-only JSONL, per-append fsync,
-  çok-nesilli rotasyon; `server/internal/enterprise/bus/durable.go`). At-least-once garantisi
-  "retention penceresi içinde"dir: pencere aşılırsa yalnız en eski nesil düşer.
-- **İlk gerçek ağır client geldiğinde (B):** Redpanda/Kafka producer'ı **aynı `DurableLog`
-  arayüzünü** (contract-freeze) uygular; o an `server/internal/enterprise/`'i **nested module**
-  (`server/internal/enterprise/go.mod`) + `go.work`'e terfi et → kök `go.mod` tertemiz kalır
-  (Lite grafiği kafka/clickhouse görmez). Bu adım, ileride Pattern 2'ye (ayrı overlay repo)
-  geçişin provasıdır: alt-ağacı `git subtree split` ile private repoya çıkar, core'u
-  `require kut.corp/suite vX.Y.Z` ile import et. Arayüzler sabit kalır → geçiş taşıma, rewrite değil.
+`DurableLog` arayüzünün (Append/Replay/Close, contract-freeze) iki backend'i vardır ve
+`KUT_BUS_BACKEND` ile seçilir:
+- **`file` (varsayılan):** saf-Go dosya-tabanlı `DurableLog` (append-only JSONL, per-append fsync,
+  çok-nesilli rotasyon; `bus/durable.go`). At-least-once "retention penceresi içinde"dir.
+- **`jetstream`:** NATS JetStream (`bus/jetstream.go`). Go-native; sunucu SÜREÇ İÇİNE GÖMÜLEBİLİR
+  (`KUT_NATS_URL` boşsa gömülü, doluysa harici küme). At-least-once (ACK bekler) + restart-replay.
+  Gömülü olabildiği için testler dış servis olmadan koşar.
+
+Modül stratejisi:
+- **Şimdi (A) — TEK MODULE:** İlk ağır dış istemci (NATS) geldi, ama nested-module'e terfi ETMEDİK.
+  Neden: zero-dep DEĞİŞMEZİ Lite **binary**'si hakkındadır ve mekanik guard bunu binary'nin
+  bağımlılık grafiğinde zorlar (`go list -deps ./server/cmd/c2 | grep nats-io → FAIL`); `jetstream.go`
+  `//go:build enterprise` arkasında olduğu için Lite c2 NATS'ı DERLEMEZ. Nested-module yalnız kök
+  `go.mod`'u kozmetik olarak temizler, ama bu alt-ağaç hem kökü import eder (`eventbus`) hem kök
+  tarafından import edilir (`cmd/control`) → nested-module çift-yönlü yerel bağımlılık + kırılgan
+  `go.work` gerektirir. Maliyet/fayda: erteliyoruz.
+- **(B) — go.mod kirliliği gerçekten sorun olduğunda:** `server/internal/enterprise/`'i nested module
+  (`go.mod`) + `go.work`'e terfi et → kök `go.mod` tertemiz (Lite grafiği NATS/kafka görmez). Bu adım
+  Pattern 2'ye (ayrı overlay repo) geçişin provasıdır: alt-ağacı `git subtree split` ile private repoya
+  çıkar, core'u `require kut.corp/suite vX.Y.Z` ile import et. Arayüzler sabit → geçiş taşıma, rewrite değil.
 
 ## CI
 
