@@ -25,9 +25,10 @@ var ErrDeviceRevoked = errors.New("enroll: cihaz iptal edilmiş — yenileme red
 // Store, enrollment'ın ihtiyaç duyduğu kalıcılık işlemleridir.
 type Store interface {
 	// ConsumeEnrollmentToken, token'ı ATOMİK olarak doğrular ve kullanılmış
-	// işaretler. tokenIndex = HMAC(token). Token bir cihaza önceden bağlıysa o
+	// işaretler. tokenIndex = HMAC(token). boundDeviceID: token bir cihaza önceden
+	// bağlıysa o cihaz. tenantID: token'a atanan kiracı (çok-tenant; boş = tek-tenant).
 	// device_id döner; değilse boş string döner. Geçersizse ErrInvalidToken.
-	ConsumeEnrollmentToken(ctx context.Context, tokenIndex []byte, now time.Time) (boundDeviceID string, err error)
+	ConsumeEnrollmentToken(ctx context.Context, tokenIndex []byte, now time.Time) (boundDeviceID, tenantID string, err error)
 
 	// UpsertEnrollingDevice, cihazı mac blind index'e göre oluşturur veya
 	// bulur ve şifreli alanlarını günceller. Atanmış device_id döner.
@@ -53,6 +54,7 @@ type DeviceEnrollment struct {
 	OSInfoEnc         []byte
 	OSPlatform        string
 	AgentVersion      string
+	TenantID          string // çok-tenant: cihazın kiracısı (enrollment token'dan)
 }
 
 // CertRecord, agent_certificates tablosuna yazılacak kayıttır.
@@ -123,7 +125,7 @@ func (s *Service) Enroll(ctx context.Context, in Input) (*Result, error) {
 
 	// 1) Token'ı doğrula ve tüket (atomik).
 	tokenIndex := s.bidx.Compute("enroll-token:" + in.Token)
-	boundDeviceID, err := s.store.ConsumeEnrollmentToken(ctx, tokenIndex, now)
+	boundDeviceID, tokenTenant, err := s.store.ConsumeEnrollmentToken(ctx, tokenIndex, now)
 	if err != nil {
 		return nil, err // ErrInvalidToken dahil
 	}
@@ -154,6 +156,7 @@ func (s *Service) Enroll(ctx context.Context, in Input) (*Result, error) {
 		OSInfoEnc:         osEnc,
 		OSPlatform:        in.OSPlatform,
 		AgentVersion:      in.AgentVersion,
+		TenantID:          tokenTenant, // çok-tenant: cihaz token'ın kiracısını devralır
 	})
 	if err != nil {
 		return nil, fmt.Errorf("enroll: cihaz kaydı: %w", err)

@@ -45,17 +45,17 @@ func (m *memStore) addToken(idx []byte, boundDeviceID string) {
 	m.tokens[string(idx)] = boundDeviceID
 }
 
-func (m *memStore) ConsumeEnrollmentToken(_ context.Context, tokenIndex []byte, _ time.Time) (string, error) {
+func (m *memStore) ConsumeEnrollmentToken(_ context.Context, tokenIndex []byte, _ time.Time) (string, string, error) {
 	k := string(tokenIndex)
 	if m.used[k] {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 	bound, ok := m.tokens[k]
 	if !ok {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 	m.used[k] = true // tek kullanımlık
-	return bound, nil
+	return bound, "", nil
 }
 
 func (m *memStore) UpsertEnrollingDevice(_ context.Context, in DeviceEnrollment) (string, error) {

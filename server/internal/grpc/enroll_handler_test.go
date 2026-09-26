@@ -33,17 +33,17 @@ func newEnrollMemStore() *enrollMemStore {
 	return &enrollMemStore{tokens: map[string]string{}, used: map[string]bool{}, revoked: map[string]bool{}}
 }
 
-func (m *enrollMemStore) ConsumeEnrollmentToken(_ context.Context, tokenIndex []byte, _ time.Time) (string, error) {
+func (m *enrollMemStore) ConsumeEnrollmentToken(_ context.Context, tokenIndex []byte, _ time.Time) (string, string, error) {
 	k := string(tokenIndex)
 	if m.used[k] {
-		return "", enroll.ErrInvalidToken
+		return "", "", enroll.ErrInvalidToken
 	}
 	bound, ok := m.tokens[k]
 	if !ok {
-		return "", enroll.ErrInvalidToken
+		return "", "", enroll.ErrInvalidToken
 	}
 	m.used[k] = true
-	return bound, nil
+	return bound, "", nil
 }
 func (m *enrollMemStore) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollment) (string, error) {
 	if in.PreferredDeviceID != "" {
