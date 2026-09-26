@@ -81,9 +81,25 @@ func (c *Correlator) Observe(ctx context.Context, deviceID, ruleID, technique, s
 	}
 	c.mu.Unlock()
 
-	// Pencerede ilk: incident aç.
+	// Pencerede ilk görünüyor: incident aç (I/O; kilit DIŞINDA — yavaş sink tüm
+	// korelasyonu bloklamasın).
 	id, _ := c.sink.OpenIncident(ctx, deviceID, key, ruleID, technique, severity, message, at)
+
+	// TOCTOU koruması: I/O sırasında BAŞKA bir goroutine aynı key için pencere açmış
+	// olabilir (iki eşzamanlı ilk-hit). Kilidi geri alınca yeniden kontrol et; varsa
+	// bizim az önce açtığımız incident'i map'e YAZMA (harita bozulmaz, Bump'lar doğru
+	// incident'e gider) ve alarmı BASTIR (çift webhook/SIEM önlenir). Not: kaybeden
+	// goroutine'in açtığı incident sink'te yetim kalır — I/O'yu kilit altında yapmamanın
+	// kabul edilen (nadir) bedeli; kritik zararlar (çift alarm + map bozulması) giderilir.
 	c.mu.Lock()
+	if w, ok := c.open[key]; ok && at.Sub(w.lastSeen) <= c.window {
+		w.lastSeen = at
+		c.open[key] = w
+		existing := w.incidentID
+		c.mu.Unlock()
+		_ = c.sink.BumpIncident(ctx, existing, at) // best-effort: mevcut incident'e grupla
+		return existing, true
+	}
 	c.open[key] = window{incidentID: id, lastSeen: at}
 	c.mu.Unlock()
 	return id, false
