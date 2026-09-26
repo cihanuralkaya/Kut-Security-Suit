@@ -194,36 +194,39 @@ jobs:
         run: go test -tags enterprise -run ClickHouse ./server/internal/enterprise/analytics/
 
   enterprise-s3:
-    name: Enterprise archive (MinIO/S3)
+    name: Enterprise archive (S3)
     runs-on: ubuntu-latest
     needs: test
+    services:
+      # S3-uyumlu depo mock'u (adobe/s3mock) — MakeBucket/Put/Get/List/Delete destekler ve
+      # minio-go ile uyumludur. MinIO imajları artık anonim çekilemiyor (Docker Hub'dan
+      # kaldırıldı, quay.io'da da anonim erişim kapalı — ticari modele geçiş), s3mock ise
+      # Docker Hub'da public'tir ve varsayılan komutla (özel komut gerektirmeden) başlar,
+      # bu yüzden servis konteyneri olarak çalışır. Arşiv testlerini (archive/s3.go, minio-go)
+      # KUT_S3_ENDPOINT ile GERÇEKTEN koşturur; env yoksa testler SKIP olur. Proto gerekmez.
+      s3mock:
+        image: adobe/s3mock:latest
+        ports:
+          - 9090:9090
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      # MinIO (S3-uyumlu) nesne deposu. `server /data` başlatma komutu gerektirdiğinden
-      # (GHA servis konteynerleri özel komut desteklemez) docker run ile başlatılır. Bu leg,
-      # KUT_S3_ENDPOINT ayarlı olmadan hep SKIP olan arşiv testlerini GERÇEKTEN koşturur
-      # (archive/s3.go, minio-go). Proto gerekmez: archive paketi gen/'i import etmez.
-      - name: MinIO başlat
+      - name: S3 mock hazır bekle
         run: |
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            quay.io/minio/minio:latest server /data
-          echo "MinIO sağlığı bekleniyor..."
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:9000/minio/health/ready >/dev/null 2>&1; then
-              echo "minio hazır"; break
+            if curl -s -o /dev/null http://localhost:9090/ 2>/dev/null; then
+              echo "s3mock hazır"; break
             fi
             sleep 2
           done
       - name: S3 arşiv entegrasyon testi (enterprise)
         env:
-          KUT_S3_ENDPOINT: localhost:9000
-          KUT_S3_ACCESS_KEY: minioadmin
-          KUT_S3_SECRET_KEY: minioadmin
+          KUT_S3_ENDPOINT: localhost:9090
+          KUT_S3_ACCESS_KEY: test
+          KUT_S3_SECRET_KEY: test
         run: go test -tags enterprise -run S3 ./server/internal/enterprise/archive/
 
   security:
