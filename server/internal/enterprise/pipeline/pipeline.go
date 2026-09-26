@@ -13,15 +13,23 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"strings"
 
+	"kut.corp/suite/server/internal/casemgmt"
 	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/enterprise/analytics"
 	"kut.corp/suite/server/internal/enterprise/archive"
 	"kut.corp/suite/server/internal/eventbus"
 	"kut.corp/suite/server/internal/model"
 )
+
+// fallbackTenant, olay tenant_id taşımadığında (henüz tüm üreticiler doldurmuyor) arşiv
+// prefix'i ve vaka kiracısı için kullanılan yer-tutucudur. Multi-tenant sertleştirmesinde
+// tenant_id ingest'te sunucu-tarafı bağlanınca gerçek değerler dolacak.
+const fallbackTenant = "default"
 
 // Source, tüketilecek dayanıklı kayıttır (bus.DurableLog'un Replay alt-kümesi).
 type Source interface {
@@ -64,7 +72,7 @@ type AlertSink interface {
 	Emit(ctx context.Context, alerts []Alert) error
 }
 
-// LogAlertSink, alarmları loglar — varsayılan/en basit sink (case-mgmt sink'i sonraki faz).
+// LogAlertSink, alarmları loglar — en basit sink (kalıcı vaka deposu yoksa geri düşüş).
 type LogAlertSink struct{}
 
 // Emit, her alarmı yapılandırılmış tek satır olarak loglar.
@@ -73,6 +81,72 @@ func (LogAlertSink) Emit(_ context.Context, alerts []Alert) error {
 		log.Printf("ALARM rule=%s (%q) sev=%s device=%s event=%s technique=%s",
 			a.Detection.RuleID, a.Detection.RuleName, a.Detection.Severity,
 			a.Event.DeviceID, a.Event.EventID, a.Detection.Technique.ID)
+	}
+	return nil
+}
+
+// CaseAlertSink, alarmları çekirdek casemgmt.Store'a vaka (incident) olarak yazar — control-plane
+// konsolunun okuduğu AYNI kalıcı depo. Vaka kimliği event_id+rule_id'den türetilir → aynı alarmın
+// yeniden işlenmesi çift vaka üretmez (ErrCaseExists başarı sayılır; at-least-once + idempotent).
+type CaseAlertSink struct {
+	store casemgmt.Store
+	owner string
+}
+
+// NewCaseAlertSink, verilen vaka deposuna yazan bir sink kurar.
+func NewCaseAlertSink(store casemgmt.Store) *CaseAlertSink {
+	return &CaseAlertSink{store: store, owner: "detection"}
+}
+
+// Emit, her alarm için bir vaka oluşturur (idempotent).
+func (s *CaseAlertSink) Emit(_ context.Context, alerts []Alert) error {
+	for _, a := range alerts {
+		tenant := a.Event.TenantID
+		if tenant == "" {
+			tenant = fallbackTenant
+		}
+		c := casemgmt.Case{
+			ID:           caseID(a),
+			TenantID:     tenant,
+			Title:        fmt.Sprintf("%s — %s", a.Detection.RuleName, a.Event.DeviceID),
+			Severity:     mapCaseSeverity(a.Detection.Severity),
+			Owner:        s.owner,
+			MITRE:        mitreRefs(a.Detection),
+			EvidenceRefs: []string{a.Event.EventID},
+		}
+		if _, err := s.store.Create(c); err != nil {
+			if errors.Is(err, casemgmt.ErrCaseExists) {
+				continue // aynı alarm yeniden işlendi → yeni vaka açma
+			}
+			return fmt.Errorf("pipeline: vaka oluşturma: %w", err)
+		}
+	}
+	return nil
+}
+
+// caseID, alarmdan kararlı (idempotent) bir vaka kimliği türetir.
+func caseID(a Alert) string { return "case_" + a.Event.EventID + "_" + a.Detection.RuleID }
+
+// mapCaseSeverity, tespit önem düzeyini vaka önem düzeyine eşler (bilinmeyen → MEDIUM).
+func mapCaseSeverity(s string) casemgmt.Severity {
+	switch strings.ToUpper(s) {
+	case "LOW":
+		return casemgmt.SeverityLow
+	case "MEDIUM":
+		return casemgmt.SeverityMedium
+	case "HIGH":
+		return casemgmt.SeverityHigh
+	case "CRITICAL":
+		return casemgmt.SeverityCritical
+	default:
+		return casemgmt.SeverityMedium
+	}
+}
+
+// mitreRefs, tespitin MITRE tekniğini (varsa) vaka referansı olarak döner.
+func mitreRefs(d detect.Detection) []string {
+	if d.Technique.ID != "" {
+		return []string{d.Technique.ID}
 	}
 	return nil
 }
@@ -161,7 +235,7 @@ func (p *Pipeline) ProcessAll(ctx context.Context) (int, error) {
 func archiveKey(e model.Event) string {
 	tenant := e.TenantID
 	if tenant == "" {
-		tenant = "unknown"
+		tenant = fallbackTenant
 	}
 	d := e.OccurredAt.UTC()
 	return fmt.Sprintf("events/%s/%s/%s.json", tenant, d.Format("2006/01/02"), e.EventID)
