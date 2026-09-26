@@ -3,9 +3,25 @@ package correlate
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// countingSink, eşzamanlı testler için mutex-korumalı sink (fakeSink mutex'siz, yalnız seri testlerde).
+type countingSink struct {
+	mu     sync.Mutex
+	opened int
+}
+
+func (s *countingSink) OpenIncident(_ context.Context, _, _, _, _, _, _ string, _ time.Time) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.opened++
+	return fmt.Sprintf("inc-%d", s.opened), nil
+}
+func (s *countingSink) BumpIncident(context.Context, string, time.Time) error { return nil }
 
 type fakeSink struct {
 	opened, bumped, n int
@@ -40,6 +56,40 @@ func TestCorrelatorSuppressesWithinWindow(t *testing.T) {
 	}
 	if _, sup3 := c.Observe(ctx, "dev1", "R2", "T2", "LOW", "x"); sup3 || fake.opened != 2 {
 		t.Fatalf("farklı kural yeni incident açmalı: sup=%v opened=%d", sup3, fake.opened)
+	}
+}
+
+// Eşzamanlı ilk-hit: aynı key için N eşzamanlı Observe'da TAM 1 alarm (suppress=false)
+// üretilmeli ve tek pencere kalmalı. TOCTOU race düzeltilmeden bu invariant kırılır
+// (birden çok goroutine suppress=false döner → alarm-fırtınası + harita bozulması).
+// `-race` ile de koşar.
+func TestCorrelatorConcurrentFirstHit(t *testing.T) {
+	sink := &countingSink{}
+	c := New(time.Hour, sink) // gerçek zaman; pencere geniş → prune tetiklenmez
+	ctx := context.Background()
+
+	const N = 64
+	var firsts int64
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start // aynı anda başlat (race penceresini genişlet)
+			if _, sup := c.Observe(ctx, "devX", "RX", "T1", "HIGH", "m"); !sup {
+				atomic.AddInt64(&firsts, 1)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if firsts != 1 {
+		t.Fatalf("eşzamanlı ilk-hit'te tam 1 alarm beklenir (suppress=false), %d oldu", firsts)
+	}
+	if c.OpenCount() != 1 {
+		t.Fatalf("tek pencere beklenir, açık=%d", c.OpenCount())
 	}
 }
 
