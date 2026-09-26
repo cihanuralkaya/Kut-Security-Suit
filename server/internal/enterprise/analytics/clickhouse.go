@@ -98,11 +98,20 @@ func (s *clickHouseStore) Insert(ctx context.Context, events []model.Event) erro
 	return nil
 }
 
-// CountBySeverity, since'ten (dahil) itibaren olayları önem düzeyine göre sayar.
-func (s *clickHouseStore) CountBySeverity(ctx context.Context, since time.Time) (map[string]uint64, error) {
-	rows, err := s.conn.Query(ctx,
-		"SELECT severity, count() AS c FROM "+chTable+" WHERE occurred_at >= ? GROUP BY severity",
-		since.UTC())
+// CountBySeverity, since'ten (dahil) itibaren olayları önem düzeyine göre sayar. tenant boş
+// değilse WHERE'e tenant_id filtresi eklenir (yapısal tenant izolasyonu).
+func (s *clickHouseStore) CountBySeverity(ctx context.Context, tenant string, since time.Time) (map[string]uint64, error) {
+	var rows driver.Rows
+	var err error
+	if tenant != "" {
+		rows, err = s.conn.Query(ctx,
+			"SELECT severity, count() AS c FROM "+chTable+" WHERE tenant_id = ? AND occurred_at >= ? GROUP BY severity",
+			tenant, since.UTC())
+	} else {
+		rows, err = s.conn.Query(ctx,
+			"SELECT severity, count() AS c FROM "+chTable+" WHERE occurred_at >= ? GROUP BY severity",
+			since.UTC())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("analitik (clickhouse): sorgu: %w", err)
 	}

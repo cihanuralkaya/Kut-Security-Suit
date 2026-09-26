@@ -56,7 +56,8 @@ func TestPipelineE2E(t *testing.T) {
 		t.Fatalf("S3: %v", err)
 	}
 
-	p := New(src, an, ar)
+	const tenant = "e2e-tenant"
+	p := New(src, an, ar).WithTenant(tenant)
 	ctx := context.Background()
 	n, err := p.ProcessAll(ctx)
 	if err != nil {
@@ -66,10 +67,10 @@ func TestPipelineE2E(t *testing.T) {
 		t.Fatalf("işlenen=%d, beklenen 3", n)
 	}
 
-	// Analitik: ClickHouse'a gerçekten indi mi (async birleştirmeye kısa retry).
+	// Analitik: ClickHouse'a gerçekten indi mi — TENANT-KAPSAMLI sorgu (izolasyon + async retry).
 	var counts map[string]uint64
 	for attempt := 0; attempt < 20; attempt++ {
-		counts, err = an.CountBySeverity(ctx, base.Add(-time.Minute))
+		counts, err = an.CountBySeverity(ctx, tenant, base.Add(-time.Minute))
 		if err != nil {
 			t.Fatalf("CountBySeverity: %v", err)
 		}

@@ -19,8 +19,10 @@ type AnalyticsStore interface {
 	// kararlı EventID'si güvence altına alınır (idempotens temeli).
 	Insert(ctx context.Context, events []model.Event) error
 	// CountBySeverity, verilen andan (dahil) itibaren olayları önem düzeyine göre sayar —
-	// temsili bir agregasyon sorgusu (konsol önem grafiğinin ölçekli karşılığı).
-	CountBySeverity(ctx context.Context, since time.Time) (map[string]uint64, error)
+	// temsili bir agregasyon sorgusu (konsol önem grafiğinin ölçekli karşılığı). tenant boş
+	// değilse sorgu O KİRACIYLA SINIRLANIR (cross-tenant sızıntıya karşı yapısal izolasyon);
+	// boşsa tüm kiracılar (global/admin görünümü).
+	CountBySeverity(ctx context.Context, tenant string, since time.Time) (map[string]uint64, error)
 	// Close, bağlantıyı kapatır. Idempotenttir.
 	Close() error
 }

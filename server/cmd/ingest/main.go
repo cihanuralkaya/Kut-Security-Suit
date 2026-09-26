@@ -70,6 +70,13 @@ func main() {
 
 	p := pipeline.New(src, an, ar)
 
+	// Sunucu-tarafı kiracı bağlama: KUT_TENANT ayarlıysa tenant taşımayan olaylara atanır
+	// (tüm downstream tiers tenant-atıflı olur → yapısal izolasyon). Client'tan güvenilmez.
+	if tenant := os.Getenv("KUT_TENANT"); tenant != "" {
+		p.WithTenant(tenant)
+		log.Printf("kiracı bağlandı (server-side): %s", tenant)
+	}
+
 	// Alarm sink'i: DB varsa alarmlar KALICI vaka deposuna (control-plane konsoluyla paylaşımlı)
 	// yazılır; yoksa loglanır.
 	var alertSink pipeline.AlertSink = pipeline.LogAlertSink{}
