@@ -91,6 +91,32 @@ type AdminNotifier interface {
 	PublishDevice(deviceID string)
 }
 
+// AdminTenantNotifier, kiracı-atıflı yayını destekleyen OPSİYONEL arayüzdür (çok-tenant
+// veri-düzlemi). AdminNotifier'ı bozmadan (type-assert ile) eklenir: eventbus.Bus bunu
+// karşılar; karşılamayan implementer'lar kiracısız yola düşer. Kiracı SUNUCU-TARAFI bağlanır.
+type AdminTenantNotifier interface {
+	PublishTenantEvent(tenant, deviceID, severity, message string)
+	PublishTenantDevice(tenant, deviceID string)
+}
+
+// publishEvent, admin notifier kiracı-farkındaysa kiracı-atıflı, değilse klasik yayınlar.
+func (h *AgentHandler) publishEvent(tenant, deviceID, severity, message string) {
+	if tn, ok := h.admin.(AdminTenantNotifier); ok {
+		tn.PublishTenantEvent(tenant, deviceID, severity, message)
+		return
+	}
+	h.admin.PublishEvent(deviceID, severity, message)
+}
+
+// publishDevice, publishEvent'in cihaz-durumu karşılığıdır.
+func (h *AgentHandler) publishDevice(tenant, deviceID string) {
+	if tn, ok := h.admin.(AdminTenantNotifier); ok {
+		tn.PublishTenantDevice(tenant, deviceID)
+		return
+	}
+	h.admin.PublishDevice(deviceID)
+}
+
 // noopAdminNotifier, admin notifier verilmediğinde kullanılır.
 type noopAdminNotifier struct{}
 
@@ -133,8 +159,14 @@ type AgentHandler struct {
 	artifacts  ArtifactSink                  // adli/IR dosya toplama deposu
 	graph      *entitygraph.Graph            // varlık/tehdit grafı — olaylardan kenar besler (nil = kapalı)
 	seqModel   *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli — canlı öğrenir (nil = kapalı)
+	tenant     string                        // sunucu-tarafı kiracı (KUT_TENANT_ID); olaylara atanır (boş = tek-tenant)
 	now        func() time.Time
 }
+
+// SetTenant, bu sunucunun kiracı kimliğini ayarlar (sunucu-tarafı bağlama). Ayarlıysa,
+// kimlik-doğrulanmış cihazlardan gelen olaylar bu kiracıyla atıflanır (asla client'tan).
+// Boş → tek-tenant (Notice.TenantID boş kalır). Gerçek çok-tenant'ta ileride cihaz-başına çözülür.
+func (h *AgentHandler) SetTenant(t string) { h.tenant = t }
 
 // SetEntityGraph, varlık/tehdit grafını bağlar. Bağlıysa ProcessEvent, olaylardan
 // (DNS→alan, bağlantı→IP) cihaz-merkezli kenarlar besler (pivot/hunting temeli).
@@ -366,7 +398,7 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 	if err != nil {
 		return nil, status.Error(codes.Internal, "heartbeat kaydedilemedi")
 	}
-	h.admin.PublishDevice(deviceID) // konsola canlı: cihaz görüldü
+	h.publishDevice(h.tenant, deviceID) // konsola canlı: cihaz görüldü (kiracı-atıflı)
 
 	// Öz-tasdik (#4): ajanın ikili hash'i sürüm değişmeden değiştiyse (takas/yama)
 	// KRİTİK kurcalama olayı üret. Best-effort; heartbeat'i kesmez.
@@ -379,7 +411,7 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 				Details:    `{"self_attestation":true,"binary_hash":"` + bh + `","agent_version":"` + agentVersion + `"}`,
 			}
 			_, _ = h.events.SaveEvents(ctx, deviceID, []model.Event{ev})
-			h.admin.PublishEvent(deviceID, ev.Severity, ev.Message)
+			h.publishEvent(h.tenant, deviceID, ev.Severity, ev.Message)
 			metrics.IncAlertRaised()
 			h.alerter.Notify(notify.Alert{
 				DeviceID: deviceID, Category: ev.Category, Severity: ev.Severity,
@@ -483,7 +515,7 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 				if err := h.responder.AutoQuarantine(stream.Context(), deviceID, reason); err == nil {
 					autoTriggered = true
 					metrics.IncAutoQuarantine()
-					h.admin.PublishDevice(deviceID) // konsol durumu tazelesin
+					h.publishDevice(h.tenant, deviceID) // konsol durumu tazelesin
 				}
 			}
 		}
@@ -501,8 +533,14 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 // ajan olayları aynı pencereleri/sayaçları görür. ctx, çağıranın bağlamıdır (gRPC
 // akışı ya da HTTP isteği).
 func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e model.Event) {
-	h.admin.PublishEvent(deviceID, e.Severity, e.Message) // konsola canlı push
-	h.observeGraph(deviceID, e)                           // varlık/tehdit grafını besle (nil'de no-op)
+	// Sunucu-tarafı kiracı bağlama: olay kiracı taşımıyorsa bu sunucunun kiracısını ata
+	// (kimlik-doğrulanmış bağlam; asla client'tan). Downstream (bus→ingest, bit/eşik kapsamı)
+	// böylece kiracı-atıflı olur.
+	if e.TenantID == "" && h.tenant != "" {
+		e.TenantID = h.tenant
+	}
+	h.publishEvent(e.TenantID, deviceID, e.Severity, e.Message) // konsola canlı push (kiracı-atıflı)
+	h.observeGraph(deviceID, e)                                 // varlık/tehdit grafını besle (nil'de no-op)
 	// Sunucu-taraflı tespit: kural eşleşirse ADLANDIRILMIŞ, normalize önem
 	// düzeyli + MITRE bağlamlı uyarı üret (ham olayın yerine geçer). Eşleşme
 	// yoksa jenerik yol: ham önem düzeyi + MITRE sınıflandırması. Uyarı

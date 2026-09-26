@@ -326,6 +326,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	// Anlık politika push: admin atama → notifier → açık akış.
 	notifier := policypush.New()
 	agentHandler := xgrpc.NewAgentHandler(backend, backend, backend, backend, notifier)
+	agentHandler.SetTenant(cfg.TenantID)  // sunucu-tarafı kiracı bağlama (olaylar bu kiracıyla atıflanır)
 	agentHandler.SetArtifactSink(backend) // adli/IR dosya toplama (#4)
 	// Varlık/tehdit grafı: ajan olaylarından (DNS→alan, bağlantı→IP) cihaz-merkezli
 	// kenarlar beslenir; aynı örnek admin API'ye salt-okunur pivot uçları için verilir.
