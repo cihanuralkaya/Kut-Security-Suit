@@ -73,6 +73,14 @@ func openBackend() (DurableLog, string, error) {
 			return dl, "jetstream backend: gömülü sunucu", nil
 		}
 		return dl, fmt.Sprintf("jetstream backend: %s", url), nil
+	case "kafka", "redpanda":
+		url := os.Getenv("KUT_KAFKA_URL")
+		topic := os.Getenv("KUT_KAFKA_TOPIC")
+		dl, err := NewKafkaLog(url, topic)
+		if err != nil {
+			return nil, "", err
+		}
+		return dl, fmt.Sprintf("kafka backend: %s", url), nil
 	default: // "file" veya boş
 		path := os.Getenv("KUT_BUS_LOG")
 		if path == "" {

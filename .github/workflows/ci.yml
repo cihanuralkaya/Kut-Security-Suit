@@ -72,7 +72,7 @@ jobs:
       # taşımamalı — hepsi enterprise tag'i arkasında kalmalı.
       - name: Zero-dep guard (Lite)
         run: |
-          if go list -deps ./server/cmd/c2 | grep -Eiq 'kafka|clickhouse|minio|aws-sdk|redpanda|segmentio|confluent|nats-io'; then
+          if go list -deps ./server/cmd/c2 | grep -Eiq 'kafka|clickhouse|minio|aws-sdk|redpanda|segmentio|confluent|nats-io|franz-go'; then
             echo "HATA: Lite c2 build grafiğine ağır altyapı bağımlılığı sızdı (enterprise tag'i arkasında olmalı)"; exit 1
           fi
           echo "OK: Lite c2 zero heavy-dep"
@@ -125,6 +125,39 @@ jobs:
           if [ -z "$PGCID" ]; then echo "postgres servis konteyneri bulunamadı"; exit 1; fi
           export PSQL="docker exec -i $PGCID psql"
           bash scripts/smoke-test.sh
+
+  enterprise-kafka:
+    name: Enterprise Kafka bus (Redpanda)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      # Redpanda (Kafka-API uyumlu) tek-düğüm broker'ı. GitHub servis konteynerleri özel
+      # başlatma komutu (redpanda start ...) desteklemediğinden docker run ile elle başlatılır.
+      # Bu leg, KUT_KAFKA_URL ayarlı olmadan hep SKIP olan Kafka backend testlerini GERÇEKTEN
+      # koşturur (bus/kafka.go, franz-go). Proto gerekmez: bus paketi gen/'i import etmez.
+      - name: Redpanda başlat
+        run: |
+          docker run -d --name redpanda -p 9092:9092 \
+            redpandadata/redpanda:latest \
+            redpanda start --smp 1 --overprovisioned --node-id 0 --check=false \
+              --kafka-addr PLAINTEXT://0.0.0.0:9092 \
+              --advertise-kafka-addr PLAINTEXT://localhost:9092
+          echo "broker sağlığı bekleniyor..."
+          for i in $(seq 1 30); do
+            if docker exec redpanda rpk cluster health 2>/dev/null | grep -qi 'healthy.*true'; then
+              echo "redpanda hazır"; break
+            fi
+            sleep 2
+          done
+      - name: Kafka bus entegrasyon testi (enterprise)
+        env:
+          KUT_KAFKA_URL: localhost:9092
+        run: go test -tags enterprise -run Kafka ./server/internal/enterprise/bus/
 
   security:
     name: Güvenlik (govulncheck + fuzz + SBOM)
