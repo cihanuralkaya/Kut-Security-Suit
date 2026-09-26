@@ -43,9 +43,11 @@ server/internal/
       s3.go                //go:build enterprise   (minio-go; KUT_S3_*)
     (sonra) secretsprov/  …                     (aynı impl+stub deseni)
 server/cmd/
-  c2/       (Lite tek binary — default)
-  control/  main.go //go:build enterprise | main_stub.go //go:build !enterprise
-  ingest/   main.go //go:build enterprise | main_stub.go //go:build !enterprise
+  c2/       (Lite tek binary — default; ince main → app.Run(nil))
+  control/  main.go //go:build enterprise (app.Run(enterprise.Enable) — tam sunucu + dayanıklı bus) | main_stub.go //go:build !enterprise
+  ingest/   main.go //go:build enterprise (veri-düzlemi tüketici: bus → normalize/detect → analytics+archive) | main_stub.go //go:build !enterprise
+server/internal/
+  app/      (PAYLAŞILAN sunucu bootstrap — app.Run(enterpriseHook); Lite c2 + Enterprise control ortak)
 ```
 
 Seam'ler (genişletme noktaları): `eventbus.SetSink`, `cluster.NotifyBus`/`LeaseStore`,
