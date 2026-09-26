@@ -14,7 +14,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
+	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/enterprise/analytics"
 	"kut.corp/suite/server/internal/enterprise/archive"
 	"kut.corp/suite/server/internal/eventbus"
@@ -44,12 +46,45 @@ func DefaultNormalize(n eventbus.Notice) model.Event {
 	return e
 }
 
-// Pipeline, bir Source'u iki sink'e (analytics + archive) bağlar. Sink'ler nil olabilir
-// (yapılandırılmamışsa atlanır).
+// Detector, kanonik bir olayı değerlendirip tespitler döndürür. Çekirdek `detect.Engine`
+// bu imzayı kendiliğinden karşılar (yeniden kullanım; sıfırdan tespit yazılmaz). Detection
+// bus'tan SONRA, ayrı bir stage olarak çalışır — üretici yolu bloklanmaz (vendor deseni).
+type Detector interface {
+	Evaluate(ev model.Event) []detect.Detection
+}
+
+// Alert, tetikleyen olay + tespit çiftidir (case-mgmt/uyarı katmanına iletilir).
+type Alert struct {
+	Event     model.Event      `json:"event"`
+	Detection detect.Detection `json:"detection"`
+}
+
+// AlertSink, üretilen alarmları hedefe (case-mgmt, webhook, control-plane deposu) iletir.
+type AlertSink interface {
+	Emit(ctx context.Context, alerts []Alert) error
+}
+
+// LogAlertSink, alarmları loglar — varsayılan/en basit sink (case-mgmt sink'i sonraki faz).
+type LogAlertSink struct{}
+
+// Emit, her alarmı yapılandırılmış tek satır olarak loglar.
+func (LogAlertSink) Emit(_ context.Context, alerts []Alert) error {
+	for _, a := range alerts {
+		log.Printf("ALARM rule=%s (%q) sev=%s device=%s event=%s technique=%s",
+			a.Detection.RuleID, a.Detection.RuleName, a.Detection.Severity,
+			a.Event.DeviceID, a.Event.EventID, a.Detection.Technique.ID)
+	}
+	return nil
+}
+
+// Pipeline, bir Source'u iki sink'e (analytics + archive) bağlar ve opsiyonel olarak tespit
+// çalıştırıp alarmları AlertSink'e iletir. Tüm sink'ler/detector nil olabilir (atlanır).
 type Pipeline struct {
 	source    Source
 	analytics analytics.AnalyticsStore // nil olabilir
 	archive   archive.Archive          // nil olabilir
+	detector  Detector                 // nil olabilir
+	alerts    AlertSink                // nil olabilir
 	normalize Normalizer
 }
 
@@ -66,12 +101,21 @@ func (p *Pipeline) WithNormalizer(n Normalizer) *Pipeline {
 	return p
 }
 
+// WithDetection, tespit stage'ini etkinleştirir: her olay detector ile değerlendirilir ve
+// üretilen alarmlar sink'e iletilir. İkisi de gerekli; biri nil ise detection atlanır.
+func (p *Pipeline) WithDetection(d Detector, sink AlertSink) *Pipeline {
+	p.detector = d
+	p.alerts = sink
+	return p
+}
+
 // ProcessAll, kaynaktaki tüm bildirimleri (en eskiden en yeniye) tüketir: her birini normalize
 // eder, arşive idempotent yazar (event_id anahtarlı) ve toplu olarak analitik deposuna ekler.
 // İşlenen kayıt sayısını döner. İdempotenttir: aynı olayların yeniden işlenmesi (dedup anahtarı
 // event_id) güvenlidir — at-least-once + idempotent sink deseni.
 func (p *Pipeline) ProcessAll(ctx context.Context) (int, error) {
 	var batch []model.Event
+	var alertBatch []Alert
 	count := 0
 	err := p.source.Replay(func(n eventbus.Notice) error {
 		if err := ctx.Err(); err != nil {
@@ -88,6 +132,12 @@ func (p *Pipeline) ProcessAll(ctx context.Context) (int, error) {
 			}
 		}
 		batch = append(batch, e)
+		// Tespit stage'i: bus'tan sonra, üreticiyi bloklamadan (tüketici içinde).
+		if p.detector != nil {
+			for _, d := range p.detector.Evaluate(e) {
+				alertBatch = append(alertBatch, Alert{Event: e, Detection: d})
+			}
+		}
 		count++
 		return nil
 	})
@@ -96,6 +146,11 @@ func (p *Pipeline) ProcessAll(ctx context.Context) (int, error) {
 	}
 	if p.analytics != nil && len(batch) > 0 {
 		if err := p.analytics.Insert(ctx, batch); err != nil {
+			return count, err
+		}
+	}
+	if p.alerts != nil && len(alertBatch) > 0 {
+		if err := p.alerts.Emit(ctx, alertBatch); err != nil {
 			return count, err
 		}
 	}
