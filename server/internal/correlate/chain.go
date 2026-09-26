@@ -17,6 +17,10 @@ type chainState struct {
 	firedAt time.Time            // son tetikleme (pencere başına bir kez)
 }
 
+// chainDevCap, devs map'i için fırsatçı-süpürme tetikleme tavanıdır (bellek sınırlama).
+// Test edilebilirlik için var (sabit değil).
+var chainDevCap = 8192
+
 // ChainDetector, cihaz başına farklı sinyalleri bir pencerede sayar ve eşik
 // aşılınca yüksek-güvenli zincir tetikler.
 type ChainDetector struct {
@@ -64,6 +68,27 @@ func (c *ChainDetector) Observe(deviceID, signal string, at time.Time) (fired bo
 		}
 	}
 	st.signals[signal] = at
+
+	// Fırsatçı süpürme: cihaz sayısı tavanı aşarsa, tüm sinyalleri süresi dolmuş (artık
+	// emisyon yapmayan) cihazların durumunu sil. Aksi halde yeniden-imajlanan/kısa-ömürlü
+	// cihaz kimlikleri devs map'inde birikir — ingest sıcak yolunda sınırsız büyüme.
+	if len(c.devs) > chainDevCap {
+		for id, s := range c.devs {
+			if id == deviceID {
+				continue
+			}
+			empty := true
+			for _, t := range s.signals {
+				if t.After(cutoff) {
+					empty = false
+					break
+				}
+			}
+			if empty {
+				delete(c.devs, id)
+			}
+		}
+	}
 
 	if len(st.signals) < c.threshold {
 		return false, nil

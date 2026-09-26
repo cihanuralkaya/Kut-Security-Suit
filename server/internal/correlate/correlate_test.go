@@ -93,6 +93,28 @@ func TestCorrelatorConcurrentFirstHit(t *testing.T) {
 	}
 }
 
+// ChainDetector, cihaz sayısı tavanı aşınca artık-emisyon-yapmayan (süresi dolmuş) cihaz
+// durumlarını süpürmeli (ingest sıcak yolunda sınırsız büyüme yok).
+func TestChainSweepsIdleDevices(t *testing.T) {
+	old := chainDevCap
+	chainDevCap = 3
+	defer func() { chainDevCap = old }()
+
+	c := NewChainDetector(10*time.Minute, 3, nil)
+	base := time.Now()
+	for i := 0; i < 5; i++ { // 5 cihaz, her biri base'te tek sinyal
+		c.Observe(fmt.Sprintf("d%d", i), "sig", base)
+	}
+	if len(c.devs) != 5 {
+		t.Fatalf("kurulum: 5 cihaz beklenir, %d", len(c.devs))
+	}
+	// Pencere sonrası yeni cihaz → tavan aşılır → bayat cihazlar süpürülür.
+	c.Observe("dNew", "sig", base.Add(11*time.Minute))
+	if len(c.devs) != 1 {
+		t.Fatalf("boşta cihazlar süpürülmedi: %d cihaz kaldı", len(c.devs))
+	}
+}
+
 // Pencere dolduktan sonra aynı anahtar YENİ incident açmalı (bastırma yok).
 func TestCorrelatorReopensAfterWindow(t *testing.T) {
 	fake := &fakeSink{}
