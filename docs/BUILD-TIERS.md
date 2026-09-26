@@ -35,7 +35,10 @@ server/internal/
     enterprise.go        //go:build enterprise   (Enable + Edition="Enterprise")
     enterprise_stub.go   //go:build !enterprise  (Enable→ErrNotCompiled, Edition="Lite")
     bus/  bus.go (enterprise, durable-bus seam) | bus_stub.go (!enterprise)
-    (sonra) analytics/  blob/  secretsprov/  …   (aynı impl+stub deseni)
+    analytics/                                (AnalyticsStore seam; nötr arayüz + ClickHouse impl)
+      analytics.go         (build-tag'siz: AnalyticsStore arayüzü + tipler)
+      clickhouse.go        //go:build enterprise   (ClickHouse impl; KUT_CLICKHOUSE_DSN)
+    (sonra) blob/  secretsprov/  …             (aynı impl+stub deseni)
 server/cmd/
   c2/       (Lite tek binary — default)
   control/  main.go //go:build enterprise | main_stub.go //go:build !enterprise
