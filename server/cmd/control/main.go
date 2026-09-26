@@ -1,39 +1,33 @@
 //go:build enterprise
 
 // Command control — KUT-Scale (Enterprise) KONTROL DÜZLEMİ giriş noktası. YALNIZ
-// `//go:build enterprise` ile derlenir ve çekirdek `internal/` paketlerini (Lite c2 ile
-// AYNI) + `internal/enterprise/*` katmanını yeniden kullanır. İSKELE: tam kontrol-düzlemi
-// (IAM/tenant/policy/case + admin API) kablolaması sonraki fazda buraya taşınır; şu an
-// yalnız enterprise seam'lerinin bağlandığını kanıtlar (bkz. docs/BUILD-TIERS.md).
+// `//go:build enterprise` ile derlenir. Lite `cmd/c2` ile AYNI paylaşılan sunucu
+// bootstrap'ını (internal/app) çalıştırır; TEK fark app.Run'a enterprise.Enable hook'unu
+// geçmesidir → canlı olay bus'ının sink'i dayanıklı bus'a yönlenir (ingest veri-düzlemi
+// bunu tüketir). Böylece üretici (agent → C2 → bus) ile veri-düzlemi (bus → analitik/arşiv)
+// uçtan uca bağlanır; sunucu kablolaması Lite ile tek kaynakta paylaşılır (drift yok).
 package main
 
 import (
-	"context"
 	"log"
-	"os/signal"
-	"syscall"
+	"os"
 
+	"kut.corp/suite/logx"
+	"kut.corp/suite/server/internal/app"
 	"kut.corp/suite/server/internal/enterprise"
-	"kut.corp/suite/server/internal/eventbus"
 )
 
 func main() {
-	log.SetPrefix("[control] ")
-	log.Printf("KUT Security Suite %s — kontrol düzlemi (iskele)", enterprise.Edition)
-	bus := eventbus.New()
-	if err := enterprise.Enable(bus); err != nil {
-		log.Fatalf("enterprise katmanı etkinleştirilemedi: %v", err)
-	}
-	defer func() {
-		if err := enterprise.Shutdown(); err != nil {
-			log.Printf("kapanışta enterprise shutdown hatası: %v", err)
-		}
-	}()
+	logx.Setup(os.Getenv("KUT_LOG_FORMAT"), "[control] ")
+	log.Printf("KUT Security Suite %s — kontrol düzlemi (tam sunucu + dayanıklı bus)", enterprise.Edition)
 
-	// TODO(enterprise): control-plane servislerini (admin API, IAM, tenant, policy, case) kabla.
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	log.Println("kontrol düzlemi iskelesi hazır (tam kablolama sonraki faz); kapanış sinyali bekleniyor")
-	<-ctx.Done()
-	log.Println("kapanış sinyali alındı; temiz kapanıyor")
+	// app.Run bloklar; kapanış sinyalinde döner. enterprise.Enable hook olarak geçilir →
+	// canlı bus oluşturulunca dayanıklı bus sink'i bağlanır. Kapanışta dayanıklı kayıt kapatılır.
+	runErr := app.Run(enterprise.Enable)
+	if err := enterprise.Shutdown(); err != nil {
+		log.Printf("kapanışta enterprise shutdown hatası: %v", err)
+	}
+	if runErr != nil {
+		log.Fatalf("başlatma hatası: %v", runErr)
+	}
 }
