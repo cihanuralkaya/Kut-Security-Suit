@@ -55,6 +55,11 @@ bilinçli dondurulur/versiyonlanır (contract-freeze).
 - **`jetstream`:** NATS JetStream (`bus/jetstream.go`). Go-native; sunucu SÜREÇ İÇİNE GÖMÜLEBİLİR
   (`KUT_NATS_URL` boşsa gömülü, doluysa harici küme). At-least-once (ACK bekler) + restart-replay.
   Gömülü olabildiği için testler dış servis olmadan koşar.
+- **`kafka`:** Kafka-API / franz-go (`bus/kafka.go`). Zaten Kafka/Redpanda tabanlı güvenlik-veri-hattı
+  olan enterprise'lar için "mevcut hatta takın" seçeneği. Harici broker gerekir (`KUT_KAFKA_URL`,
+  `KUT_KAFKA_TOPIC`); tek partition (global sıralama), ProduceSync (ACK bekler). Gömülemez →
+  CI'da ayrı **enterprise-kafka** job'ı Redpanda konteynerine karşı entegrasyon testi koşar
+  (broker yoksa testler `t.Skip`).
 
 Modül stratejisi:
 - **Şimdi (A) — TEK MODULE:** İlk ağır dış istemci (NATS) geldi, ama nested-module'e terfi ETMEDİK.
