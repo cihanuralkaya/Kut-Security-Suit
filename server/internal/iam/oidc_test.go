@@ -273,3 +273,19 @@ func TestParseJWKSInvalid(t *testing.T) {
 		t.Fatal("want error on invalid JSON")
 	}
 }
+
+// ParseJWKS, <2048-bit RSA anahtarını reddetmeli (zayıf-anahtar tabanı, fail-closed).
+func TestParseJWKSRejectsWeakKey(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 1024) // kasıtlı zayıf (<2048)
+	if err != nil {
+		t.Fatalf("anahtar üretimi: %v", err)
+	}
+	jwks, _ := json.Marshal(map[string]any{"keys": []map[string]any{{
+		"kty": "RSA", "kid": "weak",
+		"n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+		"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+	}}})
+	if _, err := ParseJWKS(jwks); err == nil {
+		t.Fatal("1024-bit RSA anahtarı reddedilmeliydi (<2048 taban)")
+	}
+}
