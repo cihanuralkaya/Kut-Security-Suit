@@ -91,6 +91,7 @@ type policyRec struct {
 type eventRec struct {
 	id         string // KARARLI kimlik (kayıt anında atanır; her listelemede değişmez)
 	deviceID   string
+	tenant     string // çok-tenant: olayın kiracısı
 	category   string
 	severity   string
 	message    string
@@ -418,7 +419,7 @@ func (s *Store) SaveEvents(_ context.Context, deviceID string, evs []model.Event
 	for _, e := range evs {
 		s.events = append(s.events, eventRec{
 			id:       randID("evt-"), // kararlı kimlik (kayıt anında)
-			deviceID: deviceID, category: e.Category, severity: e.Severity,
+			deviceID: deviceID, tenant: e.TenantID, category: e.Category, severity: e.Severity,
 			message: e.Message, occurredAt: e.OccurredAt, createdAt: now,
 			details: e.Details,
 		})
@@ -893,6 +894,9 @@ func (s *Store) QueryEvents(_ context.Context, f adminread.EventFilter) ([]admin
 	for i := len(s.events) - 1; i >= 0; i-- {
 		e := s.events[i]
 		if f.DeviceID != "" && e.deviceID != f.DeviceID {
+			continue
+		}
+		if f.TenantID != "" && e.tenant != f.TenantID { // çok-tenant izolasyonu
 			continue
 		}
 		if f.Severity != "" && e.severity != f.Severity {

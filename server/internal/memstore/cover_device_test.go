@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"kut.corp/suite/server/internal/adminread"
 	"kut.corp/suite/server/internal/enroll"
+	"kut.corp/suite/server/internal/model"
 )
 
 // UpsertEnrollingDevice: PreferredDeviceID boşsa MAC blind-index eşleşen mevcut
@@ -172,5 +174,27 @@ func TestCertificateLifecycle(t *testing.T) {
 	// Bilinmeyen cihaz sertifika listesi boş.
 	if other, _ := s.CertsByDevice(ctx, "yok"); len(other) != 0 {
 		t.Fatalf("bilinmeyen cihazda sertifika olmamalıydı: %d", len(other))
+	}
+}
+
+// QueryEvents, EventFilter.TenantID ayarlıysa yalnız o kiracının olaylarını dönmeli (çok-tenant read izolasyonu).
+func TestQueryEventsTenantScoped(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	base := time.Now()
+	_, _ = s.SaveEvents(ctx, "d1", []model.Event{{TenantID: "acme", Category: "SYSTEM", Severity: "INFO", Message: "a1", OccurredAt: base}})
+	_, _ = s.SaveEvents(ctx, "d2", []model.Event{{TenantID: "globex", Category: "SYSTEM", Severity: "INFO", Message: "g1", OccurredAt: base}})
+
+	acme, err := s.QueryEvents(ctx, adminread.EventFilter{TenantID: "acme", Limit: 100})
+	if err != nil {
+		t.Fatalf("QueryEvents: %v", err)
+	}
+	if len(acme) != 1 || acme[0].Message != "a1" {
+		t.Fatalf("acme kiracısı yalnız kendi olayını görmeli: %+v", acme)
+	}
+	// Kiracısız sorgu (boş TenantID) hepsini görür (geriye-uyumlu).
+	all, _ := s.QueryEvents(ctx, adminread.EventFilter{Limit: 100})
+	if len(all) != 2 {
+		t.Fatalf("kiracısız sorgu tümünü dönmeli: %d", len(all))
 	}
 }
