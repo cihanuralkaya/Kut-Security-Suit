@@ -140,8 +140,10 @@ type Store interface {
 	// ListPendingWipes, ikinci-onay bekleyen tüm WIPE taleplerini döner (çift-kontrol
 	// görünürlüğü — konsolun onay/iptal için gösterdiği liste).
 	ListPendingWipes(ctx context.Context) ([]PendingWipeRow, error)
-	// GetArtifact, tek bir artefaktın içeriğini (indirme için) döner.
-	GetArtifact(ctx context.Context, id string) (ArtifactContent, bool, error)
+	// GetArtifact, tek bir artefaktın içeriğini (indirme için) döner. tenantID boş
+	// değilse artefaktın cihazı o kiracıya ait değilse (id doğru olsa bile) ok=false
+	// (çok-tenant izolasyonu; device→tenant).
+	GetArtifact(ctx context.Context, id string, tenantID string) (ArtifactContent, bool, error)
 	// ListCustody, bir delilin (artefakt) KALICI gözetim-zinciri kayıtlarını (seq>=1,
 	// ACCESSED/TRANSFERRED/SEALED) seq'e göre artan sırada döner (§23). Genesis (seq=0)
 	// artefakttan türetilir, burada DÖNMEZ.
@@ -1129,9 +1131,27 @@ func (s *Service) LatestSoftwareByDevice(ctx context.Context, tenantID string) (
 	return s.store.LatestSoftwareByDevice(ctx, tenantID)
 }
 
+// deviceInTenant, bir cihazın çağıranın kiracısına ait olup olmadığını döner
+// (çok-tenant okuma kapısı). tenantID boş → platform admini (her cihaz). Cihaz yoksa
+// veya başka kiracıdaysa false → çağıran katman "yok" gibi davranır (varlık sızmaz).
+func (s *Service) deviceInTenant(ctx context.Context, deviceID, tenantID string) (bool, error) {
+	if tenantID == "" {
+		return true, nil
+	}
+	row, ok, err := s.store.DeviceByID(ctx, deviceID)
+	if err != nil {
+		return false, err
+	}
+	return ok && row.TenantID == tenantID, nil
+}
+
 // Artifacts, bir cihazdan toplanan dosya artefaktlarının meta listesini döner
-// (içerik hariç; indirme ayrı uçtan). Adli/IR.
-func (s *Service) Artifacts(ctx context.Context, deviceID string) ([]ArtifactDTO, error) {
+// (içerik hariç; indirme ayrı uçtan). Adli/IR. tenantID boş değilse ve cihaz o
+// kiracıya ait değilse boş liste (çok-tenant izolasyonu).
+func (s *Service) Artifacts(ctx context.Context, deviceID string, tenantID string) ([]ArtifactDTO, error) {
+	if ok, err := s.deviceInTenant(ctx, deviceID, tenantID); err != nil || !ok {
+		return []ArtifactDTO{}, err
+	}
 	rows, err := s.store.ListArtifacts(ctx, deviceID)
 	if err != nil {
 		return nil, err
@@ -1143,9 +1163,11 @@ func (s *Service) Artifacts(ctx context.Context, deviceID string) ([]ArtifactDTO
 	return out, nil
 }
 
-// ArtifactBytes, tek bir artefaktın içeriğini (indirme için) döner.
-func (s *Service) ArtifactBytes(ctx context.Context, id string) (ArtifactContent, bool, error) {
-	return s.store.GetArtifact(ctx, id)
+// ArtifactBytes, tek bir artefaktın içeriğini (indirme için) döner. tenantID boş
+// değilse artefaktın cihazı o kiracıya ait değilse YOK gibi davranılır (depo device→
+// tenant join ile filtreler).
+func (s *Service) ArtifactBytes(ctx context.Context, id string, tenantID string) (ArtifactContent, bool, error) {
+	return s.store.GetArtifact(ctx, id, tenantID)
 }
 
 // EvidenceDTO, bir delil kaydı + zincir doğrulama sonucudur (§23).
@@ -1159,7 +1181,10 @@ type EvidenceDTO struct {
 // genesis COLLECTED gözetim kaydıyla bir zincir kurulur ve bütünlüğü doğrulanır.
 // Salt-okuma; mevcut artefakt meta verisi üzerine (şema değişikliği yok). Kalıcı
 // gözetim-zinciri (erişim denetimi dahil) bir sonraki adımdır.
-func (s *Service) DeviceEvidence(ctx context.Context, deviceID string) ([]EvidenceDTO, error) {
+func (s *Service) DeviceEvidence(ctx context.Context, deviceID string, tenantID string) ([]EvidenceDTO, error) {
+	if ok, err := s.deviceInTenant(ctx, deviceID, tenantID); err != nil || !ok {
+		return []EvidenceDTO{}, err
+	}
 	rows, err := s.store.ListArtifacts(ctx, deviceID)
 	if err != nil {
 		return nil, err
@@ -1187,9 +1212,15 @@ func (s *Service) DeviceEvidence(ctx context.Context, deviceID string) ([]Eviden
 // zincirin (genesis + kalıcı kayıtlar) ucuna hash-bağlı yeni bir kayıt hesaplar ve
 // depolar. actor eylemi yapan; action ∈ {ACCESSED,TRANSFERRED,SEALED}. Artefakt
 // bulunamazsa hata. Eklenen kaydı döner.
-func (s *Service) RecordCustody(ctx context.Context, deviceID, artifactID, actor, action string) (evidence.CustodyEntry, error) {
+func (s *Service) RecordCustody(ctx context.Context, deviceID, artifactID, actor, action string, tenantID string) (evidence.CustodyEntry, error) {
 	if !evidence.ValidAction(action) || action == evidence.ActionCollected {
 		return evidence.CustodyEntry{}, ErrInvalidCustodyAction
+	}
+	if ok, err := s.deviceInTenant(ctx, deviceID, tenantID); err != nil || !ok {
+		if err != nil {
+			return evidence.CustodyEntry{}, err
+		}
+		return evidence.CustodyEntry{}, ErrArtifactNotFound // çapraz-kiracı: yokmuş gibi
 	}
 	rows, err := s.store.ListArtifacts(ctx, deviceID)
 	if err != nil {

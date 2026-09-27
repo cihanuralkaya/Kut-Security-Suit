@@ -1331,12 +1331,19 @@ func (s *Store) ListArtifacts(_ context.Context, deviceID string) ([]adminread.A
 	return out, nil
 }
 
-// GetArtifact, tek bir artefaktın içeriğini döner.
-func (s *Store) GetArtifact(_ context.Context, id string) (adminread.ArtifactContent, bool, error) {
+// GetArtifact, tek bir artefaktın içeriğini döner. tenantID boş değilse artefaktın
+// cihazı o kiracıya ait değilse ok=false (çok-tenant izolasyonu; device→tenant).
+func (s *Store) GetArtifact(_ context.Context, id string, tenantID string) (adminread.ArtifactContent, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, a := range s.artifacts {
 		if a.id == id {
+			if tenantID != "" {
+				d, ok := s.devices[a.deviceID]
+				if !ok || d.tenant != tenantID {
+					return adminread.ArtifactContent{}, false, nil
+				}
+			}
 			cp := make([]byte, len(a.content))
 			copy(cp, a.content)
 			return adminread.ArtifactContent{Path: a.path, Content: cp}, true, nil

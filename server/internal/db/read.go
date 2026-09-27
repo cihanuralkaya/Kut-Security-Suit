@@ -198,11 +198,15 @@ func (s *Store) ListCustody(ctx context.Context, evidenceID string) ([]evidence.
 	return out, rows.Err()
 }
 
-// GetArtifact, tek bir artefaktın içeriğini (indirme için) döner.
-func (s *Store) GetArtifact(ctx context.Context, id string) (adminread.ArtifactContent, bool, error) {
-	const q = `SELECT path, content FROM artifacts WHERE id = $1::uuid`
+// GetArtifact, tek bir artefaktın içeriğini (indirme için) döner. tenantID boş değilse
+// artefaktın cihazı o kiracıya ait değilse (id doğru olsa bile) bulunamadı döner
+// (çok-tenant izolasyonu; device→tenant join).
+func (s *Store) GetArtifact(ctx context.Context, id string, tenantID string) (adminread.ArtifactContent, bool, error) {
+	const q = `SELECT path, content FROM artifacts
+	            WHERE id = $1::uuid
+	              AND ($2 = '' OR device_id IN (SELECT id FROM devices WHERE tenant_id = $2))`
 	var c adminread.ArtifactContent
-	err := s.pool.QueryRow(ctx, q, id).Scan(&c.Path, &c.Content)
+	err := s.pool.QueryRow(ctx, q, id, tenantID).Scan(&c.Path, &c.Content)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return adminread.ArtifactContent{}, false, nil

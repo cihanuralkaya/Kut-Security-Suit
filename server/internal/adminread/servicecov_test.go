@@ -476,7 +476,7 @@ func TestArtifacts(t *testing.T) {
 		{ID: "a2", DeviceID: "d9", Path: "/tmp/y", SHA256: "cafe", Size: 20, CollectedAt: at}, // başka cihaz
 	}}
 	svc := NewService(store, newCipher(t))
-	got, err := svc.Artifacts(context.Background(), "d1")
+	got, err := svc.Artifacts(context.Background(), "d1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,14 +490,14 @@ func TestArtifactBytes(t *testing.T) {
 		"a1": {Path: "/tmp/x", Content: []byte("hello")},
 	}}
 	svc := NewService(store, newCipher(t))
-	c, ok, err := svc.ArtifactBytes(context.Background(), "a1")
+	c, ok, err := svc.ArtifactBytes(context.Background(), "a1", "")
 	if err != nil || !ok {
 		t.Fatalf("artefakt bulunmalıydı: ok=%v err=%v", ok, err)
 	}
 	if string(c.Content) != "hello" {
 		t.Fatalf("içerik dönmeliydi: %q", c.Content)
 	}
-	if _, ok, _ := svc.ArtifactBytes(context.Background(), "yok"); ok {
+	if _, ok, _ := svc.ArtifactBytes(context.Background(), "yok", ""); ok {
 		t.Fatal("olmayan artefakt için ok=false beklenirdi")
 	}
 }
