@@ -6,8 +6,37 @@ import (
 	"testing"
 	"time"
 
+	"kut.corp/suite/server/internal/enroll"
 	"kut.corp/suite/server/internal/evidence"
 )
+
+// ListIncidents kiracı-kapsamı: incident'ler cihazlarının kiracısına göre daraltılır
+// (incidents tablosu tenant tutmaz → device→tenant). Boş kiracı = tümü.
+func TestListIncidentsTenantScoped(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	t0 := time.Now()
+
+	_, _ = s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{PreferredDeviceID: "d-acme", TenantID: "acme"})
+	_, _ = s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{PreferredDeviceID: "d-globex", TenantID: "globex"})
+	_, _ = s.OpenIncident(ctx, "d-acme", "k-a", "rule-A", "T1059", "HIGH", "acme olay", t0)
+	_, _ = s.OpenIncident(ctx, "d-globex", "k-g", "rule-B", "T1055", "LOW", "globex olay", t0.Add(time.Second))
+
+	acme, _ := s.ListIncidents(ctx, 0, "acme")
+	if len(acme) != 1 || acme[0].DeviceID != "d-acme" {
+		t.Fatalf("acme yalnız kendi incident'ini görmeli: %+v", acme)
+	}
+	// Bilinmeyen kiracı → boş.
+	none, _ := s.ListIncidents(ctx, 0, "yok")
+	if len(none) != 0 {
+		t.Fatalf("eşleşmeyen kiracı boş dönmeli: %+v", none)
+	}
+	// Boş kiracı → tümü.
+	all, _ := s.ListIncidents(ctx, 0, "")
+	if len(all) != 2 {
+		t.Fatalf("kiracısız sorgu tümünü dönmeli: %d", len(all))
+	}
+}
 
 // OpenIncident + BumpIncident + ListIncidents: incident açma, sayaç yükseltme,
 // son-görülmeye göre sıralı listeleme.
@@ -34,7 +63,7 @@ func TestIncidentLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	list, err := s.ListIncidents(ctx, 0)
+	list, err := s.ListIncidents(ctx, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +85,7 @@ func TestIncidentLifecycle(t *testing.T) {
 	}
 
 	// limit.
-	lim, _ := s.ListIncidents(ctx, 1)
+	lim, _ := s.ListIncidents(ctx, 1, "")
 	if len(lim) != 1 {
 		t.Fatalf("limit=1 uygulanmalıydı: %d", len(lim))
 	}

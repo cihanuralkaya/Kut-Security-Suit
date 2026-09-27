@@ -414,7 +414,7 @@ func (m *memStore) ListPendingWipes(_ context.Context) ([]adminread.PendingWipeR
 	}
 	return out, nil
 }
-func (m *memStore) ListIncidents(_ context.Context, _ int) ([]adminread.IncidentRow, error) {
+func (m *memStore) ListIncidents(_ context.Context, _ int, _ string) ([]adminread.IncidentRow, error) {
 	return nil, nil
 }
 func (m *memStore) SaveSearch(_ context.Context, name, filterJSON, createdBy string) (adminread.SavedSearchRow, error) {
