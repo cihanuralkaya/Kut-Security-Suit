@@ -8,6 +8,39 @@ import (
 	"kut.corp/suite/server/internal/model"
 )
 
+// Yazılım okumaları kiracıya göre daraltılmalı: LatestSoftwareByDevice ve
+// SearchSoftware yalnız verilen kiracının olaylarından hesaplanmalı; boş kiracı = tümü.
+func TestSoftwareReadsTenantScoped(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	now := time.Now()
+	_, _ = s.SaveEvents(ctx, "d-acme", []model.Event{
+		{TenantID: "acme", Category: "INVENTORY", Message: "inv", OccurredAt: now, Details: `{"software":["Chrome 120"]}`},
+	})
+	_, _ = s.SaveEvents(ctx, "d-globex", []model.Event{
+		{TenantID: "globex", Category: "INVENTORY", Message: "inv", OccurredAt: now, Details: `{"software":["Chrome 120"]}`},
+	})
+
+	// LatestSoftwareByDevice: acme yalnız kendi cihazını görür.
+	acme, _ := s.LatestSoftwareByDevice(ctx, "acme")
+	if len(acme) != 1 {
+		t.Fatalf("acme yalnız kendi cihaz yazılımını görmeli: %+v", acme)
+	}
+	if _, ok := acme["d-acme"]; !ok {
+		t.Fatalf("acme haritası d-acme içermeli: %+v", acme)
+	}
+	// SearchSoftware: acme yalnız kendi eşleşmesini görür.
+	sr, _ := s.SearchSoftware(ctx, "chrome", "acme")
+	if len(sr) != 1 || sr["d-acme"] == nil {
+		t.Fatalf("acme arama yalnız kendi cihazını dönmeli: %+v", sr)
+	}
+	// Boş kiracı → tümü.
+	all, _ := s.LatestSoftwareByDevice(ctx, "")
+	if len(all) != 2 {
+		t.Fatalf("kiracısız yazılım tümünü dönmeli: %d", len(all))
+	}
+}
+
 // LatestSoftwareByDevice: cihaz başına EN SON yazılım envanterini döner (yeni
 // envanter eskisini gölgeler).
 func TestLatestSoftwareByDevice(t *testing.T) {
@@ -24,7 +57,7 @@ func TestLatestSoftwareByDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m, err := s.LatestSoftwareByDevice(ctx)
+	m, err := s.LatestSoftwareByDevice(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,11 +82,11 @@ func TestSearchSoftware(t *testing.T) {
 	}
 
 	// Boş sorgu → boş harita.
-	if r, _ := s.SearchSoftware(ctx, "   "); len(r) != 0 {
+	if r, _ := s.SearchSoftware(ctx, "   ", ""); len(r) != 0 {
 		t.Fatalf("boş sorgu boş dönmeliydi: %+v", r)
 	}
 
-	res, err := s.SearchSoftware(ctx, "fire")
+	res, err := s.SearchSoftware(ctx, "fire", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +96,7 @@ func TestSearchSoftware(t *testing.T) {
 	}
 
 	// Eşleşme yoksa cihaz haritada olmamalı.
-	if r, _ := s.SearchSoftware(ctx, "zzz-yok"); len(r) != 0 {
+	if r, _ := s.SearchSoftware(ctx, "zzz-yok", ""); len(r) != 0 {
 		t.Fatalf("eşleşmesiz sorgu boş dönmeliydi: %+v", r)
 	}
 }

@@ -78,7 +78,7 @@ func (s *Store) LatestComplianceByDevice(ctx context.Context, tenantID string) (
 // harf duyarsız alt-dize) içeren paketleri arar. DISTINCT ON ile cihaz başına en
 // yeni envanter olayı seçilir; software dizisi JSON olarak çıkarılıp Go'da
 // süzülür (küçük fleet için yeterli; büyük ölçekte JSONB dizin ile hızlandırılır).
-func (s *Store) SearchSoftware(ctx context.Context, query string) (map[string][]string, error) {
+func (s *Store) SearchSoftware(ctx context.Context, query string, tenantID string) (map[string][]string, error) {
 	q := strings.ToLower(strings.TrimSpace(query))
 	out := map[string][]string{}
 	if q == "" {
@@ -87,9 +87,9 @@ func (s *Store) SearchSoftware(ctx context.Context, query string) (map[string][]
 	const sql = `
 		SELECT DISTINCT ON (device_id) device_id::text, COALESCE(details->>'software','[]')
 		  FROM event_logs
-		 WHERE details ? 'software'
+		 WHERE details ? 'software' AND ($1 = '' OR tenant_id = $1)
 		 ORDER BY device_id, created_at DESC`
-	rows, err := s.pool.Query(ctx, sql)
+	rows, err := s.pool.Query(ctx, sql, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: yazılım arama: %w", err)
 	}
@@ -118,13 +118,13 @@ func (s *Store) SearchSoftware(ctx context.Context, query string) (map[string][]
 
 // LatestSoftwareByDevice, her cihazın EN SON yazılım envanterini döner (DISTINCT
 // ON ile en yeni envanter olayı; software dizisi JSON'dan çıkarılır).
-func (s *Store) LatestSoftwareByDevice(ctx context.Context) (map[string][]string, error) {
+func (s *Store) LatestSoftwareByDevice(ctx context.Context, tenantID string) (map[string][]string, error) {
 	const sql = `
 		SELECT DISTINCT ON (device_id) device_id::text, COALESCE(details->>'software','[]')
 		  FROM event_logs
-		 WHERE details ? 'software'
+		 WHERE details ? 'software' AND ($1 = '' OR tenant_id = $1)
 		 ORDER BY device_id, created_at DESC`
-	rows, err := s.pool.Query(ctx, sql)
+	rows, err := s.pool.Query(ctx, sql, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: en son yazılım: %w", err)
 	}

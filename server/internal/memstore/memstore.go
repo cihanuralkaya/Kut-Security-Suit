@@ -1056,7 +1056,7 @@ func (s *Store) LatestComplianceByDevice(_ context.Context, tenantID string) (ma
 // SearchSoftware, her cihazın EN SON yazılım envanterinde query'yi (küçük/büyük
 // harf duyarsız alt-dize) içeren paketleri arar. Olaylar yeniden-eskiye gezilir;
 // cihaz başına ilk görülen envanter olayı geçerlidir.
-func (s *Store) SearchSoftware(_ context.Context, query string) (map[string][]string, error) {
+func (s *Store) SearchSoftware(_ context.Context, query string, tenantID string) (map[string][]string, error) {
 	q := strings.ToLower(strings.TrimSpace(query))
 	out := map[string][]string{}
 	if q == "" {
@@ -1068,6 +1068,9 @@ func (s *Store) SearchSoftware(_ context.Context, query string) (map[string][]st
 	for i := len(s.events) - 1; i >= 0; i-- {
 		e := s.events[i]
 		if e.deviceID == "" || e.details == "" || seen[e.deviceID] {
+			continue
+		}
+		if tenantID != "" && e.tenant != tenantID { // çok-tenant izolasyonu
 			continue
 		}
 		var d struct {
@@ -1418,7 +1421,7 @@ func (s *Store) MSPDeactivateCustomer(id string) (bool, error) {
 
 // LatestSoftwareByDevice, her cihazın EN SON yazılım envanterini döner (olaylar
 // yeniden-eskiye; cihaz başına ilk görülen envanter geçerli).
-func (s *Store) LatestSoftwareByDevice(_ context.Context) (map[string][]string, error) {
+func (s *Store) LatestSoftwareByDevice(_ context.Context, tenantID string) (map[string][]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := map[string][]string{}
@@ -1426,6 +1429,9 @@ func (s *Store) LatestSoftwareByDevice(_ context.Context) (map[string][]string, 
 	for i := len(s.events) - 1; i >= 0; i-- {
 		e := s.events[i]
 		if e.deviceID == "" || e.details == "" || seen[e.deviceID] {
+			continue
+		}
+		if tenantID != "" && e.tenant != tenantID { // çok-tenant izolasyonu
 			continue
 		}
 		var d struct {

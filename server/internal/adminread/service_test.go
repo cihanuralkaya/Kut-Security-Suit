@@ -112,7 +112,7 @@ func (m *memStore) LatestComplianceByDevice(_ context.Context, _ string) (map[st
 	}
 	return out, nil
 }
-func (m *memStore) SearchSoftware(_ context.Context, query string) (map[string][]string, error) {
+func (m *memStore) SearchSoftware(_ context.Context, query string, _ string) (map[string][]string, error) {
 	q := strings.ToLower(strings.TrimSpace(query))
 	out := map[string][]string{}
 	if q == "" {
@@ -184,7 +184,7 @@ func (m *memStore) QueryEvents(_ context.Context, f EventFilter) ([]EventRow, er
 	}
 	return out, nil
 }
-func (m *memStore) LatestSoftwareByDevice(_ context.Context) (map[string][]string, error) {
+func (m *memStore) LatestSoftwareByDevice(_ context.Context, _ string) (map[string][]string, error) {
 	return m.latestSW, nil
 }
 func (m *memStore) ListArtifacts(_ context.Context, deviceID string) ([]ArtifactRow, error) {
@@ -389,7 +389,7 @@ func TestSoftwareSearch(t *testing.T) {
 	}
 	svc := NewService(store, cipher)
 
-	res, err := svc.SoftwareSearch(context.Background(), "chrome")
+	res, err := svc.SoftwareSearch(context.Background(), "chrome", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +404,7 @@ func TestSoftwareSearch(t *testing.T) {
 	}
 
 	// Eşleşme yoksa boş.
-	if res, _ := svc.SoftwareSearch(context.Background(), "nonexistent-xyz"); len(res) != 0 {
+	if res, _ := svc.SoftwareSearch(context.Background(), "nonexistent-xyz", ""); len(res) != 0 {
 		t.Fatalf("eşleşme olmamalıydı: %+v", res)
 	}
 }

@@ -127,13 +127,13 @@ type Store interface {
 	// büyük harf duyarsız alt-dize) içeren paketleri arar; cihaz kimliği → eşleşen
 	// paket adları döner (eşleşme olmayan cihazlar dışarıda). Zafiyet müdahalesi
 	// ("X kurulu cihazlar hangileri") için filo-geneli arama.
-	SearchSoftware(ctx context.Context, query string) (map[string][]string, error)
+	SearchSoftware(ctx context.Context, query string, tenantID string) (map[string][]string, error)
 	// EventAcks, triyaj işaretli olayların durumunu döner (olay kimliği → durum).
 	// Alarm yaşam-döngüsü: olay listesine ACKNOWLEDGED/RESOLVED bindirilir.
 	EventAcks(ctx context.Context) (map[string]EventAck, error)
 	// LatestSoftwareByDevice, her cihazın EN SON yazılım envanterini döner
 	// (cihaz kimliği → paket adları). Zafiyet eşleştirmesi için.
-	LatestSoftwareByDevice(ctx context.Context) (map[string][]string, error)
+	LatestSoftwareByDevice(ctx context.Context, tenantID string) (map[string][]string, error)
 	// ListArtifacts, bir cihazdan toplanan dosya artefaktlarının META verisini
 	// (içerik HARİÇ) en yeniden eskiye döner (adli/IR).
 	ListArtifacts(ctx context.Context, deviceID string) ([]ArtifactRow, error)
@@ -1125,8 +1125,8 @@ func (s *Service) DetectionResponseTrends(ctx context.Context, days int) (Trends
 
 // LatestSoftwareByDevice, her cihazın en son yazılım envanterini döner (zafiyet
 // eşleştirme için; adminapi katmanı vuln veri kümesiyle eşler).
-func (s *Service) LatestSoftwareByDevice(ctx context.Context) (map[string][]string, error) {
-	return s.store.LatestSoftwareByDevice(ctx)
+func (s *Service) LatestSoftwareByDevice(ctx context.Context, tenantID string) (map[string][]string, error) {
+	return s.store.LatestSoftwareByDevice(ctx, tenantID)
 }
 
 // Artifacts, bir cihazdan toplanan dosya artefaktlarının meta listesini döner
@@ -1240,8 +1240,8 @@ type SoftwareMatchDTO struct {
 // SoftwareSearch, filo-geneli yazılım araması yapar: adı query'yi içeren paketleri
 // taşıyan cihazları (deşifre hostname + eşleşen paketler) döner. Zafiyet
 // müdahalesi ("X kurulu cihazlar") için. Eşleşme yoksa boş liste.
-func (s *Service) SoftwareSearch(ctx context.Context, query string) ([]SoftwareMatchDTO, error) {
-	byDev, err := s.store.SearchSoftware(ctx, query)
+func (s *Service) SoftwareSearch(ctx context.Context, query string, tenantID string) ([]SoftwareMatchDTO, error) {
+	byDev, err := s.store.SearchSoftware(ctx, query, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -1250,7 +1250,7 @@ func (s *Service) SoftwareSearch(ctx context.Context, query string) ([]SoftwareM
 		return out, nil
 	}
 	// Hostname eşlemesi için cihaz kayıtlarını yükle (şifreli → deşifre).
-	rows, err := s.store.ListDevices(ctx, clampLimit(0), "") // TODO: bu agrega yolu kendi diliminde kiracı-kapsamlı yapılacak
+	rows, err := s.store.ListDevices(ctx, clampLimit(0), tenantID)
 	if err != nil {
 		return nil, err
 	}
