@@ -92,6 +92,18 @@ func (s *Store) AppendCustody(ctx context.Context, evidenceID string, e evidence
 
 // SetEventAck, bir olayın triyaj durumunu ayarlar (olay başına upsert). Alarm
 // yaşam-döngüsü (ACKNOWLEDGED/RESOLVED).
+// EventTenant, bir olayın (event_logs.id) kiracısını döner (triyaj yazma-yolu kiracı
+// kapısı). Olay yoksa veya id geçerli uuid değilse boş döner (kiracıya bağlı admin için
+// fail-closed → reddedilir; platform admini zaten muaf).
+func (s *Store) EventTenant(ctx context.Context, eventID string) (string, error) {
+	var tenant string
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(tenant_id,'') FROM event_logs WHERE id = $1::uuid`, eventID).Scan(&tenant)
+	if err != nil {
+		return "", nil // bulunamadı / geçersiz id → boş (fail-closed)
+	}
+	return tenant, nil
+}
+
 func (s *Store) SetEventAck(ctx context.Context, eventID, adminID, status string) error {
 	const q = `
 		INSERT INTO event_ack (event_id, status, admin_id, updated_at)

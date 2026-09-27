@@ -117,6 +117,9 @@ type Store interface {
 	// TenantForDevice, cihazın bağlı olduğu kiracıyı döner (aksiyon/yazma-yolu kiracı
 	// zorunlu-kılması için). Cihaz yoksa boş döner.
 	TenantForDevice(ctx context.Context, deviceID string) (string, error)
+	// EventTenant, bir olayın (event_logs.id) kiracısını döner (olay triyaj yazma-yolu
+	// kiracı zorunlu-kılması için). Olay yoksa boş döner.
+	EventTenant(ctx context.Context, eventID string) (string, error)
 	// SetAdminRole, bir yöneticinin rolünü değiştirir.
 	SetAdminRole(ctx context.Context, id string, role Role) error
 	// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false).
@@ -587,6 +590,9 @@ func (s *Service) UpdateEventCase(ctx context.Context, adminID, eventID, assigne
 	if len(assignee) > 200 || len(note) > 2000 {
 		return fmt.Errorf("%w: sorumlu/not çok uzun", ErrInvalidInput)
 	}
+	if err := s.enforceEventTenant(ctx, adminID, eventID); err != nil {
+		return err
+	}
 	if err := s.store.SetEventCase(ctx, eventID, adminID, strings.TrimSpace(assignee), strings.TrimSpace(note)); err != nil {
 		return err
 	}
@@ -630,6 +636,9 @@ func (s *Service) AckEvent(ctx context.Context, adminID, eventID, status string)
 	if eventID == "" {
 		return fmt.Errorf("%w: olay kimliği zorunlu", ErrInvalidInput)
 	}
+	if err := s.enforceEventTenant(ctx, adminID, eventID); err != nil {
+		return err
+	}
 	if err := s.store.SetEventAck(ctx, eventID, adminID, status); err != nil {
 		return err
 	}
@@ -668,6 +677,28 @@ func (s *Service) enforceDeviceTenant(ctx context.Context, adminID, deviceID str
 		return err
 	}
 	if devTenant != adminTenant {
+		return ErrForbidden
+	}
+	return nil
+}
+
+// enforceEventTenant, çağıran yöneticinin bir OLAYIN triyajını (ack/resolve/vaka)
+// değiştirme yetkisini kiracıya göre doğrular: platform admini her olaya; kiracıya
+// bağlı admin YALNIZ kendi kiracısının olayına. Aksi halde ErrForbidden (bir kiracının
+// başka kiracının alarmını "çözüldü" işaretlemesini engeller). Kiracı server-side.
+func (s *Service) enforceEventTenant(ctx context.Context, adminID, eventID string) error {
+	adminTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return err
+	}
+	if adminTenant == "" {
+		return nil // platform admini
+	}
+	evTenant, err := s.store.EventTenant(ctx, eventID)
+	if err != nil {
+		return err
+	}
+	if evTenant != adminTenant {
 		return ErrForbidden
 	}
 	return nil

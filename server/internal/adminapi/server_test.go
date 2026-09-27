@@ -43,6 +43,7 @@ type memStore struct {
 	adminInfos   map[string]*admin.AdminInfo  // id -> yönetici görünümü
 	adminTen     map[string]string            // id -> kiracı ("" = platform)
 	deviceTenant map[string]string            // deviceID -> kiracı (çok-tenant aksiyon kapısı)
+	eventTenant  map[string]string            // eventID -> kiracı (çok-tenant triyaj kapısı)
 	lastEvtF     adminread.EventFilter        // QueryEvents'e geçen son filtre (kapsam testi)
 	nextAdmID    int
 	mfa          map[string]*mfaRec // adminID -> MFA durumu
@@ -207,6 +208,9 @@ func (m *memStore) AdminTenant(_ context.Context, adminID string) (string, error
 }
 func (m *memStore) TenantForDevice(_ context.Context, deviceID string) (string, error) {
 	return m.deviceTenant[deviceID], nil
+}
+func (m *memStore) EventTenant(_ context.Context, eventID string) (string, error) {
+	return m.eventTenant[eventID], nil
 }
 func (m *memStore) SetAdminRole(_ context.Context, id string, role admin.Role) error {
 	m.roles[id] = role
