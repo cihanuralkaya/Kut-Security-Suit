@@ -2176,15 +2176,34 @@ func (s *Server) handleSCIMCreate(w http.ResponseWriter, r *http.Request, adminI
 		return
 	}
 	u.ID = scimUUID()
-	created, err := s.scim.Create(s.scimTenant(), u)
+	tenant, err := s.scimOpTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	created, err := s.scim.Create(tenant, u)
 	if respondErr(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
 }
 
-// scimTenant, SCIM işleminin kiracısını DAĞITIMIN yapılandırılmış tenant'ından türetir —
-// İSTEMCİ header'ından DEĞİL (cross-tenant IDOR kapatıldı; bkz. caseTenant). Başlık yok sayılır.
+// scimOpTenant, SCIM işleminin kiracısını SUNUCU-TARAFI çözer: kiracıya bağlı admin
+// kendi kiracısına sabitlenir (başka kiracının SCIM kullanıcısına erişemez — provisioner
+// izolasyonu); platform admini (boş kiracı) dağıtım varsayılan kiracısına düşer. İstemci
+// header'ı ASLA kullanılmaz (cross-tenant IDOR kapalı).
+func (s *Server) scimOpTenant(ctx context.Context, adminID string) (string, error) {
+	t, err := s.callerTenant(ctx, adminID)
+	if err != nil {
+		return "", err
+	}
+	if t == "" {
+		return s.scimTenant(), nil
+	}
+	return iam.NormTenant(t), nil
+}
+
+// scimTenant, dağıtımın yapılandırılmış tenant'ını döner (platform admini için SCIM
+// varsayılan kovası). İstemci header'ından DEĞİL.
 func (s *Server) scimTenant() string {
 	return iam.NormTenant(strings.TrimSpace(s.tenantID))
 }
@@ -2198,7 +2217,11 @@ func (s *Server) handleSCIMGet(w http.ResponseWriter, r *http.Request, adminID s
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
-	u, err := s.scim.Get(s.scimTenant(), r.PathValue("id"))
+	tenant, err := s.scimOpTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	u, err := s.scim.Get(tenant, r.PathValue("id"))
 	if respondErr(w, err) {
 		return
 	}
@@ -2218,7 +2241,11 @@ func (s *Server) handleSCIMReplace(w http.ResponseWriter, r *http.Request, admin
 	if !decode(w, r, &u) {
 		return
 	}
-	replaced, err := s.scim.Replace(s.scimTenant(), r.PathValue("id"), u)
+	tenant, err := s.scimOpTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	replaced, err := s.scim.Replace(tenant, r.PathValue("id"), u)
 	if respondErr(w, err) {
 		return
 	}
@@ -2234,7 +2261,11 @@ func (s *Server) handleSCIMDeactivate(w http.ResponseWriter, r *http.Request, ad
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
-	u, err := s.scim.Deactivate(s.scimTenant(), r.PathValue("id"))
+	tenant, err := s.scimOpTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	u, err := s.scim.Deactivate(tenant, r.PathValue("id"))
 	if respondErr(w, err) {
 		return
 	}
