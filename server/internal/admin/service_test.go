@@ -88,6 +88,7 @@ type audit struct{ adminID, action, targetType, targetID string }
 type adminEntry struct {
 	email, hash string
 	role        Role
+	tenant      string
 	active      bool
 	mfaSecret   string
 	mfaEnrolled bool
@@ -195,12 +196,18 @@ func (m *memStore) ListPolicyRules(_ context.Context, policyID string) ([]RuleVi
 	return out, nil
 }
 
-func (m *memStore) CreateAdmin(_ context.Context, email, passwordHash string, role Role) (string, error) {
+func (m *memStore) CreateAdmin(_ context.Context, email, passwordHash string, role Role, tenantID string) (string, error) {
 	m.nextAdmID++
 	id := "adm-" + string(rune('0'+m.nextAdmID))
-	m.admins[id] = &adminEntry{email: email, hash: passwordHash, role: role, active: true}
+	m.admins[id] = &adminEntry{email: email, hash: passwordHash, role: role, tenant: tenantID, active: true}
 	m.roles[id] = role
 	return id, nil
+}
+func (m *memStore) AdminTenant(_ context.Context, adminID string) (string, error) {
+	if a, ok := m.admins[adminID]; ok {
+		return a.tenant, nil
+	}
+	return "", nil
 }
 func (m *memStore) SetAdminRole(_ context.Context, id string, role Role) error {
 	if a, ok := m.admins[id]; ok {
@@ -765,7 +772,7 @@ func TestCreateAdminRBACHashingAndAudit(t *testing.T) {
 	svc, _ := newService(t, store)
 
 	// OPERATOR yeni yönetici oluşturamamalı (403).
-	if _, err := svc.CreateAdmin(context.Background(), "op1", "yeni@x", "parola12", RoleViewer); err != ErrForbidden {
+	if _, err := svc.CreateAdmin(context.Background(), "op1", "yeni@x", "parola12", RoleViewer, ""); err != ErrForbidden {
 		t.Fatalf("OPERATOR admin oluşturamamalı, dönen: %v", err)
 	}
 	if len(store.admins) != 0 {
@@ -773,21 +780,21 @@ func TestCreateAdminRBACHashingAndAudit(t *testing.T) {
 	}
 
 	// Kısa parola reddedilmeli (400/ErrInvalidInput).
-	if _, err := svc.CreateAdmin(context.Background(), "admin1", "yeni@x", "kisa", RoleViewer); err != ErrInvalidInput {
+	if _, err := svc.CreateAdmin(context.Background(), "admin1", "yeni@x", "kisa", RoleViewer, ""); err != ErrInvalidInput {
 		t.Fatalf("kısa parola reddedilmeli, dönen: %v", err)
 	}
 	// Boş e-posta reddedilmeli.
-	if _, err := svc.CreateAdmin(context.Background(), "admin1", "", "parola12", RoleViewer); err != ErrInvalidInput {
+	if _, err := svc.CreateAdmin(context.Background(), "admin1", "", "parola12", RoleViewer, ""); err != ErrInvalidInput {
 		t.Fatalf("boş e-posta reddedilmeli, dönen: %v", err)
 	}
 	// Geçersiz rol reddedilmeli.
-	if _, err := svc.CreateAdmin(context.Background(), "admin1", "yeni@x", "parola12", Role("BOGUS")); err != ErrInvalidInput {
+	if _, err := svc.CreateAdmin(context.Background(), "admin1", "yeni@x", "parola12", Role("BOGUS"), ""); err != ErrInvalidInput {
 		t.Fatalf("geçersiz rol reddedilmeli, dönen: %v", err)
 	}
 
 	// ADMIN başarılı olmalı.
 	const plain = "parola12"
-	id, err := svc.CreateAdmin(context.Background(), "admin1", "yeni@x", plain, RoleOperator)
+	id, err := svc.CreateAdmin(context.Background(), "admin1", "yeni@x", plain, RoleOperator, "")
 	if err != nil || id == "" {
 		t.Fatalf("ADMIN yönetici oluşturabilmeli: %v", err)
 	}
@@ -816,6 +823,50 @@ func TestCreateAdminRBACHashingAndAudit(t *testing.T) {
 	}
 }
 
+// Çok-kiracılı ayrıcalık-yükseltme koruması: kiracıya bağlı bir admin yalnız kendi
+// kiracısında admin oluşturabilir; platform admini (kiracısız) herhangi bir kiracıya.
+func TestCreateAdminTenantEscalationGuard(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	// Platform admini (kiracısız) ve kiracıya bağlı admin.
+	store.roles["plat"] = RoleAdmin
+	store.roles["acme-adm"] = RoleAdmin
+	store.admins["acme-adm"] = &adminEntry{role: RoleAdmin, tenant: "acme", active: true}
+	svc, _ := newService(t, store)
+
+	// Platform admini herhangi bir kiracıya admin ekleyebilir → istenen kiracı korunur.
+	id, err := svc.CreateAdmin(ctx, "plat", "g@x", "parola12", RoleViewer, "globex")
+	if err != nil {
+		t.Fatalf("platform admini kiracıya admin ekleyebilmeli: %v", err)
+	}
+	if got := store.admins[id].tenant; got != "globex" {
+		t.Fatalf("platform admininin atadığı kiracı korunmalı: %q", got)
+	}
+
+	// Kiracıya bağlı admin BAŞKA kiracıya eklemeye çalışırsa reddedilmeli (fail-closed).
+	if _, err := svc.CreateAdmin(ctx, "acme-adm", "x@x", "parola12", RoleViewer, "globex"); err != ErrForbidden {
+		t.Fatalf("çapraz-kiracı admin oluşturma reddedilmeli, dönen: %v", err)
+	}
+
+	// Kiracıya bağlı admin kiracı belirtmezse kendi kiracısına sabitlenmeli.
+	id2, err := svc.CreateAdmin(ctx, "acme-adm", "y@x", "parola12", RoleViewer, "")
+	if err != nil {
+		t.Fatalf("kendi kiracısına admin ekleyebilmeli: %v", err)
+	}
+	if got := store.admins[id2].tenant; got != "acme" {
+		t.Fatalf("boş istek kendi kiracısına sabitlenmeli, dönen: %q", got)
+	}
+
+	// Kendi kiracısını açıkça vermek de kabul edilmeli.
+	id3, err := svc.CreateAdmin(ctx, "acme-adm", "z@x", "parola12", RoleViewer, "acme")
+	if err != nil {
+		t.Fatalf("kendi kiracısını açıkça vermek kabul edilmeli: %v", err)
+	}
+	if got := store.admins[id3].tenant; got != "acme" {
+		t.Fatalf("kendi kiracısı korunmalı, dönen: %q", got)
+	}
+}
+
 func TestListAdminsNoHashAndRBAC(t *testing.T) {
 	store := newMemStore()
 	store.roles["viewer1"] = RoleViewer
@@ -823,7 +874,7 @@ func TestListAdminsNoHashAndRBAC(t *testing.T) {
 	store.roles["admin1"] = RoleAdmin
 	svc, _ := newService(t, store)
 
-	id, err := svc.CreateAdmin(context.Background(), "admin1", "u@x", "parola12", RoleViewer)
+	id, err := svc.CreateAdmin(context.Background(), "admin1", "u@x", "parola12", RoleViewer, "")
 	if err != nil {
 		t.Fatal(err)
 	}

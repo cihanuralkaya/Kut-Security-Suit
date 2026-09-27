@@ -108,8 +108,12 @@ type Store interface {
 	// ListPolicyRules, politikanın kurallarını döner.
 	ListPolicyRules(ctx context.Context, policyID string) ([]RuleView, error)
 	// CreateAdmin, yeni bir yönetici ekler ve id'sini döner. passwordHash zaten
-	// Argon2id ile hash'lenmiştir (depo düz metin görmez).
-	CreateAdmin(ctx context.Context, email, passwordHash string, role Role) (string, error)
+	// Argon2id ile hash'lenmiştir (depo düz metin görmez). tenantID, yöneticinin
+	// bağlı olduğu kiracıdır (boş → platform admini, tüm kiracıları görür).
+	CreateAdmin(ctx context.Context, email, passwordHash string, role Role, tenantID string) (string, error)
+	// AdminTenant, bir yöneticinin bağlı olduğu kiracıyı döner (okuma izolasyonu ve
+	// ayrıcalık-yükseltme koruması için). Boş → platform admini.
+	AdminTenant(ctx context.Context, adminID string) (string, error)
 	// SetAdminRole, bir yöneticinin rolünü değiştirir.
 	SetAdminRole(ctx context.Context, id string, role Role) error
 	// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false).

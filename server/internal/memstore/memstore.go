@@ -103,6 +103,7 @@ type eventRec struct {
 type adminRec struct {
 	id, email, passwordHash string
 	role                    admin.Role
+	tenant                  string // bağlı kiracı ("" = platform admini, tüm kiracılar)
 	active                  bool
 	mfaSecret               string // TOTP sırrı (bellek-içi demo; db katmanı şifreler)
 	mfaEnrolled             bool
@@ -765,14 +766,24 @@ func (s *Store) ListPolicyRules(_ context.Context, policyID string) ([]admin.Rul
 }
 
 // CreateAdmin, yeni bir yönetici ekler (aktif) ve id'sini döner.
-func (s *Store) CreateAdmin(_ context.Context, email, passwordHash string, role admin.Role) (string, error) {
+func (s *Store) CreateAdmin(_ context.Context, email, passwordHash string, role admin.Role, tenantID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := randID("admin-")
-	rec := &adminRec{id: id, email: email, passwordHash: passwordHash, role: role, active: true}
+	rec := &adminRec{id: id, email: email, passwordHash: passwordHash, role: role, tenant: tenantID, active: true}
 	s.admins[email] = rec
 	s.adminsByID[id] = rec
 	return id, nil
+}
+
+// AdminTenant, yöneticinin bağlı kiracısını döner ("" = platform admini / bilinmeyen).
+func (s *Store) AdminTenant(_ context.Context, adminID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if a, ok := s.adminsByID[adminID]; ok {
+		return a.tenant, nil
+	}
+	return "", nil
 }
 
 func (s *Store) SetAdminRole(_ context.Context, id string, role admin.Role) error {
