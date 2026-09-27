@@ -2376,15 +2376,21 @@ func (s *Server) handleHunt(w http.ResponseWriter, r *http.Request, adminID stri
 }
 
 // buildReportData, güvenlik-duruş raporu verisini adminread + metrics'ten toplar.
-func (s *Server) buildReportData(r *http.Request) (report.Data, error) {
-	sum, err := s.reader.Summary(r.Context(), "") // TODO: rapor üretimi kendi diliminde çağıranın kiracısıyla daraltılacak
+// tenantID boş değilse rapor yalnız o kiracının verisinden üretilir ve kiracı etiketi
+// çağıranın kiracısı olur; boş (platform admini) ise dağıtım-geneli + dağıtım kiracı etiketi.
+func (s *Server) buildReportData(r *http.Request, tenantID string) (report.Data, error) {
+	sum, err := s.reader.Summary(r.Context(), tenantID)
 	if err != nil {
 		return report.Data{}, err
 	}
-	incs, _ := s.reader.Incidents(r.Context(), 20, "") // TODO: rapor üretimi kendi diliminde çağıranın kiracısıyla daraltılacak
+	incs, _ := s.reader.Incidents(r.Context(), 20, tenantID)
 	c := metrics.Counters()
+	reportTenant := s.tenantID
+	if tenantID != "" {
+		reportTenant = tenantID // kiracıya bağlı admin: rapor kendi kiracısına etiketlenir
+	}
 	d := report.Data{
-		GeneratedAt: s.now(), SchemaVersion: model.EventSchemaVersion, TenantID: s.tenantID, Title: "Güvenlik Duruş Raporu",
+		GeneratedAt: s.now(), SchemaVersion: model.EventSchemaVersion, TenantID: reportTenant, Title: "Güvenlik Duruş Raporu",
 		DevicesTotal: sum.DevicesTotal, DevicesOnline: sum.DevicesOnline, DevicesOffline: sum.DevicesOffline,
 		DevicesQuarantined: sum.DevicesQuarantined, NonCompliant: sum.NonCompliantDevices,
 		EventsBySeverity: sum.EventsBySeverity, DevicesByOS: sum.DevicesByOS,
@@ -2401,8 +2407,12 @@ func (s *Server) buildReportData(r *http.Request) (report.Data, error) {
 
 // handleReport, dışa aktarılabilir güvenlik-duruş raporu üretir (format=html
 // varsayılan | csv). Salt-okunur; nokta-zaman görünümü (kurumsal/denetim/KVKK).
-func (s *Server) handleReport(w http.ResponseWriter, r *http.Request, _ string) {
-	d, err := s.buildReportData(r)
+func (s *Server) handleReport(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	d, err := s.buildReportData(r, tenant)
 	if respondErr(w, err) {
 		return
 	}
