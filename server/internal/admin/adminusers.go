@@ -86,6 +86,13 @@ func (s *Service) CreateAdmin(ctx context.Context, adminID, email, password stri
 	return newID, nil
 }
 
+// AdminTenant, bir yöneticinin bağlı olduğu kiracıyı döner (okuma-yolu kapsamı için).
+// Boş → platform admini (tüm kiracıları görür). RBAC gerektirmez: çağıran zaten kimlik
+// doğrulanmış kendi id'sini sorgular; sonuç yalnız okuma-filtresini daraltmakta kullanılır.
+func (s *Service) AdminTenant(ctx context.Context, adminID string) (string, error) {
+	return s.store.AdminTenant(ctx, adminID)
+}
+
 // SetAdminRole, bir yöneticinin rolünü değiştirir (ADMIN).
 func (s *Service) SetAdminRole(ctx context.Context, adminID, targetID string, role Role) error {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {

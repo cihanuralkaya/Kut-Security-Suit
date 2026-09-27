@@ -42,6 +42,7 @@ type memStore struct {
 	statuses   map[string]string            // deviceID -> son ayarlanan durum
 	adminInfos map[string]*admin.AdminInfo  // id -> yönetici görünümü
 	adminTen   map[string]string           // id -> kiracı ("" = platform)
+	lastEvtF   adminread.EventFilter        // QueryEvents'e geçen son filtre (kapsam testi)
 	nextAdmID  int
 	mfa        map[string]*mfaRec // adminID -> MFA durumu
 	eventAcks  map[string]adminread.EventAck
@@ -412,6 +413,7 @@ func (m *memStore) ListSavedSearches(_ context.Context) ([]adminread.SavedSearch
 }
 func (m *memStore) DeleteSavedSearch(_ context.Context, _, _ string) (bool, error) { return true, nil }
 func (m *memStore) QueryEvents(_ context.Context, f adminread.EventFilter) ([]adminread.EventRow, error) {
+	m.lastEvtF = f // kapsam testi: handler'ın çağıranın kiracısını bastığını doğrulamak için
 	var out []adminread.EventRow
 	for _, e := range m.evtRows {
 		if f.Severity != "" && e.Severity != f.Severity {
@@ -1297,6 +1299,49 @@ func TestHuntHTTP(t *testing.T) {
 	q := hunt(map[string]any{"mode": "query", "message_contains": "normal"})
 	if len(q.Hits) != 1 || q.Hits[0].Event.ID != "e2" {
 		t.Fatalf("query-hunt 'normal' → e2 eşleşmeliydi: %+v", q.Hits)
+	}
+}
+
+// Okuma-yolu kiracı kapsamı: /api/hunt sorgusu çağıran yöneticinin kiracısıyla
+// SUNUCU-TARAFI daraltılmalı (istekte tenant yok). Kiracıya bağlı admin → kendi
+// kiracısı; platform admini (kiracısız) → boş filtre (tüm kiracılar).
+func TestHuntQueryScopedToCallerTenant(t *testing.T) {
+	ts, store := setup(t)
+	defer ts.Close()
+
+	huntAs := func(email string) {
+		_, lb := post(t, ts.URL+"/api/login", "", map[string]string{"email": email, "password": "secret"})
+		tok := lb["token"]
+		if tok == "" {
+			t.Fatalf("%s token alınamadı", email)
+		}
+		b, _ := json.Marshal(map[string]any{"mode": "query", "message_contains": "x"})
+		req, _ := http.NewRequest("POST", ts.URL+"/api/hunt", bytes.NewReader(b))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s hunt beklenen 200, dönen %d", email, resp.StatusCode)
+		}
+	}
+
+	// Kiracıya bağlı yönetici → filtre kendi kiracısına sabitlenir.
+	addAdmin(t, store, "acme-op", "acme@x", "secret", admin.RoleViewer)
+	store.adminTen["acme-op"] = "acme"
+	huntAs("acme@x")
+	if store.lastEvtF.TenantID != "acme" {
+		t.Fatalf("kiracı-admin sorgusu 'acme' ile daraltılmalıydı, dönen: %q", store.lastEvtF.TenantID)
+	}
+
+	// Platform yöneticisi (kiracısız) → boş filtre (tüm kiracılar).
+	addAdmin(t, store, "plat-op", "plat@x", "secret", admin.RoleViewer)
+	huntAs("plat@x")
+	if store.lastEvtF.TenantID != "" {
+		t.Fatalf("platform-admin sorgusu daraltılmamalıydı, dönen: %q", store.lastEvtF.TenantID)
 	}
 }
 
