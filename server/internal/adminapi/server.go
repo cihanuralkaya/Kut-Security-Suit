@@ -2307,6 +2307,9 @@ func (s *Server) handleMSPCreateCustomer(w http.ResponseWriter, r *http.Request,
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
+	if respondErr(w, s.requirePlatformAdmin(r.Context(), adminID)) {
+		return
+	}
 	var req struct {
 		Name     string `json:"name"`
 		TenantID string `json:"tenant_id"`
@@ -2334,6 +2337,9 @@ func (s *Server) handleMSPListCustomers(w http.ResponseWriter, r *http.Request, 
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
+	if respondErr(w, s.requirePlatformAdmin(r.Context(), adminID)) {
+		return
+	}
 	list, err := s.mspStore.MSPListCustomers()
 	if respondErr(w, err) {
 		return
@@ -2348,6 +2354,9 @@ func (s *Server) handleMSPDeactivateCustomer(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
+		return
+	}
+	if respondErr(w, s.requirePlatformAdmin(r.Context(), adminID)) {
 		return
 	}
 	ok, err := s.mspStore.MSPDeactivateCustomer(r.PathValue("id"))
@@ -2379,6 +2388,20 @@ func (s *Server) scopeTenant(ctx context.Context, adminID string, f *adminread.E
 // DEĞİL). Filtre yerine düz string alan okuma yolları (device export/graf/hikâye) kullanır.
 func (s *Server) callerTenant(ctx context.Context, adminID string) (string, error) {
 	return s.adminSvc.AdminTenant(ctx, adminID)
+}
+
+// requirePlatformAdmin, çağıranın PLATFORM admini (kiracısız) olduğunu doğrular. Kiracıya
+// bağlı bir admin (RoleAdmin olsa bile) KONTROL-DÜZLEMİ uçlarını (MSP = kiracı/müşteri
+// yönetimi — tüm kiracılara dokunur) kullanamaz → ErrForbidden. Kiracı sunucu-tarafı çözülür.
+func (s *Server) requirePlatformAdmin(ctx context.Context, adminID string) error {
+	t, err := s.adminSvc.AdminTenant(ctx, adminID)
+	if err != nil {
+		return err
+	}
+	if t != "" {
+		return admin.ErrForbidden
+	}
+	return nil
 }
 
 // handleReplayDetection, EVENT REPLAY (§19): aday bir tespit kuralını (ya da mevcut
