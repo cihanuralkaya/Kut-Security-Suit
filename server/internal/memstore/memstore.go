@@ -1223,12 +1223,19 @@ func (s *Store) SaveSearch(_ context.Context, name, filterJSON, createdBy string
 	return toSavedSearchRow(rec, s.adminsByID), nil
 }
 
-// ListSavedSearches, kayıtlı aramaları en yeniden eskiye döner.
-func (s *Store) ListSavedSearches(_ context.Context) ([]adminread.SavedSearchRow, error) {
+// ListSavedSearches, kayıtlı aramaları en yeniden eskiye döner. tenantID boş değilse
+// yalnız o kiracıdaki yöneticilerin (created_by→admin.tenant) aramaları (çok-tenant).
+func (s *Store) ListSavedSearches(_ context.Context, tenantID string) ([]adminread.SavedSearchRow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]adminread.SavedSearchRow, 0, len(s.savedSrch))
 	for i := len(s.savedSrch) - 1; i >= 0; i-- {
+		if tenantID != "" { // çok-tenant: aramayı oluşturan admin bu kiracıda mı?
+			a, ok := s.adminsByID[s.savedSrch[i].createdBy]
+			if !ok || a.tenant != tenantID {
+				continue
+			}
+		}
 		out = append(out, toSavedSearchRow(s.savedSrch[i], s.adminsByID))
 	}
 	return out, nil
@@ -1453,13 +1460,21 @@ func (s *Store) LatestSoftwareByDevice(_ context.Context, tenantID string) (map[
 	return out, nil
 }
 
-func (s *Store) ListAudit(_ context.Context, limit int) ([]adminread.AuditRow, error) {
+// ListAudit, denetim izini en yeniden eskiye döner. tenantID boş değilse yalnız o
+// kiracıdaki yöneticilerin (adminEmail→admin.tenant) eylemleri (çok-tenant izolasyonu).
+func (s *Store) ListAudit(_ context.Context, limit int, tenantID string) ([]adminread.AuditRow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []adminread.AuditRow
 	// En yeniden eskiye.
 	for i := len(s.audit) - 1; i >= 0; i-- {
 		a := s.audit[i]
+		if tenantID != "" { // çok-tenant: eylemi yapan admin bu kiracıda mı? (e-posta ile)
+			ad, ok := s.admins[a.adminEmail]
+			if !ok || ad.tenant != tenantID {
+				continue
+			}
+		}
 		out = append(out, adminread.AuditRow{
 			ID: a.id, AdminEmail: a.adminEmail, Action: a.action,
 			TargetType: a.targetType, TargetID: a.targetID, CreatedAt: a.createdAt,

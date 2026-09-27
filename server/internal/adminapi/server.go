@@ -2540,7 +2540,11 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request, admin
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
 		return
 	}
-	rows, err := s.reader.Audit(r.Context(), intParam(r, "limit"))
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	rows, err := s.reader.Audit(r.Context(), intParam(r, "limit"), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2591,8 +2595,12 @@ func (s *Server) handleSaveSearch(w http.ResponseWriter, r *http.Request, adminI
 }
 
 // handleListSavedSearches, kayıtlı aramaları listeler.
-func (s *Server) handleListSavedSearches(w http.ResponseWriter, r *http.Request, _ string) {
-	rows, err := s.reader.SavedSearches(r.Context())
+func (s *Server) handleListSavedSearches(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	rows, err := s.reader.SavedSearches(r.Context(), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -3083,7 +3091,11 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request, adminID
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
 		return
 	}
-	audit, err := s.reader.Audit(r.Context(), intParam(r, "limit"))
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	audit, err := s.reader.Audit(r.Context(), intParam(r, "limit"), tenant)
 	if respondErr(w, err) {
 		return
 	}

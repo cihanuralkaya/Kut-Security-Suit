@@ -420,7 +420,7 @@ func (m *memStore) ListIncidents(_ context.Context, _ int, _ string) ([]adminrea
 func (m *memStore) SaveSearch(_ context.Context, name, filterJSON, createdBy string) (adminread.SavedSearchRow, error) {
 	return adminread.SavedSearchRow{ID: "srch-1", Name: name, Filter: filterJSON, CreatedBy: createdBy}, nil
 }
-func (m *memStore) ListSavedSearches(_ context.Context) ([]adminread.SavedSearchRow, error) {
+func (m *memStore) ListSavedSearches(_ context.Context, _ string) ([]adminread.SavedSearchRow, error) {
 	return nil, nil
 }
 func (m *memStore) DeleteSavedSearch(_ context.Context, _, _ string) (bool, error) { return true, nil }
@@ -470,7 +470,7 @@ func (m *memStore) GetArtifact(_ context.Context, id string, _ string) (adminrea
 	c, ok := m.artifacts[id]
 	return c, ok, nil
 }
-func (m *memStore) ListAudit(_ context.Context, _ int) ([]adminread.AuditRow, error) {
+func (m *memStore) ListAudit(_ context.Context, _ int, _ string) ([]adminread.AuditRow, error) {
 	return m.auditRows, nil
 }
 func (m *memStore) DeviceByID(_ context.Context, id string) (adminread.DeviceRow, bool, error) {

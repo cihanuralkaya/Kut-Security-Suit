@@ -155,7 +155,7 @@ func (m *memStore) ListIncidents(_ context.Context, _ int, _ string) ([]Incident
 func (m *memStore) SaveSearch(_ context.Context, name, filterJSON, createdBy string) (SavedSearchRow, error) {
 	return SavedSearchRow{ID: "srch-1", Name: name, Filter: filterJSON, CreatedBy: createdBy}, nil
 }
-func (m *memStore) ListSavedSearches(_ context.Context) ([]SavedSearchRow, error) {
+func (m *memStore) ListSavedSearches(_ context.Context, _ string) ([]SavedSearchRow, error) {
 	return nil, nil
 }
 func (m *memStore) DeleteSavedSearch(_ context.Context, _, _ string) (bool, error) { return true, nil }
@@ -200,7 +200,7 @@ func (m *memStore) GetArtifact(_ context.Context, id string, _ string) (Artifact
 	c, ok := m.artContent[id]
 	return c, ok, nil
 }
-func (m *memStore) ListAudit(_ context.Context, _ int) ([]AuditRow, error) {
+func (m *memStore) ListAudit(_ context.Context, _ int, _ string) ([]AuditRow, error) {
 	return m.audit, nil
 }
 func (m *memStore) DeviceByID(_ context.Context, id string) (DeviceRow, bool, error) {
@@ -416,7 +416,7 @@ func TestAuditPassthrough(t *testing.T) {
 		{ID: 1, AdminEmail: "", Action: "CREATE_POLICY", TargetType: "policy", TargetID: "pol-1", CreatedAt: now},
 	}}
 	svc := NewService(store, newCipher(t))
-	dtos, err := svc.Audit(context.Background(), 0)
+	dtos, err := svc.Audit(context.Background(), 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
