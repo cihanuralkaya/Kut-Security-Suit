@@ -2381,7 +2381,7 @@ func (s *Server) buildReportData(r *http.Request) (report.Data, error) {
 	if err != nil {
 		return report.Data{}, err
 	}
-	incs, _ := s.reader.Incidents(r.Context(), 20)
+	incs, _ := s.reader.Incidents(r.Context(), 20, "") // TODO: rapor üretimi kendi diliminde çağıranın kiracısıyla daraltılacak
 	c := metrics.Counters()
 	d := report.Data{
 		GeneratedAt: s.now(), SchemaVersion: model.EventSchemaVersion, TenantID: s.tenantID, Title: "Güvenlik Duruş Raporu",
@@ -2493,8 +2493,12 @@ func (s *Server) handleFrameworks(w http.ResponseWriter, r *http.Request, adminI
 
 // handleRisk, çok-faktörlü filo risk skorunu döner (#risk): açık incident'ler,
 // uyum ihlalleri ve karantina durumundan cihaz + filo risk skoru hesaplar.
-func (s *Server) handleRisk(w http.ResponseWriter, r *http.Request, _ string) {
-	rk, err := s.reader.FleetRisk(r.Context())
+func (s *Server) handleRisk(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	rk, err := s.reader.FleetRisk(r.Context(), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2656,9 +2660,13 @@ func (s *Server) handleMetricsTrends(w http.ResponseWriter, r *http.Request, _ s
 
 // handleIncidentTimeline, bir incident'i ve onu oluşturan cihazın penceredeki
 // olaylarını kronolojik döner (IR araştırması). Bulunamazsa 404.
-func (s *Server) handleIncidentTimeline(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleIncidentTimeline(w http.ResponseWriter, r *http.Request, adminID string) {
 	id := r.PathValue("id")
-	tl, ok, err := s.reader.IncidentTimeline(r.Context(), id)
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	tl, ok, err := s.reader.IncidentTimeline(r.Context(), id, tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2670,8 +2678,12 @@ func (s *Server) handleIncidentTimeline(w http.ResponseWriter, r *http.Request, 
 }
 
 // handleIncidents, korelasyonla gruplanmış olayları (incident) listeler (salt-okunur).
-func (s *Server) handleIncidents(w http.ResponseWriter, r *http.Request, _ string) {
-	rows, err := s.reader.Incidents(r.Context(), 200)
+func (s *Server) handleIncidents(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	rows, err := s.reader.Incidents(r.Context(), 200, tenant)
 	if respondErr(w, err) {
 		return
 	}

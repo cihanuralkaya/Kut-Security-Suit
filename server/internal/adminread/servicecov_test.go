@@ -29,7 +29,7 @@ type richStore struct {
 	errQuery     error
 }
 
-func (r *richStore) ListIncidents(_ context.Context, _ int) ([]IncidentRow, error) {
+func (r *richStore) ListIncidents(_ context.Context, _ int, _ string) ([]IncidentRow, error) {
 	return r.incidents, r.errIncidents
 }
 func (r *richStore) ListPendingWipes(_ context.Context) ([]PendingWipeRow, error) {
@@ -129,7 +129,7 @@ func TestIncidents(t *testing.T) {
 		{ID: "inc-1", DeviceID: "d2", RuleID: "R2", Severity: "LOW", Count: 1, Status: "RESOLVED"},
 	}
 	svc := NewService(store, newCipher(t))
-	got, err := svc.Incidents(context.Background(), 0)
+	got, err := svc.Incidents(context.Background(), 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestIncidentsError(t *testing.T) {
 	store := newRich(&memStore{})
 	store.errIncidents = errors.New("boom")
 	svc := NewService(store, newCipher(t))
-	if _, err := svc.Incidents(context.Background(), 0); err == nil {
+	if _, err := svc.Incidents(context.Background(), 0, ""); err == nil {
 		t.Fatal("hata yayılmalıydı")
 	}
 }
@@ -160,7 +160,7 @@ func TestIncidentTimeline(t *testing.T) {
 	}
 	svc := NewService(store, newCipher(t))
 
-	tl, ok, err := svc.IncidentTimeline(context.Background(), "inc-1")
+	tl, ok, err := svc.IncidentTimeline(context.Background(), "inc-1", "")
 	if err != nil || !ok {
 		t.Fatalf("incident bulunmalıydı: ok=%v err=%v", ok, err)
 	}
@@ -179,7 +179,7 @@ func TestIncidentTimelineNotFound(t *testing.T) {
 	store := newRich(&memStore{})
 	store.incidents = []IncidentRow{{ID: "inc-1", DeviceID: "d1"}}
 	svc := NewService(store, newCipher(t))
-	_, ok, err := svc.IncidentTimeline(context.Background(), "yok")
+	_, ok, err := svc.IncidentTimeline(context.Background(), "yok", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestIncidentTimelineError(t *testing.T) {
 	store := newRich(&memStore{})
 	store.errIncidents = errors.New("boom")
 	svc := NewService(store, newCipher(t))
-	if _, _, err := svc.IncidentTimeline(context.Background(), "inc-1"); err == nil {
+	if _, _, err := svc.IncidentTimeline(context.Background(), "inc-1", ""); err == nil {
 		t.Fatal("hata yayılmalıydı")
 	}
 }
@@ -349,7 +349,7 @@ func TestFleetRisk(t *testing.T) {
 	}
 	svc := NewService(store, newCipher(t))
 
-	fr, err := svc.FleetRisk(context.Background())
+	fr, err := svc.FleetRisk(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +392,7 @@ func TestFleetRiskError(t *testing.T) {
 	store := newRich(&memStore{})
 	store.errDevices = errors.New("boom")
 	svc := NewService(store, newCipher(t))
-	if _, err := svc.FleetRisk(context.Background()); err == nil {
+	if _, err := svc.FleetRisk(context.Background(), ""); err == nil {
 		t.Fatal("hata yayılmalıydı")
 	}
 }

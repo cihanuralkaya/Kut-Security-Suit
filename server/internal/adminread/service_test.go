@@ -149,7 +149,7 @@ func (m *memStore) EventAcks(_ context.Context) (map[string]EventAck, error) {
 func (m *memStore) ListPendingWipes(_ context.Context) ([]PendingWipeRow, error) {
 	return nil, nil
 }
-func (m *memStore) ListIncidents(_ context.Context, _ int) ([]IncidentRow, error) {
+func (m *memStore) ListIncidents(_ context.Context, _ int, _ string) ([]IncidentRow, error) {
 	return nil, nil
 }
 func (m *memStore) SaveSearch(_ context.Context, name, filterJSON, createdBy string) (SavedSearchRow, error) {

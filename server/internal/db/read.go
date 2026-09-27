@@ -50,13 +50,18 @@ func (s *Store) ListDevices(ctx context.Context, limit int, tenantID string) ([]
 // ListEvents, olay loglarını (deviceID boşsa tümünü) en yeniden eskiye listeler.
 // severity ve category boş ("") değilse ilgili ENUM sütununa göre sunucu-tarafında
 // filtre uygulanır. details, ham JSON metni olarak okunur (yoksa nil).
-// ListIncidents, korelasyonla gruplanmış olayları son-görülmeye göre döner.
-func (s *Store) ListIncidents(ctx context.Context, limit int) ([]adminread.IncidentRow, error) {
+// ListIncidents, korelasyonla gruplanmış olayları son-görülmeye göre döner. tenantID
+// boş değilse yalnız o kiracıya ait CİHAZLARIN incident'leri döner (incidents tablosu
+// kendi tenant_id'sini tutmaz → device_id üzerinden devices.tenant_id'ye join; cihazsız
+// incident kiracı admininden gizlenir, fail-closed).
+func (s *Store) ListIncidents(ctx context.Context, limit int, tenantID string) ([]adminread.IncidentRow, error) {
 	const q = `
 		SELECT id::text, COALESCE(device_id::text,''), COALESCE(rule_id,''), COALESCE(technique,''),
 		       COALESCE(severity,''), COALESCE(sample_msg,''), count, first_seen, last_seen, status
-		  FROM incidents ORDER BY last_seen DESC LIMIT $1`
-	rows, err := s.pool.Query(ctx, q, limit)
+		  FROM incidents
+		 WHERE ($2 = '' OR device_id IN (SELECT id FROM devices WHERE tenant_id = $2))
+		 ORDER BY last_seen DESC LIMIT $1`
+	rows, err := s.pool.Query(ctx, q, limit, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: incident listesi: %w", err)
 	}

@@ -105,7 +105,8 @@ type Store interface {
 	// SIEM arama primitifi). Tüm alanlar opsiyonel; Since/Until sıfır ise sınırsız.
 	QueryEvents(ctx context.Context, f EventFilter) ([]EventRow, error)
 	// ListIncidents, korelasyonla gruplanmış olayları en yeniden eskiye döner.
-	ListIncidents(ctx context.Context, limit int) ([]IncidentRow, error)
+	// tenantID boş değilse yalnız o kiracıya ait cihazların incident'leri (device→tenant).
+	ListIncidents(ctx context.Context, limit int, tenantID string) ([]IncidentRow, error)
 	// ListEvents, olayları en yeniden eskiye listeler. deviceID/severity/category
 	// boş ("") ise ilgili filtre uygulanmaz (opsiyonel sunucu-tarafı filtre).
 	ListEvents(ctx context.Context, deviceID, severity, category string, limit int) ([]EventRow, error)
@@ -683,8 +684,9 @@ type IncidentRow struct {
 }
 
 // Incidents, korelasyonla gruplanmış olayları en yeniden eskiye döner (konsol).
-func (s *Service) Incidents(ctx context.Context, limit int) ([]IncidentRow, error) {
-	return s.store.ListIncidents(ctx, clampLimit(limit))
+// tenantID boş değilse yalnız o kiracıya ait cihazların incident'leri.
+func (s *Service) Incidents(ctx context.Context, limit int, tenantID string) ([]IncidentRow, error) {
+	return s.store.ListIncidents(ctx, clampLimit(limit), tenantID)
 }
 
 // EventFilter, retro-hunt / SIEM arama için zaman-pencereli + alan-filtreli olay
@@ -736,8 +738,8 @@ type IncidentTimelineDTO struct {
 // IncidentTimeline, bir incident'i (kimliğine göre) ve onu oluşturan cihazın
 // [first_seen, last_seen] penceresindeki olaylarını kronolojik döner (IR
 // araştırması: "bu incident nasıl gelişti?"). Mevcut depo yüzeyini kullanır.
-func (s *Service) IncidentTimeline(ctx context.Context, incidentID string) (IncidentTimelineDTO, bool, error) {
-	incidents, err := s.store.ListIncidents(ctx, clampLimit(1000))
+func (s *Service) IncidentTimeline(ctx context.Context, incidentID string, tenantID string) (IncidentTimelineDTO, bool, error) {
+	incidents, err := s.store.ListIncidents(ctx, clampLimit(1000), tenantID)
 	if err != nil {
 		return IncidentTimelineDTO{}, false, err
 	}
@@ -756,6 +758,7 @@ func (s *Service) IncidentTimeline(ctx context.Context, incidentID string) (Inci
 	buffer := 2 * time.Minute
 	rows, err := s.store.QueryEvents(ctx, EventFilter{
 		DeviceID: inc.DeviceID,
+		TenantID: tenantID,
 		Since:    inc.FirstSeen.Add(-buffer),
 		Until:    inc.LastSeen.Add(buffer),
 		Limit:    500,
@@ -897,16 +900,18 @@ type FleetRiskDTO struct {
 // FleetRisk, çok-faktörlü risk motorunu (risk paketi) mevcut sinyallere (açık
 // incident'ler, uyum ihlalleri, karantina durumu) uygular ve cihaz + filo risk
 // skorlarını hesaplar. Yeni depo sorgusu kullanmaz.
-func (s *Service) FleetRisk(ctx context.Context) (FleetRiskDTO, error) {
-	devices, err := s.Devices(ctx, 0, "") // TODO: filo-risk agregası kendi diliminde kiracı-kapsamlı yapılacak
+// FleetRisk, tenantID boş değilse yalnız o kiracının cihaz/incident/uyum verisinden
+// hesaplanır (çok-tenant risk izolasyonu).
+func (s *Service) FleetRisk(ctx context.Context, tenantID string) (FleetRiskDTO, error) {
+	devices, err := s.Devices(ctx, 0, tenantID)
 	if err != nil {
 		return FleetRiskDTO{}, err
 	}
-	incidents, err := s.store.ListIncidents(ctx, clampLimit(1000))
+	incidents, err := s.store.ListIncidents(ctx, clampLimit(1000), tenantID)
 	if err != nil {
 		return FleetRiskDTO{}, err
 	}
-	comp, err := s.store.LatestComplianceByDevice(ctx, "") // TODO: filo-risk agregası kendi diliminde kiracı-kapsamlı yapılacak
+	comp, err := s.store.LatestComplianceByDevice(ctx, tenantID)
 	if err != nil {
 		return FleetRiskDTO{}, err
 	}

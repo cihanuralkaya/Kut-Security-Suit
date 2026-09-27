@@ -1118,8 +1118,10 @@ func (s *Store) BumpIncident(_ context.Context, id string, at time.Time) error {
 	return nil
 }
 
-// ListIncidents, incident'leri son-görülmeye göre en yeniden eskiye döner.
-func (s *Store) ListIncidents(_ context.Context, limit int) ([]adminread.IncidentRow, error) {
+// ListIncidents, incident'leri son-görülmeye göre en yeniden eskiye döner. tenantID
+// boş değilse yalnız o kiracıya ait cihazların incident'leri döner (device→tenant;
+// cihazsız/başka-kiracı incident gizlenir).
+func (s *Store) ListIncidents(_ context.Context, limit int, tenantID string) ([]adminread.IncidentRow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := make([]incidentRec, len(s.incidents))
@@ -1127,6 +1129,12 @@ func (s *Store) ListIncidents(_ context.Context, limit int) ([]adminread.Inciden
 	sort.Slice(cp, func(i, j int) bool { return cp[i].lastSeen.After(cp[j].lastSeen) })
 	out := make([]adminread.IncidentRow, 0, len(cp))
 	for _, r := range cp {
+		if tenantID != "" { // çok-tenant: incident'in cihazı bu kiracıda mı?
+			d, ok := s.devices[r.deviceID]
+			if !ok || d.tenant != tenantID {
+				continue
+			}
+		}
 		if limit > 0 && len(out) >= limit {
 			break
 		}
