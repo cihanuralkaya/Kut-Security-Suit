@@ -399,7 +399,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		corrWindow = d
 	}
 	// incidentcase: yeni incident açılışında otomatik SOC vakası da açılır (best-effort).
-	agentHandler.SetCorrelator(correlate.New(corrWindow, incidentcase.New(backend, caseStore, cfg.TenantID)))
+	agentHandler.SetCorrelator(correlate.New(corrWindow, incidentcase.New(backend, caseStore, backend.TenantForDevice)))
 	// Çok-sinyal korelasyon: aynı cihazda KUT_CHAIN_WINDOW (varsayılan 15dk) içinde
 	// KUT_CHAIN_THRESHOLD (varsayılan 3) FARKLI kill-chain sinyali birikirse
 	// yüksek-güvenli saldırı-zinciri uyarısı üretilir. 0 eşik → kapalı.

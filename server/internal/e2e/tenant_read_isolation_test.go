@@ -168,4 +168,52 @@ func TestTenantReadIsolationEndToEnd(t *testing.T) {
 	if n := countList(getJSON(plat, "/api/incidents"), "incidents"); n != 2 {
 		t.Fatalf("platform admini tüm incident'leri görmeli, dönen: %d", n)
 	}
+
+	// --- SOC vakaları: çapraz-kiracı IDOR kapalı olmalı ---
+	// acme admini bir vaka açar; globex admini ne listede görebilmeli ne de id ile alabilmeli.
+	postJSON := func(token, path string, body any) (int, map[string]any) {
+		b, _ := json.Marshal(body)
+		req, _ := http.NewRequest("POST", ts.URL+path, bytes.NewReader(b))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+
+	code, created := postJSON(acme, "/api/cases", map[string]any{"title": "acme-only-case", "severity": "HIGH"})
+	if code != http.StatusOK {
+		t.Fatalf("acme vaka oluşturma beklenen 200, dönen %d", code)
+	}
+	caseID, _ := created["id"].(string)
+	if caseID == "" {
+		t.Fatalf("vaka id dönmeliydi: %+v", created)
+	}
+
+	if n := countList(getJSON(acme, "/api/cases"), "cases"); n != 1 {
+		t.Fatalf("acme yalnız kendi vakasını görmeli, dönen: %d", n)
+	}
+	if n := countList(getJSON(globex, "/api/cases"), "cases"); n != 0 {
+		t.Fatalf("globex acme'nin vakasını GÖRMEMELİ (IDOR), dönen: %d", n)
+	}
+	// globex, acme vakasını id ile de alamamalı → 404.
+	greq, _ := http.NewRequest("GET", ts.URL+"/api/cases/"+caseID, nil)
+	greq.Header.Set("Authorization", "Bearer "+globex)
+	gresp, err := http.DefaultClient.Do(greq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gresp.Body.Close()
+	if gresp.StatusCode != http.StatusNotFound {
+		t.Fatalf("globex acme vakasını id ile alamamalı (404 beklendi), dönen: %d", gresp.StatusCode)
+	}
+	// Platform admini vakayı görebilmeli.
+	if n := countList(getJSON(plat, "/api/cases"), "cases"); n != 1 {
+		t.Fatalf("platform admini vakayı görmeli, dönen: %d", n)
+	}
 }

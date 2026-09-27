@@ -141,6 +141,12 @@ type Store interface {
 	Get(tenantID, id string) (Case, error)
 	// List, verilen kiracıya ait tüm vakaları CreatedAt'e göre sıralı döndürür.
 	List(tenantID string) ([]Case, error)
+	// ListAll, TÜM kiracıların vakalarını döner — YALNIZ platform admini (kiracısız
+	// çağıran) için. Kiracıya bağlı çağıran ASLA bunu kullanmamalı (List ile daraltılır).
+	ListAll() ([]Case, error)
+	// GetAny, kiracıdan bağımsız olarak id ile tek vakayı döner — YALNIZ platform
+	// admini için. Bulunamazsa ErrCaseNotFound.
+	GetAny(id string) (Case, error)
 	// Transition, vakayı yeni bir duruma geçirir. Yalnız GEÇERLİ geçişlere
 	// izin verilir; geçersizde ErrInvalidTransition döner, durum DEĞİŞMEZ ve
 	// zaman çizelgesine yazılmaz (fail-closed).
@@ -341,6 +347,37 @@ func (m *MemStore) List(tenantID string) ([]Case, error) {
 		return out[i].CreatedAt.Before(out[j].CreatedAt)
 	})
 	return out, nil
+}
+
+// ListAll, TÜM kiracıların vakalarını döner (platform admini). Kiracı izolasyonu
+// UYGULANMAZ — çağıran katman yalnız kiracısız (platform) admin için çağırmalıdır.
+func (m *MemStore) ListAll() ([]Case, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]Case, 0, len(m.cases))
+	for _, c := range m.cases {
+		out = append(out, clone(c))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+// GetAny, kiracıdan bağımsız id ile vaka döner (platform admini). Bulunamazsa
+// ErrCaseNotFound. Çağıran katman yalnız kiracısız (platform) admin için çağırmalıdır.
+func (m *MemStore) GetAny(id string) (Case, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, c := range m.cases {
+		if c.ID == id {
+			return clone(c), nil
+		}
+	}
+	return Case{}, ErrCaseNotFound
 }
 
 // appendEvent, kilit altında değişmez bir olay ekler, UpdatedAt'i günceller ve

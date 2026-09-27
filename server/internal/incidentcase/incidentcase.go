@@ -14,20 +14,23 @@ import (
 	"kut.corp/suite/server/internal/correlate"
 )
 
+// TenantResolver, bir cihazın kiracısını çözer (server-side; enrollment'ta bağlanan).
+// Store'un TenantForDevice metodu bu imzayı doğrudan karşılar.
+type TenantResolver func(ctx context.Context, deviceID string) (string, error)
+
 // Sink, otomatik vaka açan bir correlate.IncidentSink dekoratörüdür.
 type Sink struct {
-	inner  correlate.IncidentSink
-	cases  casemgmt.Store
-	tenant string
+	inner    correlate.IncidentSink
+	cases    casemgmt.Store
+	tenantOf TenantResolver
 }
 
 // New, inner sink'i sararak otomatik vaka açan bir Sink döner. cases nil ise vaka
-// açılmaz (yalnız delege). tenant, açılan vakaların kiracısıdır (boşsa "default").
-func New(inner correlate.IncidentSink, cases casemgmt.Store, tenant string) *Sink {
-	if tenant == "" {
-		tenant = "default"
-	}
-	return &Sink{inner: inner, cases: cases, tenant: tenant}
+// açılmaz (yalnız delege). tenantOf, tetikleyen CİHAZIN kiracısını çözer → otomatik
+// vaka, olayın/cihazın kiracısını taşır (dağıtım-geneli sabit değil). nil veya boş
+// dönerse "default" kovası kullanılır.
+func New(inner correlate.IncidentSink, cases casemgmt.Store, tenantOf TenantResolver) *Sink {
+	return &Sink{inner: inner, cases: cases, tenantOf: tenantOf}
 }
 
 // OpenIncident, asıl sink'e delege eder ve başarılıysa otomatik bir vaka açar
@@ -38,9 +41,17 @@ func (s *Sink) OpenIncident(ctx context.Context, deviceID, key, ruleID, techniqu
 	if err != nil || id == "" || s.cases == nil {
 		return id, err
 	}
+	// Vaka, tetikleyen cihazın kiracısını taşır (server-side; çapraz-kiracı vaka sızıntısını
+	// önler). Çözülemezse "default" kovası.
+	tenant := "default"
+	if s.tenantOf != nil {
+		if t, terr := s.tenantOf(ctx, deviceID); terr == nil && t != "" {
+			tenant = t
+		}
+	}
 	_, _ = s.cases.Create(casemgmt.Case{
 		ID:           "case-" + id,
-		TenantID:     s.tenant,
+		TenantID:     tenant,
 		Title:        message,
 		Severity:     mapSeverity(severity),
 		Owner:        "system", // otomatik açıldı; bir analist Assign ile devralır
