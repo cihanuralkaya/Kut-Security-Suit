@@ -466,7 +466,7 @@ func (m *memStore) ListArtifacts(_ context.Context, deviceID string) ([]adminrea
 	}
 	return out, nil
 }
-func (m *memStore) GetArtifact(_ context.Context, id string) (adminread.ArtifactContent, bool, error) {
+func (m *memStore) GetArtifact(_ context.Context, id string, _ string) (adminread.ArtifactContent, bool, error) {
 	c, ok := m.artifacts[id]
 	return c, ok, nil
 }

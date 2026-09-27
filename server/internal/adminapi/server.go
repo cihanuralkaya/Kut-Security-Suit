@@ -2801,8 +2801,12 @@ func (s *Server) handleCollectFile(w http.ResponseWriter, r *http.Request, admin
 }
 
 // handleListArtifacts, bir cihazdan toplanan artefaktların meta listesini döner.
-func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request, _ string) {
-	arts, err := s.reader.Artifacts(r.Context(), r.PathValue("id"))
+func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	arts, err := s.reader.Artifacts(r.Context(), r.PathValue("id"), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2811,8 +2815,12 @@ func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request, _ s
 
 // handleDeviceEvidence, cihazın toplanan artefaktlarını kurcalamaya-dayanıklı delil
 // kayıtları (SHA-256 + gözetim-zinciri, doğrulanmış) olarak döner (§23; adli/IR zinciri).
-func (s *Server) handleDeviceEvidence(w http.ResponseWriter, r *http.Request, _ string) {
-	ev, err := s.reader.DeviceEvidence(r.Context(), r.PathValue("id"))
+func (s *Server) handleDeviceEvidence(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	ev, err := s.reader.DeviceEvidence(r.Context(), r.PathValue("id"), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2829,7 +2837,11 @@ func (s *Server) handleRecordCustody(w http.ResponseWriter, r *http.Request, adm
 	if !decode(w, r, &req) {
 		return
 	}
-	entry, err := s.reader.RecordCustody(r.Context(), r.PathValue("id"), r.PathValue("artifactID"), adminID, req.Action)
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	entry, err := s.reader.RecordCustody(r.Context(), r.PathValue("id"), r.PathValue("artifactID"), adminID, req.Action, tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2839,7 +2851,11 @@ func (s *Server) handleRecordCustody(w http.ResponseWriter, r *http.Request, adm
 // handleDownloadArtifact, tek bir artefaktın ham içeriğini indirir (attachment).
 func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request, adminID string) {
 	id := r.PathValue("id")
-	c, ok, err := s.reader.ArtifactBytes(r.Context(), id)
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	c, ok, err := s.reader.ArtifactBytes(r.Context(), id, tenant)
 	if respondErr(w, err) {
 		return
 	}

@@ -192,6 +192,31 @@ func TestSavedSearches(t *testing.T) {
 	}
 }
 
+// GetArtifact kiracı-kapsamı: artefakt id doğru olsa bile başka kiracının cihazına
+// aitse ok=false (device→tenant); boş kiracı = erişim.
+func TestGetArtifactTenantScoped(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	_, _ = s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{PreferredDeviceID: "d-acme", TenantID: "acme"})
+	id, err := s.SaveArtifact(ctx, "d-acme", "cmd-1", "/tmp/f", "sha", []byte("data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Doğru kiracı → erişim.
+	if _, ok, _ := s.GetArtifact(ctx, id, "acme"); !ok {
+		t.Fatal("kendi kiracısı artefakta erişmeli")
+	}
+	// Başka kiracı → yok.
+	if _, ok, _ := s.GetArtifact(ctx, id, "globex"); ok {
+		t.Fatal("çapraz-kiracı artefakt gizlenmeli (ok=false)")
+	}
+	// Boş kiracı (platform) → erişim.
+	if _, ok, _ := s.GetArtifact(ctx, id, ""); !ok {
+		t.Fatal("platform admini artefakta erişmeli")
+	}
+}
+
 // SaveArtifact + ListArtifacts + GetArtifact + PurgeArtifactsOlderThan: artefakt
 // yaşam-döngüsü; ListArtifacts içerik taşımaz, GetArtifact içerik döner.
 func TestArtifactLifecycle(t *testing.T) {
@@ -221,7 +246,7 @@ func TestArtifactLifecycle(t *testing.T) {
 	}
 
 	// GetArtifact içerik döner (kopya, orijinal mutasyondan etkilenmez).
-	ac, ok, err := s.GetArtifact(ctx, id)
+	ac, ok, err := s.GetArtifact(ctx, id, "")
 	if err != nil || !ok {
 		t.Fatalf("GetArtifact başarısız: ok=%v err=%v", ok, err)
 	}
@@ -230,7 +255,7 @@ func TestArtifactLifecycle(t *testing.T) {
 	}
 
 	// Bilinmeyen id.
-	if _, ok, _ := s.GetArtifact(ctx, "yok"); ok {
+	if _, ok, _ := s.GetArtifact(ctx, "yok", ""); ok {
 		t.Fatal("bilinmeyen artefakt ok=false olmalıydı")
 	}
 	// Başka cihaz listesi boş.
