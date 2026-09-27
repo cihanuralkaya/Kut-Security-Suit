@@ -72,6 +72,47 @@ func (cs *caseStore) List(tenantID string) ([]casemgmt.Case, error) {
 	return out, rows.Err()
 }
 
+// ListAll, TÜM kiracıların vakalarını DOĞRUDAN DB'den okur (platform admini; kiracı
+// filtresi YOK). Çağıran katman yalnız kiracısız (platform) admin için çağırmalıdır.
+func (cs *caseStore) ListAll() ([]casemgmt.Case, error) {
+	ctx, cancel := opCtx()
+	defer cancel()
+	rows, err := cs.pool.Query(ctx, `SELECT doc FROM cases ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []casemgmt.Case{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		c, err := scanDoc(raw)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// GetAny, kiracıdan bağımsız id ile tek vaka okur (platform admini). Yoksa
+// ErrCaseNotFound. Çağıran katman yalnız kiracısız (platform) admin için çağırmalıdır.
+func (cs *caseStore) GetAny(id string) (casemgmt.Case, error) {
+	ctx, cancel := opCtx()
+	defer cancel()
+	var raw []byte
+	err := cs.pool.QueryRow(ctx, `SELECT doc FROM cases WHERE id=$1 ORDER BY created_at LIMIT 1`, id).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return casemgmt.Case{}, casemgmt.ErrCaseNotFound
+	}
+	if err != nil {
+		return casemgmt.Case{}, err
+	}
+	return scanDoc(raw)
+}
+
 // Create, vakayı casemgmt mantığıyla doğrular (ilk timeline) ve ATOMİK ekler. Eşzamanlı
 // çift-oluşturmayı DB çözer (ON CONFLICT DO NOTHING → hiç satır etkilenmezse ErrCaseExists).
 func (cs *caseStore) Create(c casemgmt.Case) (casemgmt.Case, error) {

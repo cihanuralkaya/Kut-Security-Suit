@@ -28,7 +28,7 @@ func (f *fakeSink) BumpIncident(_ context.Context, _ string, _ time.Time) error 
 func TestOpenIncidentAlsoOpensCase(t *testing.T) {
 	inner := &fakeSink{id: "inc-1"}
 	cases := casemgmt.NewMemStore()
-	s := New(inner, cases, "t1")
+	s := New(inner, cases, func(context.Context, string) (string, error) { return "t1", nil })
 
 	id, err := s.OpenIncident(context.Background(), "pc-1", "k", "R1", "T1059", "HIGH", "şüpheli powershell", time.Now())
 	if err != nil || id != "inc-1" {
@@ -58,7 +58,7 @@ func TestOpenIncidentAlsoOpensCase(t *testing.T) {
 func TestBumpDoesNotOpenCase(t *testing.T) {
 	inner := &fakeSink{id: "inc-1"}
 	cases := casemgmt.NewMemStore()
-	s := New(inner, cases, "t1")
+	s := New(inner, cases, func(context.Context, string) (string, error) { return "t1", nil })
 	if err := s.BumpIncident(context.Background(), "inc-1", time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestBumpDoesNotOpenCase(t *testing.T) {
 func TestOpenIncidentBestEffortOnInnerError(t *testing.T) {
 	inner := &fakeSink{err: errors.New("db down")}
 	cases := casemgmt.NewMemStore()
-	s := New(inner, cases, "t1")
+	s := New(inner, cases, func(context.Context, string) (string, error) { return "t1", nil })
 	if _, err := s.OpenIncident(context.Background(), "pc-1", "k", "R1", "T1", "HIGH", "x", time.Now()); err == nil {
 		t.Fatal("asıl sink hatası yayılmalı")
 	}

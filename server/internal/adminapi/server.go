@@ -1788,8 +1788,17 @@ func (s *Server) handleCaseCreate(w http.ResponseWriter, r *http.Request, adminI
 		writeErr(w, http.StatusBadRequest, "title gerekli")
 		return
 	}
+	// Vaka çağıranın kiracısına açılır (server-side). Platform admini (boş kiracı) için
+	// dağıtım varsayılan kovası kullanılır (vaka tenant'sız oluşturulamaz).
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	if tenant == "" {
+		tenant = s.caseTenant()
+	}
 	created, err := s.cases.Create(casemgmt.Case{
-		ID: newCaseID(), TenantID: s.caseTenant(), Title: strings.TrimSpace(req.Title),
+		ID: newCaseID(), TenantID: tenant, Title: strings.TrimSpace(req.Title),
 		Severity: casemgmt.Severity(strings.ToUpper(strings.TrimSpace(req.Severity))),
 		Status:   casemgmt.StatusOpen, Owner: adminID,
 		Assets: req.Assets, Users: req.Users, MITRE: req.MITRE,
@@ -1800,22 +1809,60 @@ func (s *Server) handleCaseCreate(w http.ResponseWriter, r *http.Request, adminI
 	writeJSON(w, http.StatusOK, created)
 }
 
-// handleCaseList, kiracının vakalarını listeler (VIEWER+; salt-okuma).
-func (s *Server) handleCaseList(w http.ResponseWriter, r *http.Request, _ string) {
-	list, err := s.cases.List(s.caseTenant())
+// handleCaseList, çağıranın kiracısının vakalarını listeler (VIEWER+; salt-okuma).
+// Kiracı SUNUCU-TARAFI çözülür; platform admini (boş kiracı) tüm kiracıların vakalarını görür.
+func (s *Server) handleCaseList(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	var list []casemgmt.Case
+	if tenant == "" {
+		list, err = s.cases.ListAll()
+	} else {
+		list, err = s.cases.List(tenant)
+	}
 	if writeCaseErr(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(list), "cases": list})
 }
 
-// handleCaseGet, tek bir vakayı (zaman çizelgesiyle) döner (VIEWER+).
-func (s *Server) handleCaseGet(w http.ResponseWriter, r *http.Request, _ string) {
-	c, err := s.cases.Get(s.caseTenant(), r.PathValue("id"))
+// handleCaseGet, tek bir vakayı (zaman çizelgesiyle) döner (VIEWER+). Çağıranın
+// kiracısıyla daraltılır (başka kiracının vakası → 404); platform admini herhangi birini görür.
+func (s *Server) handleCaseGet(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	var c casemgmt.Case
+	if tenant == "" {
+		c, err = s.cases.GetAny(r.PathValue("id"))
+	} else {
+		c, err = s.cases.Get(tenant, r.PathValue("id"))
+	}
 	if writeCaseErr(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, c)
+}
+
+// caseOpTenant, bir vaka MUTASYONU için etkin kiracıyı çözer: kiracıya bağlı admin →
+// kendi kiracısı (casestore başka kiracının vakasında ErrCaseNotFound döner → çapraz-
+// kiracı mutasyon 404, IDOR kapalı); platform admini (boş) → vakanın kendi kiracısı.
+func (s *Server) caseOpTenant(ctx context.Context, adminID, caseID string) (string, error) {
+	tenant, err := s.callerTenant(ctx, adminID)
+	if err != nil {
+		return "", err
+	}
+	if tenant != "" {
+		return tenant, nil
+	}
+	c, err := s.cases.GetAny(caseID)
+	if err != nil {
+		return "", err
+	}
+	return c.TenantID, nil
 }
 
 // handleCaseTransition, vakayı yeni bir duruma geçirir (OPERATOR+). Geçersiz geçiş 409.
@@ -1830,7 +1877,11 @@ func (s *Server) handleCaseTransition(w http.ResponseWriter, r *http.Request, ad
 	if !decode(w, r, &req) {
 		return
 	}
-	c, err := s.cases.Transition(s.caseTenant(), r.PathValue("id"), adminID,
+	tenant, err := s.caseOpTenant(r.Context(), adminID, r.PathValue("id"))
+	if writeCaseErr(w, err) {
+		return
+	}
+	c, err := s.cases.Transition(tenant, r.PathValue("id"), adminID,
 		casemgmt.Status(strings.ToUpper(strings.TrimSpace(req.To))), req.Note)
 	if writeCaseErr(w, err) {
 		return
@@ -1850,7 +1901,11 @@ func (s *Server) handleCaseAttach(w http.ResponseWriter, r *http.Request, adminI
 	if !decode(w, r, &req) {
 		return
 	}
-	c, err := s.cases.Attach(s.caseTenant(), r.PathValue("id"), adminID,
+	tenant, err := s.caseOpTenant(r.Context(), adminID, r.PathValue("id"))
+	if writeCaseErr(w, err) {
+		return
+	}
+	c, err := s.cases.Attach(tenant, r.PathValue("id"), adminID,
 		casemgmt.AttachKind(strings.ToLower(strings.TrimSpace(req.Kind))), strings.TrimSpace(req.Ref))
 	if writeCaseErr(w, err) {
 		return
