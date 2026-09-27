@@ -154,7 +154,7 @@ func TestAdminLifecycle(t *testing.T) {
 	s := New()
 
 	id1 := s.SeedAdmin("zeta@x", "h1", admin.RoleViewer)
-	id2, err := s.CreateAdmin(ctx, "alpha@x", "h2", admin.RoleOperator)
+	id2, err := s.CreateAdmin(ctx, "alpha@x", "h2", admin.RoleOperator, "")
 	if err != nil {
 		t.Fatal(err)
 	}

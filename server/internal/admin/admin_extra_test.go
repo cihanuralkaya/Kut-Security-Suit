@@ -23,7 +23,7 @@ func TestMFAEnrollmentLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// admin1 tarafından yeni bir OPERATOR yönetici oluştur (m.admins'e girsin).
-	id, err := svc.CreateAdmin(ctx, "admin1", "u@x", "parola12", RoleOperator)
+	id, err := svc.CreateAdmin(ctx, "admin1", "u@x", "parola12", RoleOperator, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestDisableMFAPendingOnly(t *testing.T) {
 	svc, _ := newService(t, store)
 	ctx := context.Background()
 
-	id, err := svc.CreateAdmin(ctx, "admin1", "u@x", "parola12", RoleOperator)
+	id, err := svc.CreateAdmin(ctx, "admin1", "u@x", "parola12", RoleOperator, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestDeactivateAdminRBACAndAudit(t *testing.T) {
 	svc, _ := newService(t, store)
 	ctx := context.Background()
 
-	id, err := svc.CreateAdmin(ctx, "admin1", "u@x", "parola12", RoleOperator)
+	id, err := svc.CreateAdmin(ctx, "admin1", "u@x", "parola12", RoleOperator, "")
 	if err != nil {
 		t.Fatal(err)
 	}

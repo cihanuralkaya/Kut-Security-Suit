@@ -363,6 +363,7 @@ CREATE TABLE admins (
     email         VARCHAR(255) NOT NULL UNIQUE,
     display_name  VARCHAR(150),
     role          admin_role NOT NULL DEFAULT 'VIEWER',
+    tenant_id     VARCHAR(63) NOT NULL DEFAULT '',  -- çok-tenant: admin'in kiracısı (okuma izolasyonu; boş = tüm kiracılar / platform admini)
     password_hash TEXT,                       -- Argon2id (uygulama katmanı)
     mfa_secret    BYTEA,                       -- AES-256-GCM ile şifreli TOTP sırrı (2FA)
     mfa_enrolled  BOOLEAN NOT NULL DEFAULT FALSE,

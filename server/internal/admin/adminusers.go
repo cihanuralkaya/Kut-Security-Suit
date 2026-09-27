@@ -51,18 +51,34 @@ func validAdminRole(r Role) bool {
 // CreateAdmin, yeni bir yönetici oluşturur (ADMIN). Parola boş/kısa ya da rol
 // geçersizse ErrInvalidInput döner. Parola Argon2id ile hash'lenir ve YALNIZ hash
 // depoya yazılır (düz metin asla). Yeni yöneticinin id'sini döner.
-func (s *Service) CreateAdmin(ctx context.Context, adminID, email, password string, role Role) (string, error) {
+func (s *Service) CreateAdmin(ctx context.Context, adminID, email, password string, role Role, tenantID string) (string, error) {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
 		return "", err
 	}
 	if email == "" || len(password) < minPasswordLen || !validAdminRole(role) {
 		return "", ErrInvalidInput
 	}
+	// Kiracıyı oluşturan yöneticinin kendi kiracısı belirler (ayrıcalık-yükseltme koruması):
+	// platform admini (boş kiracı) herhangi bir kiracı atayabilir; kiracıya bağlı bir
+	// admin yalnızca kendi kiracısında admin oluşturabilir, başka kiracıya sızamaz.
+	creatorTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return "", err
+	}
+	effTenant := tenantID
+	if creatorTenant != "" {
+		// Kiracıya bağlı admin: başka kiracıya admin ekleyemez (fail-closed, denetlenebilir).
+		if tenantID != "" && tenantID != creatorTenant {
+			return "", ErrForbidden
+		}
+		// Boş istek "kendi kiracım" demektir.
+		effTenant = creatorTenant
+	}
 	hash, err := security.HashPassword(password)
 	if err != nil {
 		return "", err
 	}
-	newID, err := s.store.CreateAdmin(ctx, email, hash, role)
+	newID, err := s.store.CreateAdmin(ctx, email, hash, role, effTenant)
 	if err != nil {
 		return "", err
 	}

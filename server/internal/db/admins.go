@@ -6,22 +6,39 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
 
 	"kut.corp/suite/server/internal/admin"
 )
 
 // CreateAdmin, yeni bir yönetici ekler ve id'sini döner.
-func (s *Store) CreateAdmin(ctx context.Context, email, passwordHash string, role admin.Role) (string, error) {
+func (s *Store) CreateAdmin(ctx context.Context, email, passwordHash string, role admin.Role, tenantID string) (string, error) {
 	const q = `
-		INSERT INTO admins (email, role, password_hash)
-		VALUES ($1, $2::admin_role, $3)
+		INSERT INTO admins (email, role, password_hash, tenant_id)
+		VALUES ($1, $2::admin_role, $3, $4)
 		RETURNING id::text`
 	var id string
-	if err := s.pool.QueryRow(ctx, q, email, string(role), passwordHash).Scan(&id); err != nil {
+	if err := s.pool.QueryRow(ctx, q, email, string(role), passwordHash, tenantID).Scan(&id); err != nil {
 		return "", fmt.Errorf("db: yönetici oluşturma: %w", err)
 	}
 	return id, nil
+}
+
+// AdminTenant, admin'in kiracısını döner (okuma izolasyonu için). Boş → platform admini
+// (tüm kiracılar). Admin yoksa boş döner.
+func (s *Store) AdminTenant(ctx context.Context, adminID string) (string, error) {
+	var tenant string
+	err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM admins WHERE id = $1 AND is_active`, adminID).Scan(&tenant)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("db: admin kiracısı: %w", err)
+	}
+	return tenant, nil
 }
 
 // SetAdminRole, bir yöneticinin rolünü değiştirir.

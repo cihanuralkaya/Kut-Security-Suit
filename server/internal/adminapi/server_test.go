@@ -41,6 +41,7 @@ type memStore struct {
 	assigned   map[string]string            // deviceID -> policyID
 	statuses   map[string]string            // deviceID -> son ayarlanan durum
 	adminInfos map[string]*admin.AdminInfo  // id -> yönetici görünümü
+	adminTen   map[string]string           // id -> kiracı ("" = platform)
 	nextAdmID  int
 	mfa        map[string]*mfaRec // adminID -> MFA durumu
 	eventAcks  map[string]adminread.EventAck
@@ -64,6 +65,7 @@ func newMemStore() *memStore {
 		rules:      map[string][]admin.RuleInput{},
 		assigned:   map[string]string{},
 		adminInfos: map[string]*admin.AdminInfo{},
+		adminTen:   map[string]string{},
 	}
 }
 
@@ -189,13 +191,17 @@ func (m *memStore) ListPolicyRules(_ context.Context, policyID string) ([]admin.
 	return out, nil
 }
 
-func (m *memStore) CreateAdmin(_ context.Context, email, passwordHash string, role admin.Role) (string, error) {
+func (m *memStore) CreateAdmin(_ context.Context, email, passwordHash string, role admin.Role, tenantID string) (string, error) {
 	m.nextAdmID++
 	id := "adm-" + string(rune('0'+m.nextAdmID))
 	m.roles[id] = role
 	m.emails[email] = adminRec{id: id, hash: passwordHash}
 	m.adminInfos[id] = &admin.AdminInfo{ID: id, Email: email, Role: role, Active: true}
+	m.adminTen[id] = tenantID
 	return id, nil
+}
+func (m *memStore) AdminTenant(_ context.Context, adminID string) (string, error) {
+	return m.adminTen[adminID], nil
 }
 func (m *memStore) SetAdminRole(_ context.Context, id string, role admin.Role) error {
 	m.roles[id] = role

@@ -1223,11 +1223,14 @@ func (s *Server) handleCreateAdmin(w http.ResponseWriter, r *http.Request, admin
 		Email    string `json:"email"`
 		Password string `json:"password"`
 		Role     string `json:"role"`
+		TenantID string `json:"tenant_id"`
 	}
 	if !decode(w, r, &req) {
 		return
 	}
-	newID, err := s.adminSvc.CreateAdmin(r.Context(), adminID, req.Email, req.Password, admin.Role(req.Role))
+	// tenant_id yalnızca bir öneridir; Service katmanı oluşturan yöneticinin kendi
+	// kiracısına göre bunu güvenli değere sabitler (ayrıcalık-yükseltme koruması).
+	newID, err := s.adminSvc.CreateAdmin(r.Context(), adminID, req.Email, req.Password, admin.Role(req.Role), req.TenantID)
 	if respondErr(w, err) {
 		return
 	}
