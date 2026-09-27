@@ -143,7 +143,7 @@ func TestPendingWipeCRUD(t *testing.T) {
 	}
 
 	// ListPendingWipes: requestedBy e-postaya çözülür.
-	rows, _ := s.ListPendingWipes(ctx)
+	rows, _ := s.ListPendingWipes(ctx, "")
 	if len(rows) != 1 {
 		t.Fatalf("1 bekleyen wipe beklenirdi: %d", len(rows))
 	}

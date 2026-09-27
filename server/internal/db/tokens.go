@@ -11,15 +11,18 @@ import (
 // listeler. Ham token asla saklanmadığından (yalnız HMAC token_hash) yalnız meta
 // alanlar okunur. created_by, admins tablosuyla LEFT JOIN edilerek e-postaya
 // çözülür (admin silinmiş/eşleşmemişse boş döner).
-func (s *Store) ListEnrollmentTokens(ctx context.Context, limit int) ([]adminread.EnrollmentTokenRow, error) {
+// ListEnrollmentTokens, enrollment token meta verisini döner. tenantID boş değilse
+// yalnız o kiracının token'ları (enrollment_tokens.tenant_id) döner (çok-tenant izolasyonu).
+func (s *Store) ListEnrollmentTokens(ctx context.Context, limit int, tenantID string) ([]adminread.EnrollmentTokenRow, error) {
 	const q = `
 		SELECT t.id::text, COALESCE(ad.email,''), t.expires_at,
 		       (t.used_at IS NOT NULL) AS used, t.created_at
 		  FROM enrollment_tokens t
 		  LEFT JOIN admins ad ON ad.id = t.created_by
+		 WHERE ($2 = '' OR t.tenant_id = $2)
 		 ORDER BY t.created_at DESC
 		 LIMIT $1`
-	rows, err := s.pool.Query(ctx, q, limit)
+	rows, err := s.pool.Query(ctx, q, limit, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: enrollment token listesi: %w", err)
 	}

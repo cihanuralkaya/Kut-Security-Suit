@@ -32,7 +32,7 @@ type richStore struct {
 func (r *richStore) ListIncidents(_ context.Context, _ int, _ string) ([]IncidentRow, error) {
 	return r.incidents, r.errIncidents
 }
-func (r *richStore) ListPendingWipes(_ context.Context) ([]PendingWipeRow, error) {
+func (r *richStore) ListPendingWipes(_ context.Context, _ string) ([]PendingWipeRow, error) {
 	return r.pendingWipes, r.errPending
 }
 func (r *richStore) ListSavedSearches(_ context.Context, _ string) ([]SavedSearchRow, error) {
@@ -237,7 +237,7 @@ func TestPendingWipes(t *testing.T) {
 		{DeviceID: "d1", RequestedBy: "op@x", Reason: "kayıp cihaz", RequestedAt: now},
 	}
 	svc := NewService(store, newCipher(t))
-	got, err := svc.PendingWipes(context.Background())
+	got, err := svc.PendingWipes(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,41 @@ import (
 	"kut.corp/suite/server/internal/enroll"
 )
 
+// Enrollment token + bekleyen WIPE okumaları kiracıya göre daraltılmalı: token
+// kendi tenant_id'siyle, WIPE talebi cihazının kiracısıyla (device→tenant). Boş = tümü.
+func TestTokenAndPendingWipeTenantScoped(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	adminID := s.SeedAdmin("op@x", "h", "OPERATOR")
+	exp := time.Now().Add(time.Hour)
+
+	// İki kiracıya token.
+	_ = s.SaveEnrollmentToken(ctx, []byte("t-acme"), adminID, "acme", exp)
+	_ = s.SaveEnrollmentToken(ctx, []byte("t-globex"), adminID, "globex", exp)
+
+	acmeTok, _ := s.ListEnrollmentTokens(ctx, 0, "acme")
+	if len(acmeTok) != 1 {
+		t.Fatalf("acme yalnız kendi token'ını görmeli: %d", len(acmeTok))
+	}
+	if all, _ := s.ListEnrollmentTokens(ctx, 0, ""); len(all) != 2 {
+		t.Fatalf("kiracısız token sorgusu tümünü görmeli: %d", len(all))
+	}
+
+	// İki kiracıya cihaz + bekleyen WIPE.
+	_, _ = s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{PreferredDeviceID: "d-acme", TenantID: "acme"})
+	_, _ = s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{PreferredDeviceID: "d-globex", TenantID: "globex"})
+	_ = s.SavePendingWipe(ctx, "d-acme", adminID, "sebep")
+	_ = s.SavePendingWipe(ctx, "d-globex", adminID, "sebep")
+
+	acmeW, _ := s.ListPendingWipes(ctx, "acme")
+	if len(acmeW) != 1 || acmeW[0].DeviceID != "d-acme" {
+		t.Fatalf("acme yalnız kendi WIPE talebini görmeli: %+v", acmeW)
+	}
+	if all, _ := s.ListPendingWipes(ctx, ""); len(all) != 2 {
+		t.Fatalf("kiracısız WIPE sorgusu tümünü görmeli: %d", len(all))
+	}
+}
+
 // SaveEnrollmentToken + ConsumeEnrollmentToken: geçerli token bir kez tüketilir;
 // ikinci tüketim, süresi geçmiş ve bilinmeyen token ErrInvalidToken döner.
 func TestEnrollmentTokenConsume(t *testing.T) {
@@ -63,7 +98,7 @@ func TestRevokeEnrollmentToken(t *testing.T) {
 	}
 
 	// id'yi listeden al.
-	rows, err := s.ListEnrollmentTokens(ctx, 0)
+	rows, err := s.ListEnrollmentTokens(ctx, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +137,7 @@ func TestListEnrollmentTokens(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 
-	rows, err := s.ListEnrollmentTokens(ctx, 0)
+	rows, err := s.ListEnrollmentTokens(ctx, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +156,7 @@ func TestListEnrollmentTokens(t *testing.T) {
 	}
 
 	// limit uygulanır.
-	limited, _ := s.ListEnrollmentTokens(ctx, 2)
+	limited, _ := s.ListEnrollmentTokens(ctx, 2, "")
 	if len(limited) != 2 {
 		t.Fatalf("limit=2 uygulanmalıydı: %d", len(limited))
 	}

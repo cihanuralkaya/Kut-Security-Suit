@@ -1195,11 +1195,17 @@ func (s *Store) ConsumePendingWipe(_ context.Context, deviceID, approverID strin
 }
 
 // ListPendingWipes, bekleyen tüm WIPE taleplerini döner (talep eden admin e-postasıyla).
-func (s *Store) ListPendingWipes(_ context.Context) ([]adminread.PendingWipeRow, error) {
+func (s *Store) ListPendingWipes(_ context.Context, tenantID string) ([]adminread.PendingWipeRow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]adminread.PendingWipeRow, 0, len(s.pendWipes))
 	for dev, rec := range s.pendWipes {
+		if tenantID != "" { // çok-tenant: talebin cihazı bu kiracıda mı?
+			d, ok := s.devices[dev]
+			if !ok || d.tenant != tenantID {
+				continue
+			}
+		}
 		email := rec.requestedBy
 		if a, ok := s.adminsByID[rec.requestedBy]; ok {
 			email = a.email
@@ -1558,11 +1564,14 @@ func (s *Store) AssignedPolicy(_ context.Context, id string) (string, string, er
 // ListEnrollmentTokens, token meta verisini en yeniden eskiye döner. Ham token
 // asla saklanmaz; createdBy admin id'si adminsByID'den e-postaya çözülür (db
 // LEFT JOIN davranışını taklit eder — eşleşmezse boş kalır).
-func (s *Store) ListEnrollmentTokens(_ context.Context, limit int) ([]adminread.EnrollmentTokenRow, error) {
+func (s *Store) ListEnrollmentTokens(_ context.Context, limit int, tenantID string) ([]adminread.EnrollmentTokenRow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]adminread.EnrollmentTokenRow, 0, len(s.tokens))
 	for _, t := range s.tokens {
+		if tenantID != "" && t.tenant != tenantID { // çok-tenant izolasyonu
+			continue
+		}
 		var email string
 		if a, ok := s.adminsByID[t.createdBy]; ok {
 			email = a.email
