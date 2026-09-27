@@ -99,7 +99,7 @@ func (m *memStore) RevokeEnrollmentToken(_ context.Context, tokenID string) erro
 	}
 	return nil
 }
-func (m *memStore) ListEnrollmentTokens(_ context.Context, _ int) ([]adminread.EnrollmentTokenRow, error) {
+func (m *memStore) ListEnrollmentTokens(_ context.Context, _ int, _ string) ([]adminread.EnrollmentTokenRow, error) {
 	return m.tokenRows, nil
 }
 
@@ -407,7 +407,7 @@ func (m *memStore) ConsumePendingWipe(_ context.Context, deviceID, approverID st
 	delete(m.pendWipes, deviceID)
 	return rb, true, nil
 }
-func (m *memStore) ListPendingWipes(_ context.Context) ([]adminread.PendingWipeRow, error) {
+func (m *memStore) ListPendingWipes(_ context.Context, _ string) ([]adminread.PendingWipeRow, error) {
 	var out []adminread.PendingWipeRow
 	for dev, rb := range m.pendWipes {
 		out = append(out, adminread.PendingWipeRow{DeviceID: dev, RequestedBy: rb})

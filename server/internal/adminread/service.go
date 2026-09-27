@@ -139,7 +139,7 @@ type Store interface {
 	ListArtifacts(ctx context.Context, deviceID string) ([]ArtifactRow, error)
 	// ListPendingWipes, ikinci-onay bekleyen tüm WIPE taleplerini döner (çift-kontrol
 	// görünürlüğü — konsolun onay/iptal için gösterdiği liste).
-	ListPendingWipes(ctx context.Context) ([]PendingWipeRow, error)
+	ListPendingWipes(ctx context.Context, tenantID string) ([]PendingWipeRow, error)
 	// GetArtifact, tek bir artefaktın içeriğini (indirme için) döner. tenantID boş
 	// değilse artefaktın cihazı o kiracıya ait değilse (id doğru olsa bile) ok=false
 	// (çok-tenant izolasyonu; device→tenant).
@@ -158,7 +158,7 @@ type Store interface {
 	AssignedPolicy(ctx context.Context, id string) (policyID, version string, err error)
 	// ListEnrollmentTokens, enrollment token'ların meta verisini en yeniden
 	// eskiye listeler (ham token asla okunmaz).
-	ListEnrollmentTokens(ctx context.Context, limit int) ([]EnrollmentTokenRow, error)
+	ListEnrollmentTokens(ctx context.Context, limit int, tenantID string) ([]EnrollmentTokenRow, error)
 	// ListPolicies, tüm politikaları (kural sayısı + atanmış cihaz sayısıyla)
 	// listeler.
 	ListPolicies(ctx context.Context, limit int) ([]PolicyRow, error)
@@ -728,8 +728,10 @@ type PendingWipeRow struct {
 }
 
 // PendingWipes, ikinci-onay bekleyen WIPE taleplerini döner (çift-kontrol konsol görünümü).
-func (s *Service) PendingWipes(ctx context.Context) ([]PendingWipeRow, error) {
-	return s.store.ListPendingWipes(ctx)
+// PendingWipes, tenantID boş değilse yalnız o kiracıya ait cihazların bekleyen WIPE
+// taleplerini döner (device→tenant; çok-tenant izolasyonu).
+func (s *Service) PendingWipes(ctx context.Context, tenantID string) ([]PendingWipeRow, error) {
+	return s.store.ListPendingWipes(ctx, tenantID)
 }
 
 // IncidentTimelineDTO, bir incident'in kronolojik olay zaman çizelgesidir.
@@ -1321,8 +1323,10 @@ func (s *Service) Audit(ctx context.Context, limit int, tenantID string) ([]Audi
 // EnrollmentTokens, enrollment token'ların meta verisini en yeniden eskiye
 // döner. Ham token asla dönmez; yalnız id, üreten admin e-postası, son geçerlilik,
 // kullanıldı-mı ve oluşturulma zamanı gösterilir.
-func (s *Service) EnrollmentTokens(ctx context.Context, limit int) ([]EnrollmentTokenDTO, error) {
-	rows, err := s.store.ListEnrollmentTokens(ctx, clampLimit(limit))
+// EnrollmentTokens, tenantID boş değilse yalnız o kiracının kayıt token'larını döner
+// (enrollment_tokens.tenant_id; çok-tenant izolasyonu).
+func (s *Service) EnrollmentTokens(ctx context.Context, limit int, tenantID string) ([]EnrollmentTokenDTO, error) {
+	rows, err := s.store.ListEnrollmentTokens(ctx, clampLimit(limit), tenantID)
 	if err != nil {
 		return nil, err
 	}

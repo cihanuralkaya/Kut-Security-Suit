@@ -243,13 +243,17 @@ func (s *Store) EventAcks(ctx context.Context) (map[string]adminread.EventAck, e
 
 // ListPendingWipes, ikinci-onay bekleyen tüm WIPE taleplerini (talep eden admin
 // e-postasıyla) en yeniden eskiye döner (çift-kontrol görünürlüğü).
-func (s *Store) ListPendingWipes(ctx context.Context) ([]adminread.PendingWipeRow, error) {
+// ListPendingWipes, ikinci-onay bekleyen WIPE taleplerini döner. tenantID boş değilse
+// yalnız o kiracıya ait CİHAZLARIN talepleri döner (pending_wipes tenant tutmaz →
+// device_id üzerinden devices.tenant_id join; çok-tenant izolasyonu, fail-closed).
+func (s *Store) ListPendingWipes(ctx context.Context, tenantID string) ([]adminread.PendingWipeRow, error) {
 	const q = `
 		SELECT p.device_id::text, COALESCE(ad.email, p.requested_by::text), COALESCE(p.reason,''), p.requested_at
 		  FROM pending_wipes p
 		  LEFT JOIN admins ad ON ad.id = p.requested_by
+		 WHERE ($1 = '' OR p.device_id IN (SELECT id FROM devices WHERE tenant_id = $1))
 		  ORDER BY p.requested_at DESC`
-	rows, err := s.pool.Query(ctx, q)
+	rows, err := s.pool.Query(ctx, q, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: bekleyen wipe listesi: %w", err)
 	}

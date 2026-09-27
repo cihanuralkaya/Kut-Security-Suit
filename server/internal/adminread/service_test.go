@@ -146,7 +146,7 @@ func (m *memStore) SearchSoftware(_ context.Context, query string, _ string) (ma
 func (m *memStore) EventAcks(_ context.Context) (map[string]EventAck, error) {
 	return m.acks, nil
 }
-func (m *memStore) ListPendingWipes(_ context.Context) ([]PendingWipeRow, error) {
+func (m *memStore) ListPendingWipes(_ context.Context, _ string) ([]PendingWipeRow, error) {
 	return nil, nil
 }
 func (m *memStore) ListIncidents(_ context.Context, _ int, _ string) ([]IncidentRow, error) {
@@ -220,7 +220,7 @@ func (m *memStore) CommandHistory(_ context.Context, _ string) ([]CmdRow, error)
 func (m *memStore) AssignedPolicy(_ context.Context, _ string) (string, string, error) {
 	return m.polID, m.polVer, nil
 }
-func (m *memStore) ListEnrollmentTokens(_ context.Context, _ int) ([]EnrollmentTokenRow, error) {
+func (m *memStore) ListEnrollmentTokens(_ context.Context, _ int, _ string) ([]EnrollmentTokenRow, error) {
 	return m.tokens, nil
 }
 
@@ -519,7 +519,7 @@ func TestEnrollmentTokensPassthrough(t *testing.T) {
 		{ID: "etok-1", CreatedByEmail: "", ExpiresAt: now, Used: true, CreatedAt: now.Add(-time.Hour)},
 	}}
 	svc := NewService(store, newCipher(t))
-	dtos, err := svc.EnrollmentTokens(context.Background(), 0)
+	dtos, err := svc.EnrollmentTokens(context.Background(), 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}

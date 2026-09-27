@@ -1086,7 +1086,11 @@ func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request, adminI
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
 		return
 	}
-	tokens, err := s.reader.EnrollmentTokens(r.Context(), intParam(r, "limit"))
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	tokens, err := s.reader.EnrollmentTokens(r.Context(), intParam(r, "limit"), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -1491,12 +1495,21 @@ func (s *Server) handleAgentSecFindings(w http.ResponseWriter, _ *http.Request, 
 // çevirip döner (P0-B). Amaç: agent güvenlik tespitlerini ikinci bir modele değil, dedup
 // (§6)/korelasyon (§5)/SIEM ile aynı kanonik hatta oturtmak. Salt-okunur; enforcement
 // üretmez (INV-AG-010). Opsiyonel ?tenant=<id> atıf içindir (tenant kişisel veri değildir).
-func (s *Server) handleAgentSecCanonical(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleAgentSecCanonical(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.agentSec == nil {
 		writeErr(w, http.StatusNotFound, "agentic tehdit savunması etkin değil")
 		return
 	}
-	tenant := strings.TrimSpace(r.URL.Query().Get("tenant"))
+	// Kiracı SUNUCU-TARAFI: kiracıya bağlı admin kendi kiracısına sabitlenir (istekteki
+	// ?tenant= parametresi YOK SAYILIR — çapraz-kiracı sızıntısını önler). Platform admini
+	// (boş kiracı) isteğe bağlı ?tenant= ile filtreleyebilir.
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	if tenant == "" {
+		tenant = strings.TrimSpace(r.URL.Query().Get("tenant"))
+	}
 	evs := aisecnorm.FindingsToEvents(s.agentSec.Findings(), tenant, 0, s.now().UTC())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"schema_version": model.EventSchemaVersion,
@@ -2795,8 +2808,12 @@ func (s *Server) handleCancelWipe(w http.ResponseWriter, r *http.Request, adminI
 
 // handlePendingWipes, ikinci-onay bekleyen WIPE taleplerini listeler (çift-kontrol
 // konsol görünümü; onay/iptal için).
-func (s *Server) handlePendingWipes(w http.ResponseWriter, r *http.Request, _ string) {
-	rows, err := s.reader.PendingWipes(r.Context())
+func (s *Server) handlePendingWipes(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	rows, err := s.reader.PendingWipes(r.Context(), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -3019,9 +3036,16 @@ func (s *Server) handleFeatures(w http.ResponseWriter, r *http.Request, adminID 
 // handleStream, Server-Sent Events (SSE) ile canlı değişiklik bildirimleri iletir.
 // Konsol bunu Authorization başlıklı fetch akışı ile tüketir (token URL'de YER
 // ALMAZ). Bildirim yalnız bir "değişti" tetikleyicisidir; konsol tazeler.
-func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.stream == nil {
 		writeErr(w, http.StatusNotImplemented, "canlı akış devre dışı")
+		return
+	}
+	// Kiracı SUNUCU-TARAFI çözülür: kiracıya bağlı admin YALNIZ kendi kiracısının canlı
+	// bildirimlerini alır (platform admini / boş kiracı → tümü). Çapraz-kiracı canlı-olay
+	// sızıntısını önler.
+	streamTenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
 		return
 	}
 	// SEC-007: eşzamanlı SSE bağlantısı üst sınırı (kaynak tükenmesini önle).
@@ -3068,6 +3092,10 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, _ string) 
 		case n, ok := <-ch:
 			if !ok {
 				return
+			}
+			// Çok-tenant: kiracıya bağlı admin başka kiracının bildirimini görmez.
+			if streamTenant != "" && n.TenantID != streamTenant {
+				continue
 			}
 			b, err := json.Marshal(n)
 			if err != nil {
