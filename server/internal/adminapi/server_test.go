@@ -357,7 +357,7 @@ func (m *memStore) LatestComplianceByDevice(_ context.Context, _ string) (map[st
 	}
 	return out, nil
 }
-func (m *memStore) SearchSoftware(_ context.Context, _ string) (map[string][]string, error) {
+func (m *memStore) SearchSoftware(_ context.Context, _ string, _ string) (map[string][]string, error) {
 	return map[string][]string{}, nil
 }
 func (m *memStore) SetEventAck(_ context.Context, eventID, adminID, status string) error {
@@ -441,7 +441,7 @@ func (m *memStore) QueryEvents(_ context.Context, f adminread.EventFilter) ([]ad
 	}
 	return out, nil
 }
-func (m *memStore) LatestSoftwareByDevice(_ context.Context) (map[string][]string, error) {
+func (m *memStore) LatestSoftwareByDevice(_ context.Context, _ string) (map[string][]string, error) {
 	return nil, nil
 }
 func (m *memStore) EnqueueCommandParams(_ context.Context, deviceID, cmdType, _ string, params map[string]string) error {

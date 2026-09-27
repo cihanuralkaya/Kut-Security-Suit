@@ -2910,11 +2910,11 @@ func (s *Server) handleVulnerabilities(w http.ResponseWriter, r *http.Request, a
 	out := []deviceVulns{}
 	loaded := s.vulnSet.Size()
 	if s.vulnSet != nil && loaded > 0 {
-		byDev, err := s.reader.LatestSoftwareByDevice(r.Context())
+		tenant, err := s.callerTenant(r.Context(), adminID)
 		if respondErr(w, err) {
 			return
 		}
-		tenant, err := s.callerTenant(r.Context(), adminID)
+		byDev, err := s.reader.LatestSoftwareByDevice(r.Context(), tenant)
 		if respondErr(w, err) {
 			return
 		}
@@ -2940,13 +2940,17 @@ func (s *Server) handleVulnerabilities(w http.ResponseWriter, r *http.Request, a
 // handleSoftwareSearch, filo-geneli yazılım araması yapar (?q=...): adı query'yi
 // içeren paketi yüklü cihazları döner. Zafiyet müdahalesi ("X kurulu cihazlar").
 // Salt-okunur; herhangi bir kimliği doğrulanmış kullanıcı erişebilir.
-func (s *Server) handleSoftwareSearch(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleSoftwareSearch(w http.ResponseWriter, r *http.Request, adminID string) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
 		writeErr(w, http.StatusBadRequest, "q parametresi zorunlu")
 		return
 	}
-	matches, err := s.reader.SoftwareSearch(r.Context(), q)
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	matches, err := s.reader.SoftwareSearch(r.Context(), q, tenant)
 	if respondErr(w, err) {
 		return
 	}

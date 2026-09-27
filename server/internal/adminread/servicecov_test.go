@@ -569,7 +569,7 @@ func TestPolicies(t *testing.T) {
 func TestLatestSoftwareByDevice(t *testing.T) {
 	store := &memStore{latestSW: map[string][]string{"d1": {"Google Chrome", "7-Zip"}}}
 	svc := NewService(store, newCipher(t))
-	got, err := svc.LatestSoftwareByDevice(context.Background())
+	got, err := svc.LatestSoftwareByDevice(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
