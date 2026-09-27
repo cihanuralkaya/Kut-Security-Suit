@@ -41,7 +41,7 @@ type memStore struct {
 	assigned   map[string]string            // deviceID -> policyID
 	statuses   map[string]string            // deviceID -> son ayarlanan durum
 	adminInfos map[string]*admin.AdminInfo  // id -> yönetici görünümü
-	adminTen   map[string]string           // id -> kiracı ("" = platform)
+	adminTen   map[string]string            // id -> kiracı ("" = platform)
 	lastEvtF   adminread.EventFilter        // QueryEvents'e geçen son filtre (kapsam testi)
 	nextAdmID  int
 	mfa        map[string]*mfaRec // adminID -> MFA durumu
