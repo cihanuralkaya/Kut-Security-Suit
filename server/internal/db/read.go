@@ -15,16 +15,19 @@ import (
 // Derleme-zamanı arayüz kontrolü.
 var _ adminread.Store = (*Store)(nil)
 
-// ListDevices, cihazları son görülmeye göre listeler (okuma API'si).
-func (s *Store) ListDevices(ctx context.Context, limit int) ([]adminread.DeviceRow, error) {
+// ListDevices, cihazları son görülmeye göre listeler (okuma API'si). tenantID boş
+// değilse yalnız o kiracının cihazları döner (çok-tenant okuma izolasyonu; filtre
+// in-query → LIMIT kiracı-içi doğru uygulanır).
+func (s *Store) ListDevices(ctx context.Context, limit int, tenantID string) ([]adminread.DeviceRow, error) {
 	const q = `
 		SELECT id::text, status::text, COALESCE(agent_version,''),
 		       COALESCE(os_platform,''), COALESCE(os_version,''), COALESCE(last_seen, 'epoch'::timestamptz),
-		       hostname_encrypted, mac_address_encrypted, COALESCE(tags, '{}')
+		       hostname_encrypted, mac_address_encrypted, COALESCE(tags, '{}'), COALESCE(tenant_id,'')
 		  FROM devices
+		 WHERE ($2 = '' OR tenant_id = $2)
 		 ORDER BY last_seen DESC NULLS LAST
 		 LIMIT $1`
-	rows, err := s.pool.Query(ctx, q, limit)
+	rows, err := s.pool.Query(ctx, q, limit, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: cihaz listesi: %w", err)
 	}
@@ -35,7 +38,7 @@ func (s *Store) ListDevices(ctx context.Context, limit int) ([]adminread.DeviceR
 		var d adminread.DeviceRow
 		var lastSeen time.Time
 		if err := rows.Scan(&d.ID, &d.Status, &d.AgentVersion, &d.OSPlatform, &d.OSVersion,
-			&lastSeen, &d.HostnameEnc, &d.MACEnc, &d.Tags); err != nil {
+			&lastSeen, &d.HostnameEnc, &d.MACEnc, &d.Tags, &d.TenantID); err != nil {
 			return nil, fmt.Errorf("db: cihaz okuma: %w", err)
 		}
 		d.LastSeen = lastSeen

@@ -47,11 +47,11 @@ func (r *richStore) DeleteSavedSearch(_ context.Context, id, owner string) (bool
 	r.deletedIDs = append(r.deletedIDs, id+"/"+owner)
 	return r.errDelete == nil, r.errDelete
 }
-func (r *richStore) ListDevices(ctx context.Context, limit int) ([]DeviceRow, error) {
+func (r *richStore) ListDevices(ctx context.Context, limit int, tenantID string) ([]DeviceRow, error) {
 	if r.errDevices != nil {
 		return nil, r.errDevices
 	}
-	return r.memStore.ListDevices(ctx, limit)
+	return r.memStore.ListDevices(ctx, limit, tenantID)
 }
 func (r *richStore) QueryEvents(ctx context.Context, f EventFilter) ([]EventRow, error) {
 	if r.errQuery != nil {

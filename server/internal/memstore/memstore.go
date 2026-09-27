@@ -880,14 +880,17 @@ func (s *Store) ConsumeTOTPStep(_ context.Context, adminID string, step int64) (
 // Derleme-zamanı arayüz kontrolü.
 var _ adminread.Store = (*Store)(nil)
 
-func (s *Store) ListDevices(_ context.Context, limit int) ([]adminread.DeviceRow, error) {
+func (s *Store) ListDevices(_ context.Context, limit int, tenantID string) ([]adminread.DeviceRow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []adminread.DeviceRow
 	for _, d := range s.devices {
+		if tenantID != "" && d.tenant != tenantID { // çok-tenant izolasyonu
+			continue
+		}
 		out = append(out, adminread.DeviceRow{
 			ID: d.id, Status: d.status, AgentVersion: d.agentVersion, OSPlatform: d.osPlatform,
-			LastSeen: d.lastSeen, HostnameEnc: d.hostnameEnc, MACEnc: d.macEnc, OSVersion: d.osVersion, Tags: append([]string(nil), d.tags...),
+			LastSeen: d.lastSeen, HostnameEnc: d.hostnameEnc, MACEnc: d.macEnc, OSVersion: d.osVersion, Tags: append([]string(nil), d.tags...), TenantID: d.tenant,
 		})
 		if limit > 0 && len(out) >= limit {
 			break
@@ -1444,7 +1447,7 @@ func (s *Store) DeviceByID(_ context.Context, id string) (adminread.DeviceRow, b
 	}
 	return adminread.DeviceRow{
 		ID: d.id, Status: d.status, AgentVersion: d.agentVersion, OSPlatform: d.osPlatform,
-		LastSeen: d.lastSeen, HostnameEnc: d.hostnameEnc, MACEnc: d.macEnc, OSVersion: d.osVersion, Tags: append([]string(nil), d.tags...),
+		LastSeen: d.lastSeen, HostnameEnc: d.hostnameEnc, MACEnc: d.macEnc, OSVersion: d.osVersion, Tags: append([]string(nil), d.tags...), TenantID: d.tenant,
 	}, true, nil
 }
 
