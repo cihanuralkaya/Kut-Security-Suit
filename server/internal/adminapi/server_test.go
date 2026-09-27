@@ -23,32 +23,33 @@ import (
 
 // memStore, hem admin.Store hem adminapi.AuthStore'u karşılar.
 type memStore struct {
-	custody    map[string][]evidence.CustodyEntry
-	roles      map[string]admin.Role
-	emails     map[string]adminRec // email -> (id, hash)
-	commands   []string            // "deviceID:type"
-	cipher     *security.FieldCipher
-	devRows    []adminread.DeviceRow
-	evtRows    []adminread.EventRow
-	auditRows  []adminread.AuditRow
-	certRows   []adminread.CertRow
-	cmdRows    []adminread.CmdRow
-	tokenRows  []adminread.EnrollmentTokenRow
-	tokenSeq   int
-	polID      string
-	polVer     string
-	rules      map[string][]admin.RuleInput // policyID -> kurallar
-	assigned   map[string]string            // deviceID -> policyID
-	statuses   map[string]string            // deviceID -> son ayarlanan durum
-	adminInfos map[string]*admin.AdminInfo  // id -> yönetici görünümü
-	adminTen   map[string]string            // id -> kiracı ("" = platform)
-	lastEvtF   adminread.EventFilter        // QueryEvents'e geçen son filtre (kapsam testi)
-	nextAdmID  int
-	mfa        map[string]*mfaRec // adminID -> MFA durumu
-	eventAcks  map[string]adminread.EventAck
-	artifacts  map[string]adminread.ArtifactContent
-	artMeta    []adminread.ArtifactRow
-	pendWipes  map[string]string // deviceID -> requestedBy (çift-kontrol WIPE)
+	custody      map[string][]evidence.CustodyEntry
+	roles        map[string]admin.Role
+	emails       map[string]adminRec // email -> (id, hash)
+	commands     []string            // "deviceID:type"
+	cipher       *security.FieldCipher
+	devRows      []adminread.DeviceRow
+	evtRows      []adminread.EventRow
+	auditRows    []adminread.AuditRow
+	certRows     []adminread.CertRow
+	cmdRows      []adminread.CmdRow
+	tokenRows    []adminread.EnrollmentTokenRow
+	tokenSeq     int
+	polID        string
+	polVer       string
+	rules        map[string][]admin.RuleInput // policyID -> kurallar
+	assigned     map[string]string            // deviceID -> policyID
+	statuses     map[string]string            // deviceID -> son ayarlanan durum
+	adminInfos   map[string]*admin.AdminInfo  // id -> yönetici görünümü
+	adminTen     map[string]string            // id -> kiracı ("" = platform)
+	deviceTenant map[string]string            // deviceID -> kiracı (çok-tenant aksiyon kapısı)
+	lastEvtF     adminread.EventFilter        // QueryEvents'e geçen son filtre (kapsam testi)
+	nextAdmID    int
+	mfa          map[string]*mfaRec // adminID -> MFA durumu
+	eventAcks    map[string]adminread.EventAck
+	artifacts    map[string]adminread.ArtifactContent
+	artMeta      []adminread.ArtifactRow
+	pendWipes    map[string]string // deviceID -> requestedBy (çift-kontrol WIPE)
 }
 
 type adminRec struct{ id, hash string }
@@ -203,6 +204,9 @@ func (m *memStore) CreateAdmin(_ context.Context, email, passwordHash string, ro
 }
 func (m *memStore) AdminTenant(_ context.Context, adminID string) (string, error) {
 	return m.adminTen[adminID], nil
+}
+func (m *memStore) TenantForDevice(_ context.Context, deviceID string) (string, error) {
+	return m.deviceTenant[deviceID], nil
 }
 func (m *memStore) SetAdminRole(_ context.Context, id string, role admin.Role) error {
 	m.roles[id] = role
