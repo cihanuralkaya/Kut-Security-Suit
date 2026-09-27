@@ -114,6 +114,9 @@ type Store interface {
 	// AdminTenant, bir yöneticinin bağlı olduğu kiracıyı döner (okuma izolasyonu ve
 	// ayrıcalık-yükseltme koruması için). Boş → platform admini.
 	AdminTenant(ctx context.Context, adminID string) (string, error)
+	// TenantForDevice, cihazın bağlı olduğu kiracıyı döner (aksiyon/yazma-yolu kiracı
+	// zorunlu-kılması için). Cihaz yoksa boş döner.
+	TenantForDevice(ctx context.Context, deviceID string) (string, error)
 	// SetAdminRole, bir yöneticinin rolünü değiştirir.
 	SetAdminRole(ctx context.Context, id string, role Role) error
 	// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false).
@@ -476,6 +479,9 @@ func (s *Service) WipeDevice(ctx context.Context, adminID, deviceID string) erro
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
 		return err
 	}
+	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
+		return err
+	}
 	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionWipe); err != nil {
 		return err
 	}
@@ -505,6 +511,9 @@ func (s *Service) RequestWipe(ctx context.Context, adminID, deviceID, reason str
 	if len(reason) > 500 {
 		return fmt.Errorf("%w: gerekçe çok uzun", ErrInvalidInput)
 	}
+	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
+		return err
+	}
 	// Scope/ROE'yi ERKEN uygula: kapsam dışı bir WIPE talebi hiç kaydedilmesin.
 	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionWipe); err != nil {
 		return err
@@ -521,6 +530,9 @@ func (s *Service) RequestWipe(ctx context.Context, adminID, deviceID, reason str
 // Onaydan sonra bekleyen talep silinir. Denetim izine yazılır.
 func (s *Service) ApproveWipe(ctx context.Context, approverID, deviceID string) error {
 	if err := s.require(ctx, approverID, RoleAdmin); err != nil {
+		return err
+	}
+	if err := s.enforceDeviceTenant(ctx, approverID, deviceID); err != nil {
 		return err
 	}
 	// Onay anında da Scope/ROE uygulanır (talep ile onay arasında politika değişebilir);
@@ -551,6 +563,9 @@ func (s *Service) ApproveWipe(ctx context.Context, approverID, deviceID string) 
 // CancelWipe, bekleyen bir WIPE talebini iptal eder (ADMIN). Denetim izine yazılır.
 func (s *Service) CancelWipe(ctx context.Context, adminID, deviceID string) error {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
+		return err
+	}
+	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return err
 	}
 	if err := s.store.DeletePendingWipe(ctx, deviceID); err != nil {
@@ -587,6 +602,9 @@ func (s *Service) CollectFile(ctx context.Context, adminID, deviceID, path strin
 	}
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("%w: dosya yolu zorunlu", ErrInvalidInput)
+	}
+	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
+		return err
 	}
 	// G-04: uzaktan dosya toplama da diğer cihaz komutlarıyla TUTARLI biçimde Scope/ROE'den
 	// geçer (kapsam dışı cihazdan kanıt/dosya toplanmasın; H5 chain-of-custody).
@@ -631,8 +649,37 @@ var commandScopeAction = map[string]scope.Action{
 	"RESTART":    scope.ActionRestart,
 }
 
+// enforceDeviceTenant, çağıran yöneticinin hedef cihaza AKSİYON uygulama yetkisini
+// kiracıya göre doğrular (çok-tenant WRITE izolasyonu): platform admini (boş kiracı)
+// her cihaza; kiracıya bağlı admin YALNIZ kendi kiracısının cihazına. Aksi halde
+// ErrForbidden — bir kiracının başka kiracının cihazını kilitleme/silme/karantina
+// gibi YIKICI aksiyonlarını (çapraz-kiracı WRITE IDOR) engeller. Kiracı SUNUCU-TARAFI
+// çözülür (adminID → admins.tenant_id; deviceID → devices.tenant_id), istekten DEĞİL.
+func (s *Service) enforceDeviceTenant(ctx context.Context, adminID, deviceID string) error {
+	adminTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return err
+	}
+	if adminTenant == "" {
+		return nil // platform admini: tüm kiracıların cihazlarına yetkili
+	}
+	devTenant, err := s.store.TenantForDevice(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+	if devTenant != adminTenant {
+		return ErrForbidden
+	}
+	return nil
+}
+
 func (s *Service) command(ctx context.Context, adminID, deviceID, cmdType, reflectStatus string) error {
 	if err := s.require(ctx, adminID, RoleOperator); err != nil {
+		return err
+	}
+	// Çok-tenant: hedef cihaz çağıranın kiracısında mı? (scope/ROE'den ÖNCE; UNQUARANTINE/
+	// COLLECT_DIAGNOSTICS scope'tan muaf olsa da kiracı zorunlu-kılması AŞILAMAZ.)
+	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return err
 	}
 	// Yüksek-etkili komutlar Scope/ROE kapısından geçer (geri döndürülebilir/pasif
@@ -665,6 +712,9 @@ type ErasureReport struct {
 // kendisi denetim izine ("DATA_ERASURE") yazılır (silme kaydı korunur).
 func (s *Service) EraseDevice(ctx context.Context, adminID, deviceID string) (ErasureReport, error) {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
+		return ErasureReport{}, err
+	}
+	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return ErasureReport{}, err
 	}
 	// G-03: en yıkıcı server mutasyonu artık Scope/ROE'den FAIL-CLOSED geçer (motor
@@ -712,6 +762,9 @@ func (s *Service) RevokeDevice(ctx context.Context, adminID, deviceID string) er
 	if err := s.require(ctx, adminID, RoleOperator); err != nil {
 		return err
 	}
+	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
+		return err
+	}
 	// G-05: kimlik/kredensiyel mutasyonu da Scope/ROE-farkında olsun (kapsam dışı cihazın
 	// sertifikası keyfi iptal edilmesin). Cert-revoke geri-alınabilir bir savunma olduğundan
 	// remote-etki: motor yapılandırıldığında zorlanır, yapılandırılmamışsa geçer (savunmayı
@@ -742,6 +795,9 @@ func (s *Service) CreatePolicy(ctx context.Context, adminID, name, version strin
 // AssignPolicy, bir politikayı cihaza atar (ADMIN).
 func (s *Service) AssignPolicy(ctx context.Context, adminID, deviceID, policyID string) error {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
+		return err
+	}
+	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return err
 	}
 	// G-04/F-A: politika atama, ardından pub.Publish ile cihaza ANLIK push tetikler —

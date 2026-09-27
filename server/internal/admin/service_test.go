@@ -14,25 +14,26 @@ import (
 
 // memStore, admin testleri için bellek-içi Store.
 type memStore struct {
-	roles      map[string]Role
-	tokens     map[string]string // tokenIndex(hex) -> createdBy
-	revoked    map[string]bool   // tokenID -> iptal edildi mi
-	commands   []cmd
-	audits     []audit
-	policies   map[string]string            // id -> name
-	versions   map[string]string            // id -> version
-	rules      map[string][]RuleInput       // id -> kurallar
-	assigned   map[string]string            // deviceID -> policyID
-	statuses   map[string]string            // deviceID -> son ayarlanan durum
-	tags       map[string][]string          // deviceID -> etiketler
-	admins     map[string]*adminEntry       // id -> yönetici
-	erased     string                       // EraseDeviceData ile silinen son deviceID
-	eventAcks  map[string]string            // eventID -> status (triyaj)
-	eventCases map[string][2]string         // eventID -> {assignee, note} (vaka)
-	pendWipes  map[string]string            // deviceID -> requestedBy (çift-kontrol WIPE)
-	cmdParams  map[string]map[string]string // cmdType -> son params
-	nextPolID  int
-	nextAdmID  int
+	roles        map[string]Role
+	tokens       map[string]string // tokenIndex(hex) -> createdBy
+	revoked      map[string]bool   // tokenID -> iptal edildi mi
+	commands     []cmd
+	audits       []audit
+	policies     map[string]string            // id -> name
+	versions     map[string]string            // id -> version
+	rules        map[string][]RuleInput       // id -> kurallar
+	assigned     map[string]string            // deviceID -> policyID
+	statuses     map[string]string            // deviceID -> son ayarlanan durum
+	tags         map[string][]string          // deviceID -> etiketler
+	deviceTenant map[string]string            // deviceID -> kiracı (çok-tenant aksiyon kapısı)
+	admins       map[string]*adminEntry       // id -> yönetici
+	erased       string                       // EraseDeviceData ile silinen son deviceID
+	eventAcks    map[string]string            // eventID -> status (triyaj)
+	eventCases   map[string][2]string         // eventID -> {assignee, note} (vaka)
+	pendWipes    map[string]string            // deviceID -> requestedBy (çift-kontrol WIPE)
+	cmdParams    map[string]map[string]string // cmdType -> son params
+	nextPolID    int
+	nextAdmID    int
 }
 
 func (m *memStore) SetEventAck(_ context.Context, eventID, _, status string) error {
@@ -209,6 +210,9 @@ func (m *memStore) AdminTenant(_ context.Context, adminID string) (string, error
 	}
 	return "", nil
 }
+func (m *memStore) TenantForDevice(_ context.Context, deviceID string) (string, error) {
+	return m.deviceTenant[deviceID], nil
+}
 func (m *memStore) SetAdminRole(_ context.Context, id string, role Role) error {
 	if a, ok := m.admins[id]; ok {
 		a.role = role
@@ -279,6 +283,47 @@ func newService(t *testing.T, store Store) (*Service, *security.BlindIndexer) {
 	// op'lar reddedilir). Fail-closed davranışı ayrı testte doğrulanır.
 	svc.SetScopeAllowUnconfigured(true)
 	return svc, bidx
+}
+
+// Çok-tenant WRITE izolasyonu: kiracıya bağlı admin YALNIZ kendi kiracısının cihazına
+// aksiyon uygulayabilir; başka kiracının cihazına LOCK/WIPE/ERASE/RELEASE → ErrForbidden
+// (çapraz-kiracı yıkıcı-aksiyon IDOR kapalı). Platform admini (boş kiracı) her cihaza.
+func TestDeviceActionTenantEnforcement(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	// Kiracıya bağlı ADMIN (acme) + platform ADMIN (kiracısız).
+	store.roles["acme-adm"] = RoleAdmin
+	store.admins["acme-adm"] = &adminEntry{role: RoleAdmin, tenant: "acme", active: true}
+	store.roles["plat"] = RoleAdmin // admins girdisi yok → AdminTenant "" → platform
+	store.deviceTenant = map[string]string{"d-acme": "acme", "d-globex": "globex"}
+	svc, _ := newService(t, store)
+
+	// Kiracıya bağlı admin BAŞKA kiracının cihazına aksiyon → ErrForbidden.
+	if err := svc.LockDevice(ctx, "acme-adm", "d-globex"); err != ErrForbidden {
+		t.Fatalf("çapraz-kiracı LOCK reddedilmeli: %v", err)
+	}
+	if _, err := svc.EraseDevice(ctx, "acme-adm", "d-globex"); err != ErrForbidden {
+		t.Fatalf("çapraz-kiracı ERASE reddedilmeli: %v", err)
+	}
+	if err := svc.ReleaseDevice(ctx, "acme-adm", "d-globex"); err != ErrForbidden {
+		t.Fatalf("çapraz-kiracı RELEASE (scope-muaf) reddedilmeli: %v", err)
+	}
+	if err := svc.RevokeDevice(ctx, "acme-adm", "d-globex"); err != ErrForbidden {
+		t.Fatalf("çapraz-kiracı REVOKE reddedilmeli: %v", err)
+	}
+
+	// Kendi kiracısının cihazına aksiyon → geçer.
+	if err := svc.LockDevice(ctx, "acme-adm", "d-acme"); err != nil {
+		t.Fatalf("kendi kiracısının cihazına LOCK geçmeli: %v", err)
+	}
+	if err := svc.ReleaseDevice(ctx, "acme-adm", "d-acme"); err != nil {
+		t.Fatalf("kendi kiracısının cihazına RELEASE geçmeli: %v", err)
+	}
+
+	// Platform admini (kiracısız) HER cihaza aksiyon uygulayabilir.
+	if err := svc.LockDevice(ctx, "plat", "d-globex"); err != nil {
+		t.Fatalf("platform admini her cihaza aksiyon uygulayabilmeli: %v", err)
+	}
 }
 
 // AckEvent (alarm yaşam-döngüsü): VIEWER reddedilir; geçersiz durum reddedilir;
