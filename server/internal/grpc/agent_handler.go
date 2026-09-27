@@ -198,12 +198,15 @@ func (h *AgentHandler) observeGraph(deviceID string, e model.Event) {
 		return
 	}
 	if h.graph != nil {
-		dev := entitygraph.Node{Kind: entitygraph.Device, ID: deviceID}
+		// Düğümler olayın kiracısıyla etiketlenir (çok-kiracılı graf izolasyonu):
+		// e.TenantID sunucu-tarafı damgalıdır (cihazdan), böylece kenarlar kiracı
+		// sınırını geçmez ve pivot/anomali yalnız çağıranın kiracısını görür.
+		dev := entitygraph.Node{Kind: entitygraph.Device, ID: deviceID, Tenant: e.TenantID}
 		if s, ok := d["domain"].(string); ok && s != "" {
-			h.graph.Observe(dev, entitygraph.Node{Kind: entitygraph.Domain, ID: s}, entitygraph.Resolved, e.OccurredAt)
+			h.graph.Observe(dev, entitygraph.Node{Kind: entitygraph.Domain, ID: s, Tenant: e.TenantID}, entitygraph.Resolved, e.OccurredAt)
 		}
 		if s, ok := d["remote_ip"].(string); ok && s != "" {
-			h.graph.Observe(dev, entitygraph.Node{Kind: entitygraph.IP, ID: s}, entitygraph.Connected, e.OccurredAt)
+			h.graph.Observe(dev, entitygraph.Node{Kind: entitygraph.IP, ID: s, Tenant: e.TenantID}, entitygraph.Connected, e.OccurredAt)
 		}
 	}
 	// Süreç soyağacı: PROCESS olayının process + parent_chain (en yakın ata önce).
@@ -227,8 +230,8 @@ func (h *AgentHandler) observeGraph(deviceID string, e model.Event) {
 		}
 		if h.graph != nil {
 			h.graph.Observe(
-				entitygraph.Node{Kind: entitygraph.Process, ID: child},
-				entitygraph.Node{Kind: entitygraph.Process, ID: parent},
+				entitygraph.Node{Kind: entitygraph.Process, ID: child, Tenant: e.TenantID},
+				entitygraph.Node{Kind: entitygraph.Process, ID: parent, Tenant: e.TenantID},
 				entitygraph.ChildOf, e.OccurredAt)
 		}
 		ancestors = append(ancestors, parent)

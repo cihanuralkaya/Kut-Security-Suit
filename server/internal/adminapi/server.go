@@ -1421,7 +1421,7 @@ func bulkAction(action string) scope.Action {
 // → düğüme GİREN kaynaklar ("bu IP ile hangi cihazlar konuştu?"); dir=targets → çıkan
 // hedefler ("bu cihaz hangi alanları çözümledi?"). rel boşsa tüm ilişkiler. Graf
 // bağlı değilse 404.
-func (s *Server) handleGraphPivot(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleGraphPivot(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.graph == nil {
 		writeErr(w, http.StatusNotFound, "varlık grafı etkin değil")
 		return
@@ -1433,13 +1433,25 @@ func (s *Server) handleGraphPivot(w http.ResponseWriter, r *http.Request, _ stri
 		writeErr(w, http.StatusBadRequest, "kind ve id gerekli")
 		return
 	}
-	node := entitygraph.Node{Kind: entitygraph.Kind(kind), ID: id}
+	// Kiracı SUNUCU-TARAFI: kiracıya bağlı admin yalnız kendi kiracı-grafını pivotlar
+	// (kiracı-anahtarlı Node); platform admini (boş kiracı) kiracılar-arası birleşik görür.
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	gk := entitygraph.Kind(kind)
 	rel := entitygraph.Relation(strings.TrimSpace(q.Get("rel")))
+	targets := q.Get("dir") == "targets"
 	var nodes []entitygraph.Node
-	if q.Get("dir") == "targets" {
-		nodes = s.graph.Targets(node, rel)
-	} else {
-		nodes = s.graph.Sources(node, rel)
+	switch {
+	case tenant == "" && targets:
+		nodes = s.graph.TargetsAny(gk, id, rel)
+	case tenant == "":
+		nodes = s.graph.SourcesAny(gk, id, rel)
+	case targets:
+		nodes = s.graph.Targets(entitygraph.Node{Kind: gk, ID: id, Tenant: tenant}, rel)
+	default:
+		nodes = s.graph.Sources(entitygraph.Node{Kind: gk, ID: id, Tenant: tenant}, rel)
 	}
 	out := make([]map[string]string, 0, len(nodes))
 	for _, n := range nodes {
@@ -1452,7 +1464,7 @@ func (s *Server) handleGraphPivot(w http.ResponseWriter, r *http.Request, _ stri
 // kenar → aibrain.ScoreGraph): ?kind=X&id=Y. Ör. çok sayıda farklı IP'ye bağlanan bir
 // cihaz veya alışılmadık çocuk süreçler yayan bir süreç yüksek skorlanır. Graf bağlı
 // değilse 404.
-func (s *Server) handleGraphAnomaly(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleGraphAnomaly(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.graph == nil {
 		writeErr(w, http.StatusNotFound, "varlık grafı etkin değil")
 		return
@@ -1464,7 +1476,19 @@ func (s *Server) handleGraphAnomaly(w http.ResponseWriter, r *http.Request, _ st
 		writeErr(w, http.StatusBadRequest, "kind ve id gerekli")
 		return
 	}
-	fanOut, fanIn, rareEdges := s.graph.Features(entitygraph.Node{Kind: entitygraph.Kind(kind), ID: id}, 1)
+	// Kiracı sunucu-tarafı: kiracıya bağlı admin kendi grafındaki düğümü skorlar; platform
+	// admini (boş kiracı) kiracılar-arası birleşik yapısal skor alır.
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	gk := entitygraph.Kind(kind)
+	var fanOut, fanIn, rareEdges int
+	if tenant == "" {
+		fanOut, fanIn, rareEdges = s.graph.FeaturesAny(gk, id, 1)
+	} else {
+		fanOut, fanIn, rareEdges = s.graph.Features(entitygraph.Node{Kind: gk, ID: id, Tenant: tenant}, 1)
+	}
 	sc := aibrain.ScoreGraphFeatures(aibrain.GraphFeatures{FanOut: fanOut, FanIn: fanIn, RareEdges: rareEdges})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"score": sc.Score, "rationale": sc.Rationale, "source": sc.Source,
