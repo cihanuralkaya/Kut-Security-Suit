@@ -638,8 +638,10 @@ type CoverageDTO struct {
 
 // Coverage, "kim korunuyor?" görünümünü hesaplar: çevrimiçi kapsam yüzdesi ve ajan
 // sürüm dağılımı (sürüm-kayması). Sessiz/eski ajanlar EDR dağıtımının gerçek boşluğudur.
-func (s *Service) Coverage(ctx context.Context) (CoverageDTO, error) {
-	rows, err := s.store.ListDevices(ctx, 0, "") // TODO: coverage agregası kendi diliminde kiracı-kapsamlı yapılacak
+// Coverage, tenantID boş değilse yalnız o kiracının cihazlarından hesaplanır
+// (çok-tenant KPI izolasyonu).
+func (s *Service) Coverage(ctx context.Context, tenantID string) (CoverageDTO, error) {
+	rows, err := s.store.ListDevices(ctx, 0, tenantID)
 	if err != nil {
 		return CoverageDTO{}, err
 	}
@@ -843,8 +845,10 @@ func (s *Service) AdminBehavior(ctx context.Context, limit int) (ueba.Report, er
 // NIST/ISO/KVKK) eşler. Her kontrolün filo-geneli uyum oranı (uyumlu cihaz /
 // veri taşıyan cihaz) hesaplanıp çerçeve skorlarına çevrilir. Mevcut compliance
 // verisini (LatestComplianceByDevice) kullanır; yeni depo sorgusu yok.
-func (s *Service) FrameworkCompliance(ctx context.Context) (complianceframework.Report, error) {
-	comp, err := s.store.LatestComplianceByDevice(ctx, "") // TODO: çerçeve-uyum agregası kendi diliminde kiracı-kapsamlı yapılacak
+// FrameworkCompliance, tenantID boş değilse yalnız o kiracının uyum verisinden
+// hesaplanır (çok-tenant izolasyonu).
+func (s *Service) FrameworkCompliance(ctx context.Context, tenantID string) (complianceframework.Report, error) {
+	comp, err := s.store.LatestComplianceByDevice(ctx, tenantID)
 	if err != nil {
 		return complianceframework.Report{}, err
 	}

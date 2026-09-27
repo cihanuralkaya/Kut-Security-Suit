@@ -2479,8 +2479,12 @@ func (s *Server) handleAttackStory(w http.ResponseWriter, r *http.Request, admin
 
 // handleFrameworks, filo güvenlik-duruşunu uyum çerçevelerine (CIS/NIST/ISO/KVKK)
 // eşleyen skor raporunu döner (denetçi görünürlüğü).
-func (s *Server) handleFrameworks(w http.ResponseWriter, r *http.Request, _ string) {
-	rep, err := s.reader.FrameworkCompliance(r.Context())
+func (s *Server) handleFrameworks(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	rep, err := s.reader.FrameworkCompliance(r.Context(), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2498,8 +2502,12 @@ func (s *Server) handleRisk(w http.ResponseWriter, r *http.Request, _ string) {
 }
 
 // handleCoverage, filo koruma-kapsamı + ajan sürüm-kayması ("kim korunuyor?").
-func (s *Server) handleCoverage(w http.ResponseWriter, r *http.Request, _ string) {
-	cov, err := s.reader.Coverage(r.Context())
+func (s *Server) handleCoverage(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	cov, err := s.reader.Coverage(r.Context(), tenant)
 	if respondErr(w, err) {
 		return
 	}

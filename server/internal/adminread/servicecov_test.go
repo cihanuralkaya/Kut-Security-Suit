@@ -79,7 +79,7 @@ func TestCoverage(t *testing.T) {
 	}}
 	svc := NewService(store, newCipher(t))
 
-	cov, err := svc.Coverage(context.Background())
+	cov, err := svc.Coverage(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestCoverage(t *testing.T) {
 
 func TestCoverageEmpty(t *testing.T) {
 	svc := NewService(&memStore{}, newCipher(t))
-	cov, err := svc.Coverage(context.Background())
+	cov, err := svc.Coverage(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestCoverageStoreError(t *testing.T) {
 	store := newRich(&memStore{})
 	store.errDevices = errors.New("db down")
 	svc := NewService(store, newCipher(t))
-	if _, err := svc.Coverage(context.Background()); err == nil {
+	if _, err := svc.Coverage(context.Background(), ""); err == nil {
 		t.Fatal("store hatası yayılmalıydı")
 	}
 }
@@ -635,7 +635,7 @@ func TestFrameworkCompliance(t *testing.T) {
 	}}
 	svc := NewService(store, newCipher(t))
 
-	rep, err := svc.FrameworkCompliance(context.Background())
+	rep, err := svc.FrameworkCompliance(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
