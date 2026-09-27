@@ -6,9 +6,38 @@ import (
 	"testing"
 	"time"
 
+	"kut.corp/suite/server/internal/admin"
 	"kut.corp/suite/server/internal/enroll"
 	"kut.corp/suite/server/internal/evidence"
 )
+
+// ListAudit + ListSavedSearches kiracı-kapsamı: audit ve kayıtlı aramalar, eylemi
+// yapan/oluşturan yöneticinin kiracısına göre daraltılır (admin→tenant); boş = tümü.
+func TestAuditAndSavedSearchTenantScoped(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	acmeID, _ := s.CreateAdmin(ctx, "acme-adm@x", "h", admin.RoleAdmin, "acme")
+	globexID, _ := s.CreateAdmin(ctx, "globex-adm@x", "h", admin.RoleAdmin, "globex")
+	_ = s.WriteAudit(ctx, acmeID, "LOGIN", "session", "")
+	_ = s.WriteAudit(ctx, globexID, "LOGIN", "session", "")
+	_, _ = s.SaveSearch(ctx, "acme-hunt", `{"mode":"query"}`, acmeID)
+	_, _ = s.SaveSearch(ctx, "globex-hunt", `{"mode":"query"}`, globexID)
+
+	aud, _ := s.ListAudit(ctx, 0, "acme")
+	if len(aud) != 1 || aud[0].AdminEmail != "acme-adm@x" {
+		t.Fatalf("acme yalnız kendi denetim kaydını görmeli: %+v", aud)
+	}
+	ss, _ := s.ListSavedSearches(ctx, "acme")
+	if len(ss) != 1 || ss[0].Name != "acme-hunt" {
+		t.Fatalf("acme yalnız kendi kayıtlı aramasını görmeli: %+v", ss)
+	}
+	if all, _ := s.ListAudit(ctx, 0, ""); len(all) != 2 {
+		t.Fatalf("kiracısız denetim tümünü dönmeli: %d", len(all))
+	}
+	if allss, _ := s.ListSavedSearches(ctx, ""); len(allss) != 2 {
+		t.Fatalf("kiracısız kayıtlı arama tümünü dönmeli: %d", len(allss))
+	}
+}
 
 // ListIncidents kiracı-kapsamı: incident'ler cihazlarının kiracısına göre daraltılır
 // (incidents tablosu tenant tutmaz → device→tenant). Boş kiracı = tümü.
@@ -151,7 +180,7 @@ func TestSavedSearches(t *testing.T) {
 	time.Sleep(time.Millisecond)
 	r2, _ := s.SaveSearch(ctx, "exfil", `{"category":"NETWORK"}`, adminID)
 
-	list, err := s.ListSavedSearches(ctx)
+	list, err := s.ListSavedSearches(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +196,7 @@ func TestSavedSearches(t *testing.T) {
 	if ok, err := s.DeleteSavedSearch(ctx, r1.ID, "baska-admin"); err != nil || ok {
 		t.Fatalf("yanlış owner silme false dönmeli: ok=%v err=%v", ok, err)
 	}
-	if list, _ := s.ListSavedSearches(ctx); len(list) != 2 {
+	if list, _ := s.ListSavedSearches(ctx, ""); len(list) != 2 {
 		t.Fatalf("yanlış owner ile silme yapılmamalıydı, hâlâ 2 olmalı: %d", len(list))
 	}
 
@@ -175,7 +204,7 @@ func TestSavedSearches(t *testing.T) {
 	if ok, err := s.DeleteSavedSearch(ctx, r1.ID, adminID); err != nil || !ok {
 		t.Fatalf("doğru owner silme true dönmeli: ok=%v err=%v", ok, err)
 	}
-	list, _ = s.ListSavedSearches(ctx)
+	list, _ = s.ListSavedSearches(ctx, "")
 	if len(list) != 1 || list[0].ID != r2.ID {
 		t.Fatalf("silmeden sonra yalnız r2 kalmalıydı: %+v", list)
 	}
@@ -378,7 +407,7 @@ func TestAuditWriteAndList(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, err := s.ListAudit(ctx, 0)
+	rows, err := s.ListAudit(ctx, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +431,7 @@ func TestAuditWriteAndList(t *testing.T) {
 	}
 
 	// limit.
-	lim, _ := s.ListAudit(ctx, 1)
+	lim, _ := s.ListAudit(ctx, 1, "")
 	if len(lim) != 1 {
 		t.Fatalf("limit=1 uygulanmalıydı: %d", len(lim))
 	}

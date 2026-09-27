@@ -151,7 +151,7 @@ type Store interface {
 	// AppendCustody, gözetim zincirine EKLE-YALNIZ bir kayıt yazar (§23). UNIQUE(evidence_id,
 	// seq) çatallanmayı engeller (eşzamanlı ekleme → ikinci yazma hata).
 	AppendCustody(ctx context.Context, evidenceID string, e evidence.CustodyEntry) error
-	ListAudit(ctx context.Context, limit int) ([]AuditRow, error)
+	ListAudit(ctx context.Context, limit int, tenantID string) ([]AuditRow, error)
 	DeviceByID(ctx context.Context, id string) (DeviceRow, bool, error)
 	CertsByDevice(ctx context.Context, id string) ([]CertRow, error)
 	CommandHistory(ctx context.Context, id string) ([]CmdRow, error)
@@ -165,8 +165,9 @@ type Store interface {
 	// SaveSearch, adlandırılmış bir threat-hunting sorgusunu (filtre JSON) kalıcılaştırır
 	// ve oluşturulan kaydı döner (SIEM kayıtlı-arama). name+filter zorunlu.
 	SaveSearch(ctx context.Context, name, filterJSON, createdBy string) (SavedSearchRow, error)
-	// ListSavedSearches, kayıtlı aramaları en yeniden eskiye döner.
-	ListSavedSearches(ctx context.Context) ([]SavedSearchRow, error)
+	// ListSavedSearches, kayıtlı aramaları en yeniden eskiye döner. tenantID boş
+	// değilse yalnız o kiracıdaki yöneticilerin aramaları (created_by→admin.tenant).
+	ListSavedSearches(ctx context.Context, tenantID string) ([]SavedSearchRow, error)
 	// DeleteSavedSearch, verilen kimlikli kayıtlı aramayı YALNIZ owner (oluşturan) eşleşirse
 	// siler (sahiplik kontrolü / IDOR önlemi).
 	DeleteSavedSearch(ctx context.Context, id, owner string) (deleted bool, err error)
@@ -810,7 +811,7 @@ func parseSavedFilter(filterJSON string, since time.Time) (EventFilter, error) {
 // (sürekli/zamanlanmış tehdit-avı) ve eşleşme bulanları döner. Ayrıştırılamayan
 // filtre atlanır (bir bozuk arama diğerlerini durdurmaz). Mevcut depo yüzeyini kullanır.
 func (s *Service) RunSavedSearches(ctx context.Context, since time.Time) ([]SavedSearchHit, error) {
-	rows, err := s.store.ListSavedSearches(ctx)
+	rows, err := s.store.ListSavedSearches(ctx, "") // zamanlanmış sistem koşusu: dağıtım-geneli (kiracı-üstü)
 	if err != nil {
 		return nil, err
 	}
@@ -835,7 +836,7 @@ func (s *Service) RunSavedSearches(ctx context.Context, since time.Time) ([]Save
 // izinden hesaplar (UEBA): yıkıcı-eylem serisi / yüksek yıkıcı oran anomalileri.
 // Mevcut audit_log'u kullanır; yeni depo sorgusu yok.
 func (s *Service) AdminBehavior(ctx context.Context, limit int) (ueba.Report, error) {
-	rows, err := s.store.ListAudit(ctx, clampLimit(limit))
+	rows, err := s.store.ListAudit(ctx, clampLimit(limit), "") // UEBA: dağıtım-geneli yönetici davranışı (kiracı-üstü)
 	if err != nil {
 		return ueba.Report{}, err
 	}
@@ -982,8 +983,9 @@ func (s *Service) SaveSearch(ctx context.Context, name, filterJSON, createdBy st
 }
 
 // SavedSearches, kayıtlı aramaları döner.
-func (s *Service) SavedSearches(ctx context.Context) ([]SavedSearchRow, error) {
-	return s.store.ListSavedSearches(ctx)
+// SavedSearches, tenantID boş değilse yalnız o kiracıdaki yöneticilerin aramalarını döner.
+func (s *Service) SavedSearches(ctx context.Context, tenantID string) ([]SavedSearchRow, error) {
+	return s.store.ListSavedSearches(ctx, tenantID)
 }
 
 // DeleteSavedSearch, bir kayıtlı aramayı YALNIZ owner (oluşturan) eşleşirse siler.
@@ -1296,8 +1298,9 @@ func (s *Service) SoftwareSearch(ctx context.Context, query string, tenantID str
 }
 
 // Audit, denetim izi kayıtlarını en yeniden eskiye döner.
-func (s *Service) Audit(ctx context.Context, limit int) ([]AuditDTO, error) {
-	rows, err := s.store.ListAudit(ctx, clampLimit(limit))
+// Audit, tenantID boş değilse yalnız o kiracıdaki yöneticilerin denetim kayıtlarını döner.
+func (s *Service) Audit(ctx context.Context, limit int, tenantID string) ([]AuditDTO, error) {
+	rows, err := s.store.ListAudit(ctx, clampLimit(limit), tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -1358,7 +1361,7 @@ func (s *Service) ExportDevice(ctx context.Context, deviceID string, tenantID st
 	if err != nil {
 		return DeviceExportDTO{}, false, err
 	}
-	allAudit, err := s.Audit(ctx, 0)
+	allAudit, err := s.Audit(ctx, 0, tenantID)
 	if err != nil {
 		return DeviceExportDTO{}, false, err
 	}

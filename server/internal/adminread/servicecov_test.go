@@ -35,7 +35,7 @@ func (r *richStore) ListIncidents(_ context.Context, _ int, _ string) ([]Inciden
 func (r *richStore) ListPendingWipes(_ context.Context) ([]PendingWipeRow, error) {
 	return r.pendingWipes, r.errPending
 }
-func (r *richStore) ListSavedSearches(_ context.Context) ([]SavedSearchRow, error) {
+func (r *richStore) ListSavedSearches(_ context.Context, _ string) ([]SavedSearchRow, error) {
 	return r.savedSearches, r.errSaved
 }
 func (r *richStore) SaveSearch(_ context.Context, name, filterJSON, createdBy string) (SavedSearchRow, error) {
@@ -304,7 +304,7 @@ func TestSavedSearchesPassthrough(t *testing.T) {
 	store := newRich(&memStore{})
 	store.savedSearches = []SavedSearchRow{{ID: "s1", Name: "a"}, {ID: "s2", Name: "b"}}
 	svc := NewService(store, newCipher(t))
-	got, err := svc.SavedSearches(context.Background())
+	got, err := svc.SavedSearches(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -618,7 +618,7 @@ func TestAdminBehaviorError(t *testing.T) {
 // errAuditStore, ListAudit'te hata döndürür (AdminBehavior hata yolu).
 type errAuditStore struct{ memStore }
 
-func (e *errAuditStore) ListAudit(_ context.Context, _ int) ([]AuditRow, error) {
+func (e *errAuditStore) ListAudit(_ context.Context, _ int, _ string) ([]AuditRow, error) {
 	return nil, errors.New("audit down")
 }
 

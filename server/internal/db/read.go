@@ -280,15 +280,18 @@ func (s *Store) SaveSearch(ctx context.Context, name, filterJSON, createdBy stri
 	return r, nil
 }
 
-// ListSavedSearches, kayıtlı aramaları en yeniden eskiye döner.
-func (s *Store) ListSavedSearches(ctx context.Context) ([]adminread.SavedSearchRow, error) {
+// ListSavedSearches, kayıtlı aramaları en yeniden eskiye döner. tenantID boş değilse
+// yalnız o kiracıdaki yöneticilerin (created_by→admin.tenant_id) aramaları döner
+// (çok-tenant izolasyonu; admin'siz/başka-kiracı aramalar gizli, fail-closed).
+func (s *Store) ListSavedSearches(ctx context.Context, tenantID string) ([]adminread.SavedSearchRow, error) {
 	const q = `
 		SELECT ss.id::text, ss.name, ss.filter::text,
 		       COALESCE(ad.email, ss.created_by::text, ''), ss.created_at
 		  FROM saved_searches ss
 		  LEFT JOIN admins ad ON ad.id = ss.created_by
+		 WHERE ($1 = '' OR ad.tenant_id = $1)
 		 ORDER BY ss.created_at DESC`
-	rows, err := s.pool.Query(ctx, q)
+	rows, err := s.pool.Query(ctx, q, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: kayıtlı arama listesi: %w", err)
 	}
@@ -315,15 +318,19 @@ func (s *Store) DeleteSavedSearch(ctx context.Context, id, owner string) (bool, 
 	return tag.RowsAffected() > 0, nil // owner değil/bulunamadı → 0 satır → false
 }
 
-func (s *Store) ListAudit(ctx context.Context, limit int) ([]adminread.AuditRow, error) {
+// ListAudit, denetim izini döner. tenantID boş değilse yalnız o kiracıdaki
+// yöneticilerin (admin_id→admin.tenant_id) eylemleri döner (çok-tenant izolasyonu;
+// admin'siz/sistem veya başka-kiracı kayıtlar gizli, fail-closed).
+func (s *Store) ListAudit(ctx context.Context, limit int, tenantID string) ([]adminread.AuditRow, error) {
 	const q = `
 		SELECT a.id, COALESCE(ad.email,''), a.action::text,
 		       COALESCE(a.target_type,''), COALESCE(a.target_id::text,''), a.created_at
 		  FROM audit_log a
 		  LEFT JOIN admins ad ON ad.id = a.admin_id
+		 WHERE ($2 = '' OR ad.tenant_id = $2)
 		 ORDER BY a.created_at DESC
 		 LIMIT $1`
-	rows, err := s.pool.Query(ctx, q, limit)
+	rows, err := s.pool.Query(ctx, q, limit, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: denetim izi listesi: %w", err)
 	}
