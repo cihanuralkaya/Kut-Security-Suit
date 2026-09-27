@@ -58,14 +58,17 @@ func (m *memStore) ListEvents(_ context.Context, deviceID, severity, category st
 	}
 	return out, nil
 }
-func (m *memStore) DeviceStatusCounts(_ context.Context) (map[string]int, error) {
+func (m *memStore) DeviceStatusCounts(_ context.Context, tenantID string) (map[string]int, error) {
 	out := map[string]int{}
 	for _, d := range m.devices {
+		if tenantID != "" && d.TenantID != tenantID {
+			continue
+		}
 		out[d.Status]++
 	}
 	return out, nil
 }
-func (m *memStore) EventSeverityCounts(_ context.Context, since time.Time) (map[string]int, error) {
+func (m *memStore) EventSeverityCounts(_ context.Context, since time.Time, _ string) (map[string]int, error) {
 	out := map[string]int{}
 	for _, e := range m.events {
 		if e.CreatedAt.Before(since) {
@@ -75,7 +78,7 @@ func (m *memStore) EventSeverityCounts(_ context.Context, since time.Time) (map[
 	}
 	return out, nil
 }
-func (m *memStore) EventCategoryCounts(_ context.Context, since time.Time) (map[string]int, error) {
+func (m *memStore) EventCategoryCounts(_ context.Context, since time.Time, _ string) (map[string]int, error) {
 	out := map[string]int{}
 	for _, e := range m.events {
 		if e.CreatedAt.Before(since) {
@@ -85,7 +88,7 @@ func (m *memStore) EventCategoryCounts(_ context.Context, since time.Time) (map[
 	}
 	return out, nil
 }
-func (m *memStore) LatestComplianceByDevice(_ context.Context) (map[string]ComplianceStatus, error) {
+func (m *memStore) LatestComplianceByDevice(_ context.Context, _ string) (map[string]ComplianceStatus, error) {
 	out := map[string]ComplianceStatus{}
 	for i := len(m.events) - 1; i >= 0; i-- {
 		e := m.events[i]
@@ -284,7 +287,7 @@ func TestSummaryCounts(t *testing.T) {
 	}
 	svc := NewService(store, newCipher(t))
 
-	sum, err := svc.Summary(context.Background())
+	sum, err := svc.Summary(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +346,7 @@ func TestSummaryCompliance(t *testing.T) {
 		},
 	}
 	svc := NewService(store, newCipher(t))
-	sum, err := svc.Summary(context.Background())
+	sum, err := svc.Summary(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

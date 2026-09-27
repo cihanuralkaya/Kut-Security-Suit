@@ -84,7 +84,7 @@ func TestLatestComplianceByDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m, err := s.LatestComplianceByDevice(ctx)
+	m, err := s.LatestComplianceByDevice(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}

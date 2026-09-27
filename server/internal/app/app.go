@@ -992,7 +992,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				return
 			case <-t.C:
 			}
-			sum, err := readSvc.Summary(ctx)
+			sum, err := readSvc.Summary(ctx, cfg.TenantID) // periyodik dağıtım raporu: dağıtımın kiracısıyla tutarlı (boş → filo-geneli)
 			if err != nil {
 				continue
 			}

@@ -912,7 +912,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "geçersiz metrics token")
 		return
 	}
-	sum, err := s.reader.Summary(r.Context())
+	sum, err := s.reader.Summary(r.Context(), "") // operatör metrikleri: filo-geneli (kiracı-üstü), token-yetkili
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "özet okunamadı")
 		return
@@ -1984,8 +1984,12 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request, adminI
 	writeJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 
-func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request, _ string) {
-	summary, err := s.reader.Summary(r.Context())
+func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	summary, err := s.reader.Summary(r.Context(), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2373,7 +2377,7 @@ func (s *Server) handleHunt(w http.ResponseWriter, r *http.Request, adminID stri
 
 // buildReportData, güvenlik-duruş raporu verisini adminread + metrics'ten toplar.
 func (s *Server) buildReportData(r *http.Request) (report.Data, error) {
-	sum, err := s.reader.Summary(r.Context())
+	sum, err := s.reader.Summary(r.Context(), "") // TODO: rapor üretimi kendi diliminde çağıranın kiracısıyla daraltılacak
 	if err != nil {
 		return report.Data{}, err
 	}

@@ -110,15 +110,18 @@ type Store interface {
 	// boş ("") ise ilgili filtre uygulanmaz (opsiyonel sunucu-tarafı filtre).
 	ListEvents(ctx context.Context, deviceID, severity, category string, limit int) ([]EventRow, error)
 	// DeviceStatusCounts, cihaz durumuna göre (status -> adet) sayımları döner.
-	DeviceStatusCounts(ctx context.Context) (map[string]int, error)
+	// tenantID boş değilse yalnız o kiracının cihazları (çok-tenant izolasyonu).
+	DeviceStatusCounts(ctx context.Context, tenantID string) (map[string]int, error)
 	// EventSeverityCounts, since'ten bu yana olayları önem seviyesine göre sayar.
-	EventSeverityCounts(ctx context.Context, since time.Time) (map[string]int, error)
+	// tenantID boş değilse yalnız o kiracının olayları (çok-tenant izolasyonu).
+	EventSeverityCounts(ctx context.Context, since time.Time, tenantID string) (map[string]int, error)
 	// EventCategoryCounts, since'ten bu yana olayları kategoriye göre sayar.
-	EventCategoryCounts(ctx context.Context, since time.Time) (map[string]int, error)
+	// tenantID boş değilse yalnız o kiracının olayları (çok-tenant izolasyonu).
+	EventCategoryCounts(ctx context.Context, since time.Time, tenantID string) (map[string]int, error)
 	// LatestComplianceByDevice, uyum verisi taşıyan her cihaz için EN SON
 	// disk_encryption/firewall durumunu döner (cihaz kimliği → durum). Filo-geneli
 	// doğru uyum KPI'ı için (istemci-taraflı 200-olay penceresiyle sınırlı değil).
-	LatestComplianceByDevice(ctx context.Context) (map[string]ComplianceStatus, error)
+	LatestComplianceByDevice(ctx context.Context, tenantID string) (map[string]ComplianceStatus, error)
 	// SearchSoftware, her cihazın EN SON yazılım envanterinde adı query'yi (küçük/
 	// büyük harf duyarsız alt-dize) içeren paketleri arar; cihaz kimliği → eşleşen
 	// paket adları döner (eşleşme olmayan cihazlar dışarıda). Zafiyet müdahalesi
@@ -530,19 +533,21 @@ func promoteCanonical(dto *EventDTO) {
 // göre gruplanır; olaylar son 24 saatlik pencerede önem ve kategoriye göre
 // sayılır. "online", cihaz listesinden son görülme (< onlineWindow) üzerinden
 // hesaplanır (duruma ek, best-effort).
-func (s *Service) Summary(ctx context.Context) (SummaryDTO, error) {
+// Summary, tenantID boş değilse yalnız o kiracının cihaz/olay/uyum verisinden
+// hesaplanır (çok-tenant KPI izolasyonu; çağıran katman kiracıyı sunucu-tarafı çözer).
+func (s *Service) Summary(ctx context.Context, tenantID string) (SummaryDTO, error) {
 	now := time.Now()
 	since := now.Add(-summaryWindow)
 
-	statusCounts, err := s.store.DeviceStatusCounts(ctx)
+	statusCounts, err := s.store.DeviceStatusCounts(ctx, tenantID)
 	if err != nil {
 		return SummaryDTO{}, err
 	}
-	sevCounts, err := s.store.EventSeverityCounts(ctx, since)
+	sevCounts, err := s.store.EventSeverityCounts(ctx, since, tenantID)
 	if err != nil {
 		return SummaryDTO{}, err
 	}
-	catCounts, err := s.store.EventCategoryCounts(ctx, since)
+	catCounts, err := s.store.EventCategoryCounts(ctx, since, tenantID)
 	if err != nil {
 		return SummaryDTO{}, err
 	}
@@ -553,7 +558,7 @@ func (s *Service) Summary(ctx context.Context) (SummaryDTO, error) {
 	}
 
 	// online: cihaz listesinden son görülmesi eşiğin altında olanları say.
-	rows, err := s.store.ListDevices(ctx, clampLimit(0), "") // TODO: bu agrega yolu kendi diliminde kiracı-kapsamlı yapılacak
+	rows, err := s.store.ListDevices(ctx, clampLimit(0), tenantID)
 	if err != nil {
 		return SummaryDTO{}, err
 	}
@@ -586,7 +591,7 @@ func (s *Service) Summary(ctx context.Context) (SummaryDTO, error) {
 	}
 
 	// Filo-geneli uyum: her cihazın en son durumundan kapalı/uyumsuz sayıları.
-	comp, err := s.store.LatestComplianceByDevice(ctx)
+	comp, err := s.store.LatestComplianceByDevice(ctx, tenantID)
 	if err != nil {
 		return SummaryDTO{}, err
 	}
@@ -839,7 +844,7 @@ func (s *Service) AdminBehavior(ctx context.Context, limit int) (ueba.Report, er
 // veri taşıyan cihaz) hesaplanıp çerçeve skorlarına çevrilir. Mevcut compliance
 // verisini (LatestComplianceByDevice) kullanır; yeni depo sorgusu yok.
 func (s *Service) FrameworkCompliance(ctx context.Context) (complianceframework.Report, error) {
-	comp, err := s.store.LatestComplianceByDevice(ctx)
+	comp, err := s.store.LatestComplianceByDevice(ctx, "") // TODO: çerçeve-uyum agregası kendi diliminde kiracı-kapsamlı yapılacak
 	if err != nil {
 		return complianceframework.Report{}, err
 	}
@@ -897,7 +902,7 @@ func (s *Service) FleetRisk(ctx context.Context) (FleetRiskDTO, error) {
 	if err != nil {
 		return FleetRiskDTO{}, err
 	}
-	comp, err := s.store.LatestComplianceByDevice(ctx)
+	comp, err := s.store.LatestComplianceByDevice(ctx, "") // TODO: filo-risk agregası kendi diliminde kiracı-kapsamlı yapılacak
 	if err != nil {
 		return FleetRiskDTO{}, err
 	}
