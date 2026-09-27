@@ -41,11 +41,16 @@ const (
 	HasHash   Relation = "has_hash"  // file→hash
 )
 
-// Node, graf düğümüdür (tür + kimlik). Karşılaştırılabilir olduğundan map anahtarı
-// olarak kullanılır.
+// Node, graf düğümüdür (tür + kimlik + kiracı). Karşılaştırılabilir olduğundan map
+// anahtarı olarak kullanılır. Tenant, çok-kiracılı izolasyonu SAĞLAR: farklı kiracıların
+// aynı kimlikli (ör. paylaşılan IP/hash) düğümleri AYRI anahtarlardır → kenarlar kiracı
+// sınırını geçemez ve bir (tenant,kind,id) sorgusu yalnız o kiracının komşularını döner.
+// Tenant boşsa tek-kiracılı/eski davranış (tüm düğümler aynı kiracıda). JSON'da gizlidir
+// (API şekli {Kind,ID} korunur) — kiracı yanıtta sızdırılmaz.
 type Node struct {
-	Kind Kind
-	ID   string
+	Kind   Kind
+	ID     string
+	Tenant string `json:"-"`
 }
 
 // Edge, iki düğüm arasındaki gözlenmiş ilişkidir; ilk/son görülme ve gözlem sayısı
@@ -138,6 +143,77 @@ func (g *Graph) Sources(target Node, rel Relation) []Node {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return collect(g.in[target], rel, func(e *Edge) Node { return e.From })
+}
+
+// TargetsAny, (kind,id) eşleşen TÜM kiracı-düğümlerinin hedeflerini birleştirir —
+// YALNIZ platform admini (kiracısız) için. Kiracıya bağlı çağıran Targets (kiracı-anahtarlı
+// Node) kullanmalıdır; bu, kiracı sınırını AŞAR (kasıtlı: platform tümünü görür).
+func (g *Graph) TargetsAny(kind Kind, id string, rel Relation) []Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return collectAny(g.out, kind, id, rel, func(e *Edge) Node { return e.To })
+}
+
+// SourcesAny, (kind,id) eşleşen TÜM kiracı-düğümlerinin kaynaklarını birleştirir —
+// YALNIZ platform admini için (kiracı sınırını aşar).
+func (g *Graph) SourcesAny(kind Kind, id string, rel Relation) []Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return collectAny(g.in, kind, id, rel, func(e *Edge) Node { return e.From })
+}
+
+// FeaturesAny, (kind,id) eşleşen TÜM kiracı-düğümlerinin yapısal özelliklerini toplar
+// — YALNIZ platform admini için.
+func (g *Graph) FeaturesAny(kind Kind, id string, rareThreshold int) (fanOut, fanIn, rareEdges int) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	for n, m := range g.out {
+		if n.Kind != kind || n.ID != id {
+			continue
+		}
+		for _, e := range m {
+			fanOut++
+			if e.Count <= rareThreshold {
+				rareEdges++
+			}
+		}
+	}
+	for n, m := range g.in {
+		if n.Kind != kind || n.ID != id {
+			continue
+		}
+		fanIn += len(m)
+	}
+	return
+}
+
+// collectAny, komşuluk haritasında (kind,id) eşleşen HER kiracı-düğümünün rel'e uyan
+// kenarlarını birleştirir; sonucu tekilleştirip kararlı sıralar (platform admini yolu).
+func collectAny(adj map[Node]map[edgeKey]*Edge, kind Kind, id string, rel Relation, pick func(*Edge) Node) []Node {
+	seen := map[Node]bool{}
+	var out []Node
+	for n, m := range adj {
+		if n.Kind != kind || n.ID != id {
+			continue
+		}
+		for k, e := range m {
+			if rel != "" && k.rel != rel {
+				continue
+			}
+			nn := pick(e)
+			if !seen[nn] {
+				seen[nn] = true
+				out = append(out, nn)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
 }
 
 // collect, bir komşuluk haritasından rel'e uyan kenarları toplar ve pick ile düğüme

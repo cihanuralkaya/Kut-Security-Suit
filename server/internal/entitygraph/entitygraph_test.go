@@ -5,10 +5,47 @@ import (
 	"time"
 )
 
-func dev(id string) Node  { return Node{Device, id} }
-func hash(id string) Node { return Node{Hash, id} }
-func ip(id string) Node   { return Node{IP, id} }
-func usr(id string) Node  { return Node{User, id} }
+func dev(id string) Node  { return Node{Kind: Device, ID: id} }
+func hash(id string) Node { return Node{Kind: Hash, ID: id} }
+func ip(id string) Node   { return Node{Kind: IP, ID: id} }
+func usr(id string) Node  { return Node{Kind: User, ID: id} }
+
+// Çok-kiracılı izolasyon: aynı IP'ye iki kiracının cihazı bağlansa bile, bir kiracının
+// (tenant-anahtarlı) pivotu diğer kiracının cihazını GÖRMEZ; platform (Any) birleşik görür.
+func TestPivotTenantIsolation(t *testing.T) {
+	g := New()
+	ts := time.Now()
+	shared := "8.8.8.8"
+	// t1 cihazı ve t2 cihazı AYNI IP'ye bağlanır.
+	g.Observe(Node{Kind: Device, ID: "d-acme", Tenant: "acme"}, Node{Kind: IP, ID: shared, Tenant: "acme"}, Connected, ts)
+	g.Observe(Node{Kind: Device, ID: "d-globex", Tenant: "globex"}, Node{Kind: IP, ID: shared, Tenant: "globex"}, Connected, ts)
+
+	// acme'nin IP'sinin kaynakları YALNIZ acme cihazı olmalı (globex sızmaz).
+	acme := g.Sources(Node{Kind: IP, ID: shared, Tenant: "acme"}, Connected)
+	if len(acme) != 1 || acme[0].ID != "d-acme" {
+		t.Fatalf("acme IP kaynağı yalnız d-acme olmalı: %+v", acme)
+	}
+	globex := g.Sources(Node{Kind: IP, ID: shared, Tenant: "globex"}, Connected)
+	if len(globex) != 1 || globex[0].ID != "d-globex" {
+		t.Fatalf("globex IP kaynağı yalnız d-globex olmalı: %+v", globex)
+	}
+	// Kiracısız (eski) anahtar hiçbir şey görmez (tüm düğümler kiracı-etiketli).
+	if none := g.Sources(Node{Kind: IP, ID: shared}, Connected); len(none) != 0 {
+		t.Fatalf("kiracısız anahtar kiracı-etiketli düğümleri görmemeli: %+v", none)
+	}
+	// Platform (Any) birleşik görür: her iki cihaz da.
+	all := g.SourcesAny(IP, shared, Connected)
+	if len(all) != 2 {
+		t.Fatalf("SourcesAny her iki kiracının cihazını görmeli: %+v", all)
+	}
+	// FeaturesAny fan-in = 2 (iki cihaz), tenant-scoped fan-in = 1.
+	if _, fanIn, _ := g.Features(Node{Kind: IP, ID: shared, Tenant: "acme"}, 1); fanIn != 1 {
+		t.Fatalf("acme fan-in 1 olmalı: %d", fanIn)
+	}
+	if _, fanIn, _ := g.FeaturesAny(IP, shared, 1); fanIn != 2 {
+		t.Fatalf("Any fan-in 2 olmalı: %d", fanIn)
+	}
+}
 
 func TestPivotHashAcrossDevices(t *testing.T) {
 	g := New()
