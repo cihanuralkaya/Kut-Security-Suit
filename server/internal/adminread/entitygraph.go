@@ -142,8 +142,9 @@ func BuildEntityGraph(deviceID string, events []EventDTO) EntityGraphDTO {
 }
 
 // DeviceEntityGraph, bir cihazın son olaylarından varlık grafiğini oluşturur.
-func (s *Service) DeviceEntityGraph(ctx context.Context, deviceID string, limit int) (EntityGraphDTO, error) {
-	events, err := s.Events(ctx, deviceID, "", "", limit)
+// tenantID boş değilse olaylar o kiracıyla daraltılır (çok-tenant okuma izolasyonu).
+func (s *Service) DeviceEntityGraph(ctx context.Context, deviceID string, limit int, tenantID string) (EntityGraphDTO, error) {
+	events, err := s.Events(ctx, deviceID, "", "", limit, tenantID)
 	if err != nil {
 		return EntityGraphDTO{}, err
 	}

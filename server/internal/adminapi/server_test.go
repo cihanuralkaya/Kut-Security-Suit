@@ -1345,6 +1345,42 @@ func TestHuntQueryScopedToCallerTenant(t *testing.T) {
 	}
 }
 
+// /api/events liste yolu da çağıranın kiracısıyla daraltılmalı (QueryEvents'e
+// yönlendirilir). Kiracıya bağlı admin → kendi kiracısı; platform admini → boş.
+func TestListEventsScopedToCallerTenant(t *testing.T) {
+	ts, store := setup(t)
+	defer ts.Close()
+
+	getEventsAs := func(email string) {
+		_, lb := post(t, ts.URL+"/api/login", "", map[string]string{"email": email, "password": "secret"})
+		tok := lb["token"]
+		if tok == "" {
+			t.Fatalf("%s token alınamadı", email)
+		}
+		resp, err := authedGET(t, ts.URL+"/api/events", tok)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s /api/events beklenen 200, dönen %d", email, resp.StatusCode)
+		}
+	}
+
+	addAdmin(t, store, "acme-op", "acme@x", "secret", admin.RoleOperator)
+	store.adminTen["acme-op"] = "acme"
+	getEventsAs("acme@x")
+	if store.lastEvtF.TenantID != "acme" {
+		t.Fatalf("kiracı-admin liste yolu 'acme' ile daraltılmalıydı, dönen: %q", store.lastEvtF.TenantID)
+	}
+
+	addAdmin(t, store, "plat-op", "plat@x", "secret", admin.RoleOperator)
+	getEventsAs("plat@x")
+	if store.lastEvtF.TenantID != "" {
+		t.Fatalf("platform-admin liste yolu daraltılmamalıydı, dönen: %q", store.lastEvtF.TenantID)
+	}
+}
+
 // Toplu eylem (#6): dry_run önizleme HİÇBİR komut kuyruğa almamalı; gerçek çağrı
 // yalnız etiketli cihazlara uygulanmalı.
 func TestBulkActionDryRunAndApply(t *testing.T) {

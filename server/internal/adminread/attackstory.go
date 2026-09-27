@@ -152,8 +152,10 @@ func sevRankValue(s string) int {
 }
 
 // DeviceAttackStory, bir cihazın son olaylarından saldırı hikâyesini oluşturur.
-func (s *Service) DeviceAttackStory(ctx context.Context, deviceID string, limit int) (AttackStoryDTO, error) {
-	events, err := s.Events(ctx, deviceID, "", "", limit)
+// tenantID boş değilse olaylar o kiracıyla daraltılır (çok-tenant okuma izolasyonu;
+// çağıran kiracıya bağlıysa başka kiracının cihaz hikâyesi boş döner).
+func (s *Service) DeviceAttackStory(ctx context.Context, deviceID string, limit int, tenantID string) (AttackStoryDTO, error) {
+	events, err := s.Events(ctx, deviceID, "", "", limit, tenantID)
 	if err != nil {
 		return AttackStoryDTO{}, err
 	}
