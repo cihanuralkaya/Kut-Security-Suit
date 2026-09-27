@@ -49,17 +49,19 @@ func TestTenantReadIsolationEndToEnd(t *testing.T) {
 	defer ts.Close()
 
 	// --- Yöneticileri tohumla: iki kiracı-admini + bir platform admini (kiracısız) ---
-	mkAdmin := func(email, tenant string) {
+	mkAdmin := func(email, tenant string) string {
 		hash, err := security.HashPassword("parola12")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := backend.CreateAdmin(ctx, email, hash, admin.RoleAdmin, tenant); err != nil {
+		id, err := backend.CreateAdmin(ctx, email, hash, admin.RoleAdmin, tenant)
+		if err != nil {
 			t.Fatal(err)
 		}
+		return id
 	}
-	mkAdmin("acme@x", "acme")
-	mkAdmin("globex@x", "globex")
+	acmeAdminID := mkAdmin("acme@x", "acme")
+	globexAdminID := mkAdmin("globex@x", "globex")
 	mkAdmin("platform@x", "") // kiracısız → platform admini (tümünü görür)
 
 	// --- Cihaz + olay + incident tohumla (kiracı başına) ---
@@ -80,6 +82,27 @@ func TestTenantReadIsolationEndToEnd(t *testing.T) {
 	}
 	seed("d-acme", "acme", "HIGH", "acme-only-event")
 	seed("d-globex", "globex", "CRITICAL", "globex-only-event")
+
+	// --- Ek yüzeyler: yazılım envanteri, enrollment token, bekleyen WIPE, denetim,
+	// kayıtlı arama (kiracı başına) ---
+	mustEvt := func(dev, tenant, details string) {
+		if _, err := backend.SaveEvents(ctx, dev, []model.Event{
+			{TenantID: tenant, Category: "INVENTORY", Severity: "INFO", Message: "inv", OccurredAt: time.Now(), Details: details},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustEvt("d-acme", "acme", `{"software":["Chrome 120"]}`)
+	mustEvt("d-globex", "globex", `{"software":["Chrome 120"]}`)
+	exp := time.Now().Add(time.Hour)
+	_ = backend.SaveEnrollmentToken(ctx, []byte("tok-acme"), acmeAdminID, "acme", exp)
+	_ = backend.SaveEnrollmentToken(ctx, []byte("tok-globex"), globexAdminID, "globex", exp)
+	_ = backend.SavePendingWipe(ctx, "d-acme", acmeAdminID, "sebep")
+	_ = backend.SavePendingWipe(ctx, "d-globex", globexAdminID, "sebep")
+	_ = backend.WriteAudit(ctx, acmeAdminID, "LOGIN", "session", "")
+	_ = backend.WriteAudit(ctx, globexAdminID, "LOGIN", "session", "")
+	_, _ = backend.SaveSearch(ctx, "acme-hunt", `{"mode":"query"}`, acmeAdminID)
+	_, _ = backend.SaveSearch(ctx, "globex-hunt", `{"mode":"query"}`, globexAdminID)
 
 	login := func(email string) string {
 		b, _ := json.Marshal(map[string]string{"email": email, "password": "parola12"})
@@ -123,8 +146,9 @@ func TestTenantReadIsolationEndToEnd(t *testing.T) {
 
 	// --- acme yöneticisi: YALNIZ acme verisi ---
 	acme := login("acme@x")
-	if n := countList(getJSON(acme, "/api/events"), "events"); n != 1 {
-		t.Fatalf("acme /api/events yalnız kendi olayını görmeli, dönen: %d", n)
+	// acme'nin 2 olayı var (SECURITY + INVENTORY); ikisi de acme kiracısında.
+	if n := countList(getJSON(acme, "/api/events"), "events"); n != 2 {
+		t.Fatalf("acme /api/events yalnız kendi olaylarını görmeli (2), dönen: %d", n)
 	}
 	if n := countList(getJSON(acme, "/api/devices"), "devices"); n != 1 {
 		t.Fatalf("acme /api/devices yalnız kendi cihazını görmeli, dönen: %d", n)
@@ -162,8 +186,9 @@ func TestTenantReadIsolationEndToEnd(t *testing.T) {
 	if n := countList(getJSON(plat, "/api/devices"), "devices"); n != 2 {
 		t.Fatalf("platform admini tüm cihazları görmeli, dönen: %d", n)
 	}
-	if n := countList(getJSON(plat, "/api/events"), "events"); n != 2 {
-		t.Fatalf("platform admini tüm olayları görmeli, dönen: %d", n)
+	// Toplam 4 olay (kiracı başına SECURITY + INVENTORY).
+	if n := countList(getJSON(plat, "/api/events"), "events"); n != 4 {
+		t.Fatalf("platform admini tüm olayları görmeli (4), dönen: %d", n)
 	}
 	if n := countList(getJSON(plat, "/api/incidents"), "incidents"); n != 2 {
 		t.Fatalf("platform admini tüm incident'leri görmeli, dönen: %d", n)
@@ -215,5 +240,26 @@ func TestTenantReadIsolationEndToEnd(t *testing.T) {
 	// Platform admini vakayı görebilmeli.
 	if n := countList(getJSON(plat, "/api/cases"), "cases"); n != 1 {
 		t.Fatalf("platform admini vakayı görmeli, dönen: %d", n)
+	}
+
+	// --- Ek okuma yüzeyleri: her biri kiracıya daraltılmalı (acme=1, platform=2) ---
+	type surface struct {
+		path string
+		key  string
+	}
+	surfaces := []surface{
+		{"/api/software?q=chrome", "matches"},
+		{"/api/enrollment-tokens", "tokens"},
+		{"/api/devices/pending-wipes", "pending_wipes"},
+		{"/api/audit", "audit"},
+		{"/api/hunt/saved", "searches"},
+	}
+	for _, s := range surfaces {
+		if n := countList(getJSON(acme, s.path), s.key); n != 1 {
+			t.Fatalf("acme %s yalnız kendi kaydını görmeli, dönen: %d", s.path, n)
+		}
+		if n := countList(getJSON(plat, s.path), s.key); n != 2 {
+			t.Fatalf("platform admini %s tümünü görmeli, dönen: %d", s.path, n)
+		}
 	}
 }
