@@ -975,17 +975,20 @@ func (s *Store) ListEvents(_ context.Context, deviceID, severity, category strin
 	return out, nil
 }
 
-func (s *Store) DeviceStatusCounts(_ context.Context) (map[string]int, error) {
+func (s *Store) DeviceStatusCounts(_ context.Context, tenantID string) (map[string]int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := map[string]int{}
 	for _, d := range s.devices {
+		if tenantID != "" && d.tenant != tenantID { // çok-tenant izolasyonu
+			continue
+		}
 		out[d.status]++
 	}
 	return out, nil
 }
 
-func (s *Store) EventSeverityCounts(_ context.Context, since time.Time) (map[string]int, error) {
+func (s *Store) EventSeverityCounts(_ context.Context, since time.Time, tenantID string) (map[string]int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := map[string]int{}
@@ -993,17 +996,23 @@ func (s *Store) EventSeverityCounts(_ context.Context, since time.Time) (map[str
 		if e.createdAt.Before(since) {
 			continue
 		}
+		if tenantID != "" && e.tenant != tenantID { // çok-tenant izolasyonu
+			continue
+		}
 		out[e.severity]++
 	}
 	return out, nil
 }
 
-func (s *Store) EventCategoryCounts(_ context.Context, since time.Time) (map[string]int, error) {
+func (s *Store) EventCategoryCounts(_ context.Context, since time.Time, tenantID string) (map[string]int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := map[string]int{}
 	for _, e := range s.events {
 		if e.createdAt.Before(since) {
+			continue
+		}
+		if tenantID != "" && e.tenant != tenantID { // çok-tenant izolasyonu
 			continue
 		}
 		out[e.category]++
@@ -1014,13 +1023,16 @@ func (s *Store) EventCategoryCounts(_ context.Context, since time.Time) (map[str
 // LatestComplianceByDevice, uyum verisi taşıyan her cihazın EN SON
 // disk_encryption/firewall durumunu döner. Olaylar yeniden-eskiye gezilir;
 // cihaz başına ilk görülen uyum-olayı en güncel kabul edilir.
-func (s *Store) LatestComplianceByDevice(_ context.Context) (map[string]adminread.ComplianceStatus, error) {
+func (s *Store) LatestComplianceByDevice(_ context.Context, tenantID string) (map[string]adminread.ComplianceStatus, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := map[string]adminread.ComplianceStatus{}
 	for i := len(s.events) - 1; i >= 0; i-- {
 		e := s.events[i]
 		if e.deviceID == "" || e.details == "" {
+			continue
+		}
+		if tenantID != "" && e.tenant != tenantID { // çok-tenant izolasyonu
 			continue
 		}
 		if _, seen := out[e.deviceID]; seen {

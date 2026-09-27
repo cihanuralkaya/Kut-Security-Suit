@@ -10,6 +10,60 @@ import (
 	"kut.corp/suite/server/internal/model"
 )
 
+// Özet/KPI agregatları kiracıya göre daraltılmalı: cihaz durumu, olay önem/kategori
+// sayımları ve uyum yalnız verilen kiracının verisinden hesaplanmalı; boş kiracı = tümü.
+func TestSummaryAggregatesTenantScoped(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	base := time.Now()
+
+	// İki kiracıya cihaz + olay.
+	_, _ = s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{PreferredDeviceID: "d-acme", TenantID: "acme"})
+	_, _ = s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{PreferredDeviceID: "d-globex", TenantID: "globex"})
+	_, _ = s.SaveEvents(ctx, "d-acme", []model.Event{
+		{TenantID: "acme", Category: "SECURITY", Severity: "HIGH", Message: "a", OccurredAt: base, Details: `{"disk_encryption":"off","firewall":"on"}`},
+	})
+	_, _ = s.SaveEvents(ctx, "d-globex", []model.Event{
+		{TenantID: "globex", Category: "SYSTEM", Severity: "INFO", Message: "g", OccurredAt: base, Details: `{"disk_encryption":"on","firewall":"on"}`},
+	})
+
+	since := base.Add(-time.Hour)
+
+	// Cihaz durumu: acme yalnız kendi cihazını sayar.
+	st, _ := s.DeviceStatusCounts(ctx, "acme")
+	if total := st["ACTIVE"]; total != 1 {
+		t.Fatalf("acme yalnız 1 ACTIVE cihaz saymalı: %+v", st)
+	}
+	// Olay önem: acme yalnız HIGH görür, INFO görmez.
+	sev, _ := s.EventSeverityCounts(ctx, since, "acme")
+	if sev["HIGH"] != 1 || sev["INFO"] != 0 {
+		t.Fatalf("acme severity yalnız kendi olayını saymalı: %+v", sev)
+	}
+	// Olay kategori: acme yalnız SECURITY.
+	cat, _ := s.EventCategoryCounts(ctx, since, "acme")
+	if cat["SECURITY"] != 1 || cat["SYSTEM"] != 0 {
+		t.Fatalf("acme category yalnız kendi olayını saymalı: %+v", cat)
+	}
+	// Uyum: acme yalnız kendi cihazının uyum kaydını görür.
+	comp, _ := s.LatestComplianceByDevice(ctx, "acme")
+	if len(comp) != 1 {
+		t.Fatalf("acme uyumu yalnız kendi cihazını içermeli: %+v", comp)
+	}
+	if _, ok := comp["d-acme"]; !ok {
+		t.Fatalf("acme uyum haritası d-acme içermeli: %+v", comp)
+	}
+
+	// Boş kiracı = tümü.
+	allSt, _ := s.DeviceStatusCounts(ctx, "")
+	if allSt["ACTIVE"] != 2 {
+		t.Fatalf("kiracısız durum sayımı tüm cihazları görmeli: %+v", allSt)
+	}
+	allSev, _ := s.EventSeverityCounts(ctx, since, "")
+	if allSev["HIGH"] != 1 || allSev["INFO"] != 1 {
+		t.Fatalf("kiracısız severity tümünü görmeli: %+v", allSev)
+	}
+}
+
 // SaveEvents: en yüksek Sequence'ı döner; olayları saklar (ListEvents ile görülür).
 func TestSaveEventsReturnsMaxSequence(t *testing.T) {
 	ctx := context.Background()
@@ -146,17 +200,17 @@ func TestEventSeverityAndCategoryCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sev, _ := s.EventSeverityCounts(ctx, now.Add(-time.Hour))
+	sev, _ := s.EventSeverityCounts(ctx, now.Add(-time.Hour), "")
 	if sev["HIGH"] != 2 || sev["INFO"] != 1 {
 		t.Fatalf("severity sayımı hatalı: %+v", sev)
 	}
-	cat, _ := s.EventCategoryCounts(ctx, now.Add(-time.Hour))
+	cat, _ := s.EventCategoryCounts(ctx, now.Add(-time.Hour), "")
 	if cat["SECURITY"] != 2 || cat["SYSTEM"] != 1 {
 		t.Fatalf("category sayımı hatalı: %+v", cat)
 	}
 
 	// since gelecekte → boş.
-	empty, _ := s.EventSeverityCounts(ctx, now.Add(time.Hour))
+	empty, _ := s.EventSeverityCounts(ctx, now.Add(time.Hour), "")
 	if len(empty) != 0 {
 		t.Fatalf("since gelecekte olduğunda sayım boş olmalıydı: %+v", empty)
 	}
@@ -178,7 +232,7 @@ func TestDeviceStatusCounts(t *testing.T) {
 	}
 	_ = a // ACTIVE kalır
 
-	counts, err := s.DeviceStatusCounts(ctx)
+	counts, err := s.DeviceStatusCounts(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}

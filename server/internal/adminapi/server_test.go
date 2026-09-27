@@ -303,14 +303,17 @@ func (m *memStore) ListEvents(_ context.Context, deviceID, severity, category st
 	}
 	return out, nil
 }
-func (m *memStore) DeviceStatusCounts(_ context.Context) (map[string]int, error) {
+func (m *memStore) DeviceStatusCounts(_ context.Context, tenantID string) (map[string]int, error) {
 	out := map[string]int{}
 	for _, d := range m.devRows {
+		if tenantID != "" && d.TenantID != tenantID {
+			continue
+		}
 		out[d.Status]++
 	}
 	return out, nil
 }
-func (m *memStore) EventSeverityCounts(_ context.Context, since time.Time) (map[string]int, error) {
+func (m *memStore) EventSeverityCounts(_ context.Context, since time.Time, _ string) (map[string]int, error) {
 	out := map[string]int{}
 	for _, e := range m.evtRows {
 		if e.CreatedAt.Before(since) {
@@ -320,7 +323,7 @@ func (m *memStore) EventSeverityCounts(_ context.Context, since time.Time) (map[
 	}
 	return out, nil
 }
-func (m *memStore) EventCategoryCounts(_ context.Context, since time.Time) (map[string]int, error) {
+func (m *memStore) EventCategoryCounts(_ context.Context, since time.Time, _ string) (map[string]int, error) {
 	out := map[string]int{}
 	for _, e := range m.evtRows {
 		if e.CreatedAt.Before(since) {
@@ -330,7 +333,7 @@ func (m *memStore) EventCategoryCounts(_ context.Context, since time.Time) (map[
 	}
 	return out, nil
 }
-func (m *memStore) LatestComplianceByDevice(_ context.Context) (map[string]adminread.ComplianceStatus, error) {
+func (m *memStore) LatestComplianceByDevice(_ context.Context, _ string) (map[string]adminread.ComplianceStatus, error) {
 	out := map[string]adminread.ComplianceStatus{}
 	for i := len(m.evtRows) - 1; i >= 0; i-- {
 		e := m.evtRows[i]

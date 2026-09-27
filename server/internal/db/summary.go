@@ -11,9 +11,10 @@ import (
 )
 
 // DeviceStatusCounts, cihazları durumuna göre gruplayıp (status -> adet) döner.
-func (s *Store) DeviceStatusCounts(ctx context.Context) (map[string]int, error) {
-	const q = `SELECT status::text, count(*) FROM devices GROUP BY status`
-	rows, err := s.pool.Query(ctx, q)
+// tenantID boş değilse yalnız o kiracının cihazları sayılır (çok-tenant izolasyonu).
+func (s *Store) DeviceStatusCounts(ctx context.Context, tenantID string) (map[string]int, error) {
+	const q = `SELECT status::text, count(*) FROM devices WHERE ($1 = '' OR tenant_id = $1) GROUP BY status`
+	rows, err := s.pool.Query(ctx, q, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: cihaz durum sayımı: %w", err)
 	}
@@ -32,28 +33,31 @@ func (s *Store) DeviceStatusCounts(ctx context.Context) (map[string]int, error) 
 }
 
 // EventSeverityCounts, since'ten bu yana olayları önem seviyesine göre sayar.
-func (s *Store) EventSeverityCounts(ctx context.Context, since time.Time) (map[string]int, error) {
-	const q = `SELECT severity::text, count(*) FROM event_logs WHERE created_at >= $1 GROUP BY severity`
-	return s.eventCounts(ctx, q, since, "olay önem sayımı")
+// tenantID boş değilse yalnız o kiracının olayları sayılır (çok-tenant izolasyonu).
+func (s *Store) EventSeverityCounts(ctx context.Context, since time.Time, tenantID string) (map[string]int, error) {
+	const q = `SELECT severity::text, count(*) FROM event_logs WHERE created_at >= $1 AND ($2 = '' OR tenant_id = $2) GROUP BY severity`
+	return s.eventCounts(ctx, q, since, tenantID, "olay önem sayımı")
 }
 
 // EventCategoryCounts, since'ten bu yana olayları kategoriye göre sayar.
-func (s *Store) EventCategoryCounts(ctx context.Context, since time.Time) (map[string]int, error) {
-	const q = `SELECT category::text, count(*) FROM event_logs WHERE created_at >= $1 GROUP BY category`
-	return s.eventCounts(ctx, q, since, "olay kategori sayımı")
+// tenantID boş değilse yalnız o kiracının olayları sayılır (çok-tenant izolasyonu).
+func (s *Store) EventCategoryCounts(ctx context.Context, since time.Time, tenantID string) (map[string]int, error) {
+	const q = `SELECT category::text, count(*) FROM event_logs WHERE created_at >= $1 AND ($2 = '' OR tenant_id = $2) GROUP BY category`
+	return s.eventCounts(ctx, q, since, tenantID, "olay kategori sayımı")
 }
 
 // LatestComplianceByDevice, uyum verisi (disk_encryption/firewall) taşıyan her
 // cihazın EN SON durumunu döner. DISTINCT ON ile cihaz başına en yeni uyum-olayı
 // seçilir; JSONB alanları metne çıkarılır.
-func (s *Store) LatestComplianceByDevice(ctx context.Context) (map[string]adminread.ComplianceStatus, error) {
+func (s *Store) LatestComplianceByDevice(ctx context.Context, tenantID string) (map[string]adminread.ComplianceStatus, error) {
 	const q = `
 		SELECT DISTINCT ON (device_id) device_id::text,
 		       COALESCE(details->>'disk_encryption',''), COALESCE(details->>'firewall','')
 		  FROM event_logs
-		 WHERE details ? 'disk_encryption' OR details ? 'firewall'
+		 WHERE (details ? 'disk_encryption' OR details ? 'firewall')
+		   AND ($1 = '' OR tenant_id = $1)
 		 ORDER BY device_id, created_at DESC`
-	rows, err := s.pool.Query(ctx, q)
+	rows, err := s.pool.Query(ctx, q, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: uyum durumu sorgusu: %w", err)
 	}
@@ -139,9 +143,10 @@ func (s *Store) LatestSoftwareByDevice(ctx context.Context) (map[string][]string
 	return out, rows.Err()
 }
 
-// eventCounts, tek anahtar+adet dönen GROUP BY sorgularını çalıştırır.
-func (s *Store) eventCounts(ctx context.Context, q string, since time.Time, what string) (map[string]int, error) {
-	rows, err := s.pool.Query(ctx, q, since)
+// eventCounts, tek anahtar+adet dönen GROUP BY sorgularını çalıştırır ($1=since,
+// $2=tenantID).
+func (s *Store) eventCounts(ctx context.Context, q string, since time.Time, tenantID, what string) (map[string]int, error) {
+	rows, err := s.pool.Query(ctx, q, since, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: %s: %w", what, err)
 	}
