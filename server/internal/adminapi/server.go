@@ -2209,11 +2209,24 @@ func (s *Server) handleMSPDeactivateCustomer(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"deactivated": true})
 }
 
+// scopeTenant, çağıran yöneticinin kiracısını bir EventFilter'a uygular (okuma
+// izolasyonu). Kiracı SUNUCU-TARAFI çözülür (kimlik-doğrulanmış adminID'den, istekten
+// DEĞİL): platform admini (boş kiracı) tüm kiracıları görür, kiracıya bağlı admin yalnız
+// kendi kiracısını. Çözümleme hatası → fail-closed (okuma reddedilir, sızıntı yerine 500).
+func (s *Server) scopeTenant(ctx context.Context, adminID string, f *adminread.EventFilter) error {
+	t, err := s.adminSvc.AdminTenant(ctx, adminID)
+	if err != nil {
+		return err
+	}
+	f.TenantID = t
+	return nil
+}
+
 // handleReplayDetection, EVENT REPLAY (§19): aday bir tespit kuralını (ya da mevcut
 // kural setini) zaman-pencereli GEÇMİŞ olaylara uygular ve "bu kural geçmişte kaç olayı
 // yakalardı?" raporunu döner. Kuralı üretime almadan önce etkisini ölçmek için. Salt-okuma.
 // rules verilmezse mevcut motor kuralları kullanılır (mevcut setin geçmiş kapsamı).
-func (s *Server) handleReplayDetection(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleReplayDetection(w http.ResponseWriter, r *http.Request, adminID string) {
 	var req struct {
 		Rules           []detect.Rule `json:"rules"` // aday kural(lar); boşsa mevcut set
 		DeviceID        string        `json:"device_id"`
@@ -2241,6 +2254,9 @@ func (s *Server) handleReplayDetection(w http.ResponseWriter, r *http.Request, _
 			f.Until = t
 		}
 	}
+	if respondErr(w, s.scopeTenant(r.Context(), adminID, &f)) {
+		return
+	}
 	rules := req.Rules
 	if len(rules) == 0 {
 		rules = s.detector.Load().Rules() // aday verilmediyse mevcut seti geçmişe uygula
@@ -2256,7 +2272,7 @@ func (s *Server) handleReplayDetection(w http.ResponseWriter, r *http.Request, _
 // "rules" ise mevcut tespit motoru geçmiş olaylara UYGULANIR ("yeni kuralla eski
 // olayları tarama" — bir gösterge sonradan öğrenildiğinde "zaten vurulduk mu?"),
 // "query" ise zaman-pencereli + alan-filtreli arama sonuçlarını döner. Salt-okunur.
-func (s *Server) handleHunt(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleHunt(w http.ResponseWriter, r *http.Request, adminID string) {
 	var req struct {
 		Mode            string `json:"mode"` // "rules" | "query"
 		DeviceID        string `json:"device_id"`
@@ -2286,6 +2302,9 @@ func (s *Server) handleHunt(w http.ResponseWriter, r *http.Request, _ string) {
 		if t, err := time.Parse(time.RFC3339, req.Until); err == nil {
 			f.Until = t
 		}
+	}
+	if respondErr(w, s.scopeTenant(r.Context(), adminID, &f)) {
+		return
 	}
 	events, err := s.reader.QueryEvents(r.Context(), f)
 	if respondErr(w, err) {
