@@ -99,7 +99,7 @@ func TestTouchHeartbeatStoresOSVersion(t *testing.T) {
 	if _, err := s.TouchHeartbeat(context.Background(), id, "1.2.0", "Ubuntu 22.04", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	rows, _ := s.ListDevices(context.Background(), 10)
+	rows, _ := s.ListDevices(context.Background(), 10, "")
 	var found bool
 	for _, r := range rows {
 		if r.ID == id && r.OSVersion == "Ubuntu 22.04" && r.AgentVersion == "1.2.0" {

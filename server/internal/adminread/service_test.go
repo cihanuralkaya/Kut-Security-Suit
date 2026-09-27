@@ -33,8 +33,17 @@ func (m *memStore) ListPolicies(_ context.Context, _ int) ([]PolicyRow, error) {
 	return m.policies, nil
 }
 
-func (m *memStore) ListDevices(_ context.Context, _ int) ([]DeviceRow, error) {
-	return m.devices, nil
+func (m *memStore) ListDevices(_ context.Context, _ int, tenantID string) ([]DeviceRow, error) {
+	if tenantID == "" {
+		return m.devices, nil
+	}
+	var out []DeviceRow
+	for _, d := range m.devices {
+		if d.TenantID == tenantID {
+			out = append(out, d)
+		}
+	}
+	return out, nil
 }
 func (m *memStore) ListEvents(_ context.Context, deviceID, severity, category string, _ int) ([]EventRow, error) {
 	var out []EventRow
@@ -236,7 +245,7 @@ func TestDevicesDecrypted(t *testing.T) {
 	}}}
 	svc := NewService(store, cipher)
 
-	dtos, err := svc.Devices(context.Background(), 0)
+	dtos, err := svc.Devices(context.Background(), 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +261,7 @@ func TestDevicesBadCiphertext(t *testing.T) {
 	cipher := newCipher(t)
 	store := &memStore{devices: []DeviceRow{{ID: "d", HostnameEnc: []byte("bozuk-veri")}}}
 	svc := NewService(store, cipher)
-	dtos, _ := svc.Devices(context.Background(), 0)
+	dtos, _ := svc.Devices(context.Background(), 0, "")
 	if dtos[0].Hostname != "(çözülemedi)" {
 		t.Fatalf("bozuk şifreli veri güvenli işlenmeliydi: %q", dtos[0].Hostname)
 	}
@@ -442,7 +451,7 @@ func TestDeviceDetail(t *testing.T) {
 	}
 	svc := NewService(store, cipher)
 
-	detail, ok, err := svc.DeviceDetail(context.Background(), "dev-1")
+	detail, ok, err := svc.DeviceDetail(context.Background(), "dev-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,12 +478,34 @@ func TestDeviceDetail(t *testing.T) {
 func TestDeviceDetailNotFound(t *testing.T) {
 	store := &memStore{}
 	svc := NewService(store, newCipher(t))
-	_, ok, err := svc.DeviceDetail(context.Background(), "yok")
+	_, ok, err := svc.DeviceDetail(context.Background(), "yok", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ok {
 		t.Fatal("bulunamayan cihaz için ok=false beklenirdi")
+	}
+}
+
+// DeviceDetail çok-tenant izolasyonu: cihaz çağıranın kiracısına ait değilse cihaz
+// YOK gibi davranılmalı (çapraz-kiracı varlık sızıntısı bile olmamalı).
+func TestDeviceDetailTenantIsolation(t *testing.T) {
+	store := &memStore{devices: []DeviceRow{
+		{ID: "dev-1", Status: "ACTIVE", TenantID: "acme"},
+	}}
+	svc := NewService(store, newCipher(t))
+
+	// Doğru kiracı → görünür.
+	if _, ok, err := svc.DeviceDetail(context.Background(), "dev-1", "acme"); err != nil || !ok {
+		t.Fatalf("kendi kiracısı cihazı görmeli: ok=%v err=%v", ok, err)
+	}
+	// Başka kiracı → YOK.
+	if _, ok, err := svc.DeviceDetail(context.Background(), "dev-1", "globex"); err != nil || ok {
+		t.Fatalf("çapraz-kiracı cihaz gizlenmeli (ok=false): ok=%v err=%v", ok, err)
+	}
+	// Platform admini (boş kiracı) → görünür.
+	if _, ok, err := svc.DeviceDetail(context.Background(), "dev-1", ""); err != nil || !ok {
+		t.Fatalf("platform admini cihazı görmeli: ok=%v err=%v", ok, err)
 	}
 }
 

@@ -31,6 +31,7 @@ type DeviceRow struct {
 	HostnameEnc  []byte
 	MACEnc       []byte
 	Tags         []string
+	TenantID     string // çok-tenant: cihazın kiracısı (okuma izolasyonu; boş = atanmamış)
 }
 
 // EventRow, DB'den okunan ham olay satırıdır (şifresiz).
@@ -97,7 +98,9 @@ type PolicyRow struct {
 
 // Store, okuma sorgularının kalıcılık kaynağıdır.
 type Store interface {
-	ListDevices(ctx context.Context, limit int) ([]DeviceRow, error)
+	// ListDevices, cihazları listeler. tenantID boş değilse yalnız o kiracının
+	// cihazları döner (çok-tenant okuma izolasyonu; filtre in-query, limit doğru uygulanır).
+	ListDevices(ctx context.Context, limit int, tenantID string) ([]DeviceRow, error)
 	// QueryEvents, zaman-pencereli + alan-filtreli olay sorgusudur (retro-hunt /
 	// SIEM arama primitifi). Tüm alanlar opsiyonel; Since/Until sıfır ise sınırsız.
 	QueryEvents(ctx context.Context, f EventFilter) ([]EventRow, error)
@@ -345,8 +348,10 @@ func NewService(store Store, cipher *security.FieldCipher) *Service {
 }
 
 // Devices, cihaz listesini (deşifre edilmiş) döner.
-func (s *Service) Devices(ctx context.Context, limit int) ([]DeviceDTO, error) {
-	rows, err := s.store.ListDevices(ctx, clampLimit(limit))
+// Devices, cihaz listesini döner. tenantID boş değilse yalnız o kiracının cihazları
+// (çok-tenant okuma izolasyonu; çağıran katman kiracıyı sunucu-tarafı çözer).
+func (s *Service) Devices(ctx context.Context, limit int, tenantID string) ([]DeviceDTO, error) {
+	rows, err := s.store.ListDevices(ctx, clampLimit(limit), tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -378,10 +383,15 @@ func nonNilTags(t []string) []string {
 
 // DeviceDetail, tek bir cihazın tam görünümünü döner. Cihaz bulunamazsa
 // ok=false döner. Şifreli alanlar (hostname, mac) sunucuda deşifre edilir.
-func (s *Service) DeviceDetail(ctx context.Context, id string) (DeviceDetailDTO, bool, error) {
+// tenantID boş değilse ve cihaz o kiracıya ait değilse cihaz YOK gibi davranılır
+// (çok-tenant okuma izolasyonu; çapraz-kiracı cihaz varlığı bile sızdırılmaz).
+func (s *Service) DeviceDetail(ctx context.Context, id string, tenantID string) (DeviceDetailDTO, bool, error) {
 	row, ok, err := s.store.DeviceByID(ctx, id)
 	if err != nil || !ok {
 		return DeviceDetailDTO{}, ok, err
+	}
+	if tenantID != "" && row.TenantID != tenantID {
+		return DeviceDetailDTO{}, false, nil
 	}
 	certRows, err := s.store.CertsByDevice(ctx, id)
 	if err != nil {
@@ -543,7 +553,7 @@ func (s *Service) Summary(ctx context.Context) (SummaryDTO, error) {
 	}
 
 	// online: cihaz listesinden son görülmesi eşiğin altında olanları say.
-	rows, err := s.store.ListDevices(ctx, clampLimit(0))
+	rows, err := s.store.ListDevices(ctx, clampLimit(0), "") // TODO: bu agrega yolu kendi diliminde kiracı-kapsamlı yapılacak
 	if err != nil {
 		return SummaryDTO{}, err
 	}
@@ -624,7 +634,7 @@ type CoverageDTO struct {
 // Coverage, "kim korunuyor?" görünümünü hesaplar: çevrimiçi kapsam yüzdesi ve ajan
 // sürüm dağılımı (sürüm-kayması). Sessiz/eski ajanlar EDR dağıtımının gerçek boşluğudur.
 func (s *Service) Coverage(ctx context.Context) (CoverageDTO, error) {
-	rows, err := s.store.ListDevices(ctx, 0)
+	rows, err := s.store.ListDevices(ctx, 0, "") // TODO: coverage agregası kendi diliminde kiracı-kapsamlı yapılacak
 	if err != nil {
 		return CoverageDTO{}, err
 	}
@@ -879,7 +889,7 @@ type FleetRiskDTO struct {
 // incident'ler, uyum ihlalleri, karantina durumu) uygular ve cihaz + filo risk
 // skorlarını hesaplar. Yeni depo sorgusu kullanmaz.
 func (s *Service) FleetRisk(ctx context.Context) (FleetRiskDTO, error) {
-	devices, err := s.Devices(ctx, 0)
+	devices, err := s.Devices(ctx, 0, "") // TODO: filo-risk agregası kendi diliminde kiracı-kapsamlı yapılacak
 	if err != nil {
 		return FleetRiskDTO{}, err
 	}
@@ -1226,7 +1236,7 @@ func (s *Service) SoftwareSearch(ctx context.Context, query string) ([]SoftwareM
 		return out, nil
 	}
 	// Hostname eşlemesi için cihaz kayıtlarını yükle (şifreli → deşifre).
-	rows, err := s.store.ListDevices(ctx, clampLimit(0))
+	rows, err := s.store.ListDevices(ctx, clampLimit(0), "") // TODO: bu agrega yolu kendi diliminde kiracı-kapsamlı yapılacak
 	if err != nil {
 		return nil, err
 	}
@@ -1295,7 +1305,7 @@ type DeviceExportDTO struct {
 // hedefleyen denetim kayıtları) tek pakette toplar. Cihaz yoksa ok=false.
 // tenantID boş değilse olaylar o kiracıyla daraltılır (çok-tenant okuma izolasyonu).
 func (s *Service) ExportDevice(ctx context.Context, deviceID string, tenantID string) (DeviceExportDTO, bool, error) {
-	detail, ok, err := s.DeviceDetail(ctx, deviceID)
+	detail, ok, err := s.DeviceDetail(ctx, deviceID, tenantID)
 	if err != nil || !ok {
 		return DeviceExportDTO{}, ok, err
 	}

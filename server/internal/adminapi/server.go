@@ -1257,8 +1257,12 @@ func (s *Server) handleDeactivateAdmin(w http.ResponseWriter, r *http.Request, a
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deactivated"})
 }
 
-func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request, _ string) {
-	devices, err := s.reader.Devices(r.Context(), intParam(r, "limit"))
+func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	devices, err := s.reader.Devices(r.Context(), intParam(r, "limit"), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -1309,7 +1313,13 @@ func (s *Server) handleBulkAction(w http.ResponseWriter, r *http.Request, adminI
 		writeErr(w, http.StatusBadRequest, "geçersiz eylem")
 		return
 	}
-	devices, err := s.reader.Devices(r.Context(), 0)
+	// Toplu eylem yalnız çağıranın kiracısındaki cihazlara uygulanmalı (çapraz-kiracı
+	// eylem sızıntısını önler); kiracı sunucu-tarafı çözülür.
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	devices, err := s.reader.Devices(r.Context(), 0, tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -1866,8 +1876,12 @@ func normalizeTagsForResponse(tags []string) []string {
 	return out
 }
 
-func (s *Server) handleDeviceDetail(w http.ResponseWriter, r *http.Request, _ string) {
-	detail, ok, err := s.reader.DeviceDetail(r.Context(), r.PathValue("id"))
+func (s *Server) handleDeviceDetail(w http.ResponseWriter, r *http.Request, adminID string) {
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	detail, ok, err := s.reader.DeviceDetail(r.Context(), r.PathValue("id"), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2863,7 +2877,7 @@ func (s *Server) handleEventCase(w http.ResponseWriter, r *http.Request, adminID
 // handleVulnerabilities, her cihazın en son yazılım envanterini yüklü zafiyet
 // veri kümesiyle eşleştirir ve zafiyetli cihazları (bulgularla) döner. Salt-
 // okunur; herhangi bir kimliği doğrulanmış kullanıcı erişebilir.
-func (s *Server) handleVulnerabilities(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleVulnerabilities(w http.ResponseWriter, r *http.Request, adminID string) {
 	type deviceVulns struct {
 		DeviceID string         `json:"device_id"`
 		Hostname string         `json:"hostname"`
@@ -2876,7 +2890,11 @@ func (s *Server) handleVulnerabilities(w http.ResponseWriter, r *http.Request, _
 		if respondErr(w, err) {
 			return
 		}
-		devs, err := s.reader.Devices(r.Context(), 0)
+		tenant, err := s.callerTenant(r.Context(), adminID)
+		if respondErr(w, err) {
+			return
+		}
+		devs, err := s.reader.Devices(r.Context(), 0, tenant)
 		if respondErr(w, err) {
 			return
 		}

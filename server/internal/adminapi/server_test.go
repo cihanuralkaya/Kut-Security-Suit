@@ -278,8 +278,17 @@ func (m *memStore) ConsumeTOTPStep(_ context.Context, id string, step int64) (bo
 }
 
 // adminread.Store
-func (m *memStore) ListDevices(_ context.Context, _ int) ([]adminread.DeviceRow, error) {
-	return m.devRows, nil
+func (m *memStore) ListDevices(_ context.Context, _ int, tenantID string) ([]adminread.DeviceRow, error) {
+	if tenantID == "" {
+		return m.devRows, nil
+	}
+	var out []adminread.DeviceRow
+	for _, d := range m.devRows {
+		if d.TenantID == tenantID {
+			out = append(out, d)
+		}
+	}
+	return out, nil
 }
 func (m *memStore) ListEvents(_ context.Context, deviceID, severity, category string, _ int) ([]adminread.EventRow, error) {
 	var out []adminread.EventRow
@@ -682,6 +691,46 @@ func TestListDevicesDecrypted(t *testing.T) {
 	// Token'sız erişim reddedilmeli.
 	if r2, _ := http.Get(ts.URL + "/api/devices"); r2.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("token'sız liste 401 dönmeliydi, %d", r2.StatusCode)
+	}
+}
+
+// /api/devices liste yolu çağıranın kiracısıyla daraltılmalı: kiracıya bağlı admin
+// yalnız kendi cihazlarını, platform admini tümünü görür.
+func TestListDevicesScopedToCallerTenant(t *testing.T) {
+	ts, store := setup(t)
+	defer ts.Close()
+	store.devRows = []adminread.DeviceRow{
+		{ID: "d-acme", Status: "ACTIVE", TenantID: "acme"},
+		{ID: "d-globex", Status: "ACTIVE", TenantID: "globex"},
+		{ID: "d-none", Status: "ACTIVE"},
+	}
+
+	count := func(email string) int {
+		_, lb := post(t, ts.URL+"/api/login", "", map[string]string{"email": email, "password": "secret"})
+		tok := lb["token"]
+		resp, err := authedGET(t, ts.URL+"/api/devices", tok)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Devices []struct {
+				ID string `json:"id"`
+			} `json:"devices"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return len(out.Devices)
+	}
+
+	addAdmin(t, store, "acme-op", "acme@x", "secret", admin.RoleOperator)
+	store.adminTen["acme-op"] = "acme"
+	if n := count("acme@x"); n != 1 {
+		t.Fatalf("acme admini yalnız kendi cihazını görmeli, dönen: %d", n)
+	}
+
+	addAdmin(t, store, "plat-op", "plat@x", "secret", admin.RoleOperator)
+	if n := count("plat@x"); n != 3 {
+		t.Fatalf("platform admini tüm cihazları görmeli, dönen: %d", n)
 	}
 }
 
