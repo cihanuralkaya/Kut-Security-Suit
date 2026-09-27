@@ -506,7 +506,7 @@ func TestEventsPassthrough(t *testing.T) {
 			Details: json.RawMessage(`{"pid":42}`)},
 	}}
 	svc := NewService(store, newCipher(t))
-	dtos, err := svc.Events(context.Background(), "", "", "", 0)
+	dtos, err := svc.Events(context.Background(), "", "", "", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -529,7 +529,7 @@ func TestEventsServerSideFilter(t *testing.T) {
 	svc := NewService(store, newCipher(t))
 
 	// severity filtresi.
-	high, err := svc.Events(context.Background(), "", "HIGH", "", 0)
+	high, err := svc.Events(context.Background(), "", "HIGH", "", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -538,7 +538,7 @@ func TestEventsServerSideFilter(t *testing.T) {
 	}
 
 	// category filtresi.
-	sec, err := svc.Events(context.Background(), "", "", "SECURITY", 0)
+	sec, err := svc.Events(context.Background(), "", "", "SECURITY", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +547,7 @@ func TestEventsServerSideFilter(t *testing.T) {
 	}
 
 	// severity + category birlikte.
-	both, err := svc.Events(context.Background(), "", "INFO", "SECURITY", 0)
+	both, err := svc.Events(context.Background(), "", "INFO", "SECURITY", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}

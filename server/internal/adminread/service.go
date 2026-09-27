@@ -437,8 +437,16 @@ func (s *Service) DeviceDetail(ctx context.Context, id string) (DeviceDetailDTO,
 
 // Events, bir cihazın (deviceID boşsa tümünün) olaylarını döner. severity ve
 // category boş ("") değilse sunucu-tarafında ilgili sütuna göre filtrelenir.
-func (s *Service) Events(ctx context.Context, deviceID, severity, category string, limit int) ([]EventDTO, error) {
-	rows, err := s.store.ListEvents(ctx, deviceID, severity, category, clampLimit(limit))
+// Events, olay listesini döner. tenantID boş değilse sonuç YALNIZ o kiracıyla
+// daraltılır (çok-tenant okuma izolasyonu; çağıran katman kiracıyı sunucu-tarafı
+// çözer). Liste yolu, kiracı-farkındalı QueryEvents primitifine yönlendirilir
+// (ListEvents ile aynı süzgeç/sıra semantiği + tenant); böylece tek bir olay-okuma
+// yolu vardır ve izolasyon tek yerde uygulanır.
+func (s *Service) Events(ctx context.Context, deviceID, severity, category string, limit int, tenantID string) ([]EventDTO, error) {
+	rows, err := s.store.QueryEvents(ctx, EventFilter{
+		DeviceID: deviceID, Severity: severity, Category: category,
+		Limit: clampLimit(limit), TenantID: tenantID,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -1285,12 +1293,13 @@ type DeviceExportDTO struct {
 
 // ExportDevice, cihaz hakkında tutulan veriyi (detay + tüm olaylar + cihazı
 // hedefleyen denetim kayıtları) tek pakette toplar. Cihaz yoksa ok=false.
-func (s *Service) ExportDevice(ctx context.Context, deviceID string) (DeviceExportDTO, bool, error) {
+// tenantID boş değilse olaylar o kiracıyla daraltılır (çok-tenant okuma izolasyonu).
+func (s *Service) ExportDevice(ctx context.Context, deviceID string, tenantID string) (DeviceExportDTO, bool, error) {
 	detail, ok, err := s.DeviceDetail(ctx, deviceID)
 	if err != nil || !ok {
 		return DeviceExportDTO{}, ok, err
 	}
-	events, err := s.Events(ctx, deviceID, "", "", 0)
+	events, err := s.Events(ctx, deviceID, "", "", 0, tenantID)
 	if err != nil {
 		return DeviceExportDTO{}, false, err
 	}

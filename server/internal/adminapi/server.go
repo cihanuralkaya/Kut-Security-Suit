@@ -1893,7 +1893,11 @@ func (s *Server) handleExportDevice(w http.ResponseWriter, r *http.Request, admi
 	if respondErr(w, s.adminSvc.AuthorizeExport(r.Context(), adminID, id)) {
 		return
 	}
-	export, ok, err := s.reader.ExportDevice(r.Context(), id)
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	export, ok, err := s.reader.ExportDevice(r.Context(), id, tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -1936,9 +1940,16 @@ func eventDTOToModel(d adminread.EventDTO) model.Event {
 	}
 }
 
-func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request, adminID string) {
 	q := r.URL.Query()
-	events, err := s.reader.Events(r.Context(), q.Get("device_id"), q.Get("severity"), q.Get("category"), intParam(r, "limit"))
+	// Kiracıyı sunucu-tarafı çöz (kimlik-doğrulanmış adminID'den, istekten değil):
+	// platform admini (boş kiracı) tümünü, kiracıya bağlı admin yalnız kendi olaylarını
+	// görür. Çözümleme hatası fail-closed (okuma reddi).
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	events, err := s.reader.Events(r.Context(), q.Get("device_id"), q.Get("severity"), q.Get("category"), intParam(r, "limit"), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2222,6 +2233,13 @@ func (s *Server) scopeTenant(ctx context.Context, adminID string, f *adminread.E
 	return nil
 }
 
+// callerTenant, çağıran yöneticinin kiracısını (okuma kapsamı için) döner. Boş kiracı
+// → platform admini (tüm kiracılar). Kiracı SUNUCU-TARAFI çözülür (adminID'den, istekten
+// DEĞİL). Filtre yerine düz string alan okuma yolları (device export/graf/hikâye) kullanır.
+func (s *Server) callerTenant(ctx context.Context, adminID string) (string, error) {
+	return s.adminSvc.AdminTenant(ctx, adminID)
+}
+
 // handleReplayDetection, EVENT REPLAY (§19): aday bir tespit kuralını (ya da mevcut
 // kural setini) zaman-pencereli GEÇMİŞ olaylara uygular ve "bu kural geçmişte kaç olayı
 // yakalardı?" raporunu döner. Kuralı üretime almadan önce etkisini ölçmek için. Salt-okuma.
@@ -2404,13 +2422,17 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request, _ string) 
 
 // handleEntityGraph, bir cihazın olaylarından cihaz-merkezli varlık grafiğini
 // (süreç/alan adı/IP/dosya düğümleri) döner (IR investigation görselleştirmesi).
-func (s *Server) handleEntityGraph(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleEntityGraph(w http.ResponseWriter, r *http.Request, adminID string) {
 	id := r.PathValue("id")
 	if strings.TrimSpace(id) == "" {
 		writeErr(w, http.StatusBadRequest, "cihaz kimliği zorunlu")
 		return
 	}
-	g, err := s.reader.DeviceEntityGraph(r.Context(), id, intParam(r, "limit"))
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	g, err := s.reader.DeviceEntityGraph(r.Context(), id, intParam(r, "limit"), tenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2420,13 +2442,17 @@ func (s *Server) handleEntityGraph(w http.ResponseWriter, r *http.Request, _ str
 // handleAttackStory, bir cihazın olaylarını kill-chain aşamalarına göre sıralanmış
 // tek bir saldırı hikâyesi olarak döner (SOC investigation — yüzlerce olayı elle
 // ilişkilendirmeye gerek kalmadan).
-func (s *Server) handleAttackStory(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleAttackStory(w http.ResponseWriter, r *http.Request, adminID string) {
 	id := r.PathValue("id")
 	if strings.TrimSpace(id) == "" {
 		writeErr(w, http.StatusBadRequest, "cihaz kimliği zorunlu")
 		return
 	}
-	story, err := s.reader.DeviceAttackStory(r.Context(), id, intParam(r, "limit"))
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	story, err := s.reader.DeviceAttackStory(r.Context(), id, intParam(r, "limit"), tenant)
 	if respondErr(w, err) {
 		return
 	}

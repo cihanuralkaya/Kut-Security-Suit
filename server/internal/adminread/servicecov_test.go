@@ -521,7 +521,7 @@ func TestExportDevice(t *testing.T) {
 	}
 	svc := NewService(store, cipher)
 
-	exp, ok, err := svc.ExportDevice(context.Background(), "d1")
+	exp, ok, err := svc.ExportDevice(context.Background(), "d1", "")
 	if err != nil || !ok {
 		t.Fatalf("cihaz dışa aktarılmalıydı: ok=%v err=%v", ok, err)
 	}
@@ -541,7 +541,7 @@ func TestExportDevice(t *testing.T) {
 
 func TestExportDeviceNotFound(t *testing.T) {
 	svc := NewService(&memStore{}, newCipher(t))
-	_, ok, err := svc.ExportDevice(context.Background(), "yok")
+	_, ok, err := svc.ExportDevice(context.Background(), "yok", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,7 +765,7 @@ func TestDeviceAttackStoryWrapper(t *testing.T) {
 		{ID: "e2", DeviceID: "d1", Category: "SYSTEM", Severity: "INFO", Message: "rutin", OccurredAt: now}, // hariç
 	}}
 	svc := NewService(store, newCipher(t))
-	story, err := svc.DeviceAttackStory(context.Background(), "d1", 0)
+	story, err := svc.DeviceAttackStory(context.Background(), "d1", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -780,7 +780,7 @@ func TestDeviceEntityGraphWrapper(t *testing.T) {
 		{ID: "e1", DeviceID: "d1", Category: "NETWORK_CONN", Severity: "HIGH", OccurredAt: now, Details: []byte(`{"remote_ip":"1.2.3.4"}`)},
 	}}
 	svc := NewService(store, newCipher(t))
-	g, err := svc.DeviceEntityGraph(context.Background(), "d1", 0)
+	g, err := svc.DeviceEntityGraph(context.Background(), "d1", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
