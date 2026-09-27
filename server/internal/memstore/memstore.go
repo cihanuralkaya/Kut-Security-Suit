@@ -1271,6 +1271,19 @@ func toSavedSearchRow(rec savedSearchRec, adminsByID map[string]*adminRec) admin
 	}
 }
 
+// EventTenant, bir olayın (id) kiracısını döner (triyaj yazma-yolu kiracı kapısı).
+// Olay yoksa boş döner.
+func (s *Store) EventTenant(_ context.Context, eventID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.events {
+		if e.id == eventID {
+			return e.tenant, nil
+		}
+	}
+	return "", nil
+}
+
 func (s *Store) SetEventAck(_ context.Context, eventID, adminID, status string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

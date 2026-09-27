@@ -26,6 +26,7 @@ type memStore struct {
 	statuses     map[string]string            // deviceID -> son ayarlanan durum
 	tags         map[string][]string          // deviceID -> etiketler
 	deviceTenant map[string]string            // deviceID -> kiracı (çok-tenant aksiyon kapısı)
+	eventTenant  map[string]string            // eventID -> kiracı (çok-tenant triyaj kapısı)
 	admins       map[string]*adminEntry       // id -> yönetici
 	erased       string                       // EraseDeviceData ile silinen son deviceID
 	eventAcks    map[string]string            // eventID -> status (triyaj)
@@ -213,6 +214,9 @@ func (m *memStore) AdminTenant(_ context.Context, adminID string) (string, error
 func (m *memStore) TenantForDevice(_ context.Context, deviceID string) (string, error) {
 	return m.deviceTenant[deviceID], nil
 }
+func (m *memStore) EventTenant(_ context.Context, eventID string) (string, error) {
+	return m.eventTenant[eventID], nil
+}
 func (m *memStore) SetAdminRole(_ context.Context, id string, role Role) error {
 	if a, ok := m.admins[id]; ok {
 		a.role = role
@@ -323,6 +327,32 @@ func TestDeviceActionTenantEnforcement(t *testing.T) {
 	// Platform admini (kiracısız) HER cihaza aksiyon uygulayabilir.
 	if err := svc.LockDevice(ctx, "plat", "d-globex"); err != nil {
 		t.Fatalf("platform admini her cihaza aksiyon uygulayabilmeli: %v", err)
+	}
+}
+
+// Çok-tenant triyaj izolasyonu: kiracıya bağlı admin başka kiracının OLAYINI
+// ack/resolve/vaka yapamaz (ErrForbidden); kendi kiracısının olayını yapabilir;
+// platform admini her olayı.
+func TestEventTriageTenantEnforcement(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	store.roles["acme-adm"] = RoleOperator
+	store.admins["acme-adm"] = &adminEntry{role: RoleOperator, tenant: "acme", active: true}
+	store.roles["plat"] = RoleOperator // platform (kiracısız)
+	store.eventTenant = map[string]string{"e-acme": "acme", "e-globex": "globex"}
+	svc, _ := newService(t, store)
+
+	if err := svc.AckEvent(ctx, "acme-adm", "e-globex", "ACKNOWLEDGED"); err != ErrForbidden {
+		t.Fatalf("çapraz-kiracı ACK reddedilmeli: %v", err)
+	}
+	if err := svc.UpdateEventCase(ctx, "acme-adm", "e-globex", "biri", "not"); err != ErrForbidden {
+		t.Fatalf("çapraz-kiracı EVENT_CASE reddedilmeli: %v", err)
+	}
+	if err := svc.AckEvent(ctx, "acme-adm", "e-acme", "RESOLVED"); err != nil {
+		t.Fatalf("kendi kiracısının olayını çözebilmeli: %v", err)
+	}
+	if err := svc.AckEvent(ctx, "plat", "e-globex", "ACKNOWLEDGED"); err != nil {
+		t.Fatalf("platform admini her olayı işaretleyebilmeli: %v", err)
 	}
 }
 
