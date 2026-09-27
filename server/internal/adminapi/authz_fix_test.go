@@ -90,6 +90,43 @@ func TestSCIMAndMSPRequireAdmin(t *testing.T) {
 	}
 }
 
+// TestMSPRequiresPlatformAdmin, MSP (kiracı/müşteri yönetimi = kontrol-düzlemi) uçlarının
+// PLATFORM admini (kiracısız) gerektirdiğini kanıtlar: kiracıya bağlı bir RoleAdmin bile
+// 403 alır (tüm kiracıları listeleyemez/yönetemez), platform admini geçer. Kontrol-düzlemi
+// çapraz-kiracı sızıntısı kapalı.
+func TestMSPRequiresPlatformAdmin(t *testing.T) {
+	srv, store := newServer(t)
+	srv.SetMSPStore(fakeMSPStore{})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	addAdmin(t, store, "plat", "plat@x", "secret", admin.RoleAdmin) // adminTen yok → platform
+	addAdmin(t, store, "tadm", "tadmin@x", "secret", admin.RoleAdmin)
+	store.adminTen["tadm"] = "acme" // kiracıya bağlı ADMIN
+	_, pb := post(t, ts.URL+"/api/login", "", map[string]string{"email": "plat@x", "password": "secret"})
+	_, tb := post(t, ts.URL+"/api/login", "", map[string]string{"email": "tadmin@x", "password": "secret"})
+
+	// Kiracıya bağlı admin: MSP oluşturma + listeleme 403.
+	if code, _ := post(t, ts.URL+"/api/msp/customers", tb["token"], map[string]string{"name": "x", "tenant_id": "t2"}); code != http.StatusForbidden {
+		t.Fatalf("kiracı-admin MSP oluşturma 403 almalıydı, %d", code)
+	}
+	lr, _ := authedGET(t, ts.URL+"/api/msp/customers", tb["token"])
+	if lr.StatusCode != http.StatusForbidden {
+		t.Fatalf("kiracı-admin MSP listeleme 403 almalıydı, %d", lr.StatusCode)
+	}
+	lr.Body.Close()
+
+	// Platform admini: geçer.
+	if code, _ := post(t, ts.URL+"/api/msp/customers", pb["token"], map[string]string{"name": "x", "tenant_id": "t2"}); code != http.StatusCreated {
+		t.Fatalf("platform admini MSP oluşturabilmeli, %d", code)
+	}
+	pr, _ := authedGET(t, ts.URL+"/api/msp/customers", pb["token"])
+	if pr.StatusCode != http.StatusOK {
+		t.Fatalf("platform admini MSP listeleyebilmeli, %d", pr.StatusCode)
+	}
+	pr.Body.Close()
+}
+
 // TestCaseTenantHeaderIgnored, X-Tenant-ID başlığının artık YOK SAYILDIĞINI kanıtlar:
 // bir vaka "attacker" başlığıyla oluşturulup "victim" başlığıyla listelense bile görünür
 // (ikisi de dağıtım tenant'ına düşer). Başlık onurlandırılsaydı liste boş dönerdi. Böylece
