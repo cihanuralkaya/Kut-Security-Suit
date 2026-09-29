@@ -895,6 +895,19 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
+          <div class="head"><h2>🔁 Remediation Doğrulama <span class="count" id="vf-count">0</span></h2>
+            <span class="sp"></span>
+            <span class="mono" style="color:var(--faint);font-size:11px">resolved ≠ fixed · fail-closed</span>
+            <button class="btn ghost sm" id="vf-refresh" type="button" style="margin-left:8px">🔄 Yenile</button></div>
+          <div class="body">
+            <p class="hint" style="margin:0 0 10px">Bir bulgu "çözüldü" kapatılmadan önce kaynak tespit kuralı taze (aksiyon-sonrası) pencerede yeniden ölçülür: 0 eşleşme → DOĞRULANDI, hâlâ tetikliyor → REGRESYON, telemetri yok → KARARSIZ (fail-closed). Bekleyen bir check'i "▶ Çalıştır" ile şimdi değerlendirin. Ölçülen (gerçekleşen) risk azalması gösterilir.</p>
+            <div class="tbl-wrap"><table><thead><tr><th>Sonuç</th><th>Cihaz</th><th>Kural</th><th>Tür</th><th>Baseline</th><th>Kalan</th><th>Azalma</th><th></th></tr></thead>
+              <tbody id="vf-body"></tbody></table></div>
+            <div id="vf-empty" class="empty" style="padding:12px">Henüz doğrulama check'i yok. (Motor kapalıysa uç 404 döner.)</div>
+          </div>
+        </div>
+
+        <div class="card" data-view="security" data-span="2">
           <div class="head"><h2>🧩 Olay Korelasyonu (Incident)</h2>
             <span class="sp"></span><span id="inc-count" class="count">0</span></div>
           <div class="body">
@@ -2353,6 +2366,48 @@
         (rows?('<div class="tbl-wrap"><table><thead><tr><th>Sinyal</th><th>Puan</th><th>Pay</th></tr></thead><tbody>'+rows+'</tbody></table></div>'):'<p class="hint" style="margin:0;color:var(--faint)">Katkı yok (skor 0).</p>');
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Füzyon başarısız: '+esc(e.message)+'</p>'; });
   }
+  // loadVerify: remediation-doğrulama check'lerini listeler (GET /api/verify) ve her
+  // birinin sonucunu + ölçülen (gerçekleşen) risk azalmasını gösterir. Bekleyen (PENDING)
+  // check'ler "▶ Çalıştır" ile değerlendirilebilir (OPERATOR; POST /api/verify/{id}/run).
+  // Sonuç kullanıcı-görünür HTML → tüm alanlar esc()'ten geçer (XSS). CSP: satır butonları
+  // render SONRASI querySelectorAll ile bağlanır (inline on* handler yok).
+  function loadVerify(){
+    var body=$("vf-body"), empty=$("vf-empty");
+    body.innerHTML="";
+    api("/api/verify").then(function(r){
+      var cs=(r&&r.checks)||[];
+      $("vf-count").textContent=cs.length;
+      empty.style.display=cs.length?"none":"block";
+      var col={VERIFIED:"var(--good,#22c55e)",REGRESSED:"var(--crit,#f43f5e)",INCONCLUSIVE:"var(--warn,#f59e0b)",PENDING:"var(--faint)"};
+      body.innerHTML=cs.map(function(c){
+        var oc=c.outcome||"PENDING", base=Number(c.baseline)||0, res=Number(c.residual_risk)||0;
+        var pending=(oc==="PENDING"); // henüz değerlendirilmedi → kalan/azalma ölçülmemiş
+        var red=base-res; if(red<0) red=0;
+        var run=pending?("<button class='btn ghost sm' data-vfrun='"+esc(c.id)+"' type='button'>▶ Çalıştır</button>"):"";
+        var kalan=pending?"<span style='color:var(--faint)'>—</span>":esc(String(res));
+        var azalma=pending?"<span style='color:var(--faint)'>—</span>":
+          ("<span style='color:"+(red>0?"var(--good,#22c55e)":"var(--faint)")+"'>"+(red>0?("−"+esc(String(red))):"0")+"</span>");
+        return "<tr><td><span style='font-weight:600;color:"+(col[oc]||"var(--faint)")+"'>"+esc(oc)+"</span></td>"+
+          "<td class='mono'>"+esc(c.device_id||"—")+"</td>"+
+          "<td class='mono'>"+esc(c.rule_id||"—")+"</td>"+
+          "<td>"+esc(c.kind||"")+"</td>"+
+          "<td>"+esc(String(base))+"</td>"+
+          "<td>"+kalan+"</td>"+
+          "<td>"+azalma+"</td>"+
+          "<td>"+run+"</td></tr>";
+      }).join("");
+      Array.prototype.forEach.call(body.querySelectorAll("[data-vfrun]"),function(btn){
+        btn.onclick=function(){
+          var id=btn.getAttribute("data-vfrun"); btn.disabled=true; btn.textContent="…";
+          api("/api/verify/"+encodeURIComponent(id)+"/run","POST",{}).then(function(rv){
+            var o=(rv&&rv.outcome)||"?";
+            toast("Doğrulama çalıştı","Sonuç: "+o,(o==="VERIFIED")?"ok":"err");
+            loadVerify();
+          }).catch(function(e){ toast("Doğrulama başarısız",e.message,"err"); btn.disabled=false; btn.textContent="▶ Çalıştır"; });
+        };
+      });
+    }).catch(function(e){ empty.style.display="block"; empty.textContent="Yüklenemedi: "+e.message; });
+  }
   // testEventAgainstRules: gerçek bir olayı Kural Test Aracı'na taşır — Güvenlik
   // görünümüne geçer, kategori/mesajı doldurur, testi çalıştırır ve aracı görünür
   // kılar. Olaylar akışını tespit motoruna bağlar (bu olay hangi kuralları tetikler?).
@@ -2898,6 +2953,7 @@
   $("gp-run").onclick=loadGraphPivot;
   $("ait-run").onclick=loadAITriage;
   $("air-run").onclick=loadAIRisk;
+  $("vf-refresh").onclick=loadVerify;
   $("evt-pending").onclick=function(){ state.pendingOnly=!state.pendingOnly; this.className="btn ghost sm"+(state.pendingOnly?" on":""); renderEvents(); };
   $("sw-run").onclick=searchSoftware;
   $("sw-q").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); searchSoftware(); } });
