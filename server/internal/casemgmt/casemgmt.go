@@ -66,6 +66,10 @@ const (
 	AttachMITRE AttachKind = "mitre"
 	// AttachEvidence, bir delil referansı (ör. artefakt URI'si) ekler.
 	AttachEvidence AttachKind = "evidence"
+	// AttachVerification, bir remediation-doğrulama check referansı ekler (verify.Check
+	// kimliği; sonucu/riski ref metninde taşınabilir). Vakaya "gerçekten düzeldi mi?"
+	// kanıtını bağlar (DETECTION→RESPONSE→VERIFICATION halkası).
+	AttachVerification AttachKind = "verification"
 )
 
 // Olay zaman çizelgesine yazılan mutasyon türleri (CaseEvent.Kind).
@@ -80,6 +84,8 @@ const (
 	KindAttach = "attach"
 	// KindNote, serbest bir not girdisini belirtir.
 	KindNote = "note"
+	// KindVerify, bir remediation-doğrulama sonucunun eklendiğini belirtir.
+	KindVerify = "verify"
 )
 
 // Vaka yönetimi hataları.
@@ -115,19 +121,20 @@ type CaseEvent struct {
 // Case, bir SOC vakasıdır. Timeline dışa döndürülürken kopyalanır; çağıran
 // tarafın değiştirmesi depodaki değişmez izi etkilemez.
 type Case struct {
-	ID           string      `json:"id"`
-	TenantID     string      `json:"tenant_id"`
-	Title        string      `json:"title"`
-	Severity     Severity    `json:"severity"`
-	Status       Status      `json:"status"`
-	Owner        string      `json:"owner"`
-	Assets       []string    `json:"assets,omitempty"`
-	Users        []string    `json:"users,omitempty"`
-	MITRE        []string    `json:"mitre,omitempty"`
-	EvidenceRefs []string    `json:"evidence_refs,omitempty"`
-	Timeline     []CaseEvent `json:"timeline"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
+	ID            string      `json:"id"`
+	TenantID      string      `json:"tenant_id"`
+	Title         string      `json:"title"`
+	Severity      Severity    `json:"severity"`
+	Status        Status      `json:"status"`
+	Owner         string      `json:"owner"`
+	Assets        []string    `json:"assets,omitempty"`
+	Users         []string    `json:"users,omitempty"`
+	MITRE         []string    `json:"mitre,omitempty"`
+	EvidenceRefs  []string    `json:"evidence_refs,omitempty"`
+	Verifications []string    `json:"verifications,omitempty"` // eklenmiş remediation-doğrulama referansları
+	Timeline      []CaseEvent `json:"timeline"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
 }
 
 // Store, vaka yaşam döngüsünü yöneten depolama arayüzüdür. Tüm işlemler
@@ -258,6 +265,7 @@ func clone(c Case) Case {
 	c.Users = append([]string(nil), c.Users...)
 	c.MITRE = append([]string(nil), c.MITRE...)
 	c.EvidenceRefs = append([]string(nil), c.EvidenceRefs...)
+	c.Verifications = append([]string(nil), c.Verifications...)
 	c.Timeline = append([]CaseEvent(nil), c.Timeline...)
 	return c
 }
@@ -499,6 +507,8 @@ func (m *MemStore) Attach(tenantID, id, actor string, kind AttachKind, ref strin
 		c.MITRE, added = appendUnique(c.MITRE, ref)
 	case AttachEvidence:
 		c.EvidenceRefs, added = appendUnique(c.EvidenceRefs, ref)
+	case AttachVerification:
+		c.Verifications, added = appendUnique(c.Verifications, ref)
 	default:
 		return Case{}, ErrUnknownAttachKind
 	}
@@ -509,11 +519,16 @@ func (m *MemStore) Attach(tenantID, id, actor string, kind AttachKind, ref strin
 		return clone(c), nil
 	}
 
+	// Doğrulama eklemesi ayrı bir timeline kind'ı (verify) taşır; diğerleri attach.
+	evKind := KindAttach
+	if kind == AttachVerification {
+		evKind = KindVerify
+	}
 	at := m.nowTime()
 	ev := CaseEvent{
 		At:    at,
 		Actor: actor,
-		Kind:  KindAttach,
+		Kind:  evKind,
 		Note:  string(kind) + ": " + ref,
 	}
 	return m.appendEvent(k, c, ev, at), nil

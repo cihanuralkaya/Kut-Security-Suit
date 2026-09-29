@@ -214,6 +214,30 @@ func TestAttach(t *testing.T) {
 	}
 }
 
+// TestAttachVerification, remediation-doğrulama referansının vakaya bağlandığını ve
+// zaman çizelgesine ayrı bir "verify" kind'ıyla düştüğünü doğrular.
+func TestAttachVerification(t *testing.T) {
+	s := NewMemStore()
+	newCase(t, s, "acme", "c-1")
+
+	c, err := s.Attach("acme", "c-1", "soc", AttachVerification, "chk-1:VERIFIED")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Verifications) != 1 || c.Verifications[0] != "chk-1:VERIFIED" {
+		t.Fatalf("verification referansı eklenmeliydi: %v", c.Verifications)
+	}
+	last := c.Timeline[len(c.Timeline)-1]
+	if last.Kind != KindVerify {
+		t.Fatalf("son timeline girdisi 'verify' kind'ı olmalı: %q", last.Kind)
+	}
+	// Yinelenen ekleme yeni girdi üretmemeli.
+	c2, _ := s.Attach("acme", "c-1", "soc", AttachVerification, "chk-1:VERIFIED")
+	if len(c2.Verifications) != 1 {
+		t.Fatalf("verification yinelenmemeli: %v", c2.Verifications)
+	}
+}
+
 func TestTenantIsolation(t *testing.T) {
 	s := NewMemStore()
 	newCase(t, s, "acme", "c-1")
