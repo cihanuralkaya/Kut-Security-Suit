@@ -33,44 +33,100 @@ type edge struct{ from, to string }
 // tespiti için kullanılır.
 type writeEdge struct{ agent, sink string }
 
+// Varsayılan sınırlar: graf, HTTP'den beslenen bir veri-zemini olduğundan (per-request
+// cap yok, yalnız gövde-boyutu sınırı) süreç-ömrü boyunca SINIRSIZ büyümemelidir —
+// aksi halde bellek tükenmesi + O(N·E) `Findings()` yeniden-hesabı ile CPU DoS. Bu üst
+// sınırlar + kenar dedupe'si büyümeyi sabitler (kaynak-tükenmesi savunması).
+const (
+	defaultMaxNodes = 20000
+	defaultMaxEdges = 50000
+)
+
 // CausalityGraph, agent nedensellik grafıdır. Deterministik; eşzamanlı kullanım için
-// harici senkronizasyon gerekir (tek analiz-thread'i varsayılır).
+// harici senkronizasyon gerekir (tek analiz-thread'i varsayılır — bkz. Service kilidi).
+// Düğüm/kenar sayıları üst-sınırlıdır: kenarlar dedupe edilir (aynı gözlem tekrarı
+// büyütmez) ve sınır aşılırsa en eski (FIFO) düşürülür.
 type CausalityGraph struct {
-	nodes  map[string]node
-	taint  []edge      // taint taşıyan kenarlar (reads/influences/delegates)
-	writes []writeEdge // egress (agent → sink)
+	nodes     map[string]node
+	nodeOrder []string // FIFO ekleme sırası (düğüm eviction'ı için)
+	taint     []edge   // taint taşıyan kenarlar (reads/influences/delegates), tekilleştirilmiş
+	taintSeen map[edge]struct{}
+	writes    []writeEdge // egress (agent → sink), tekilleştirilmiş
+	writeSeen map[writeEdge]struct{}
+	maxNodes  int
+	maxEdges  int
 }
 
-// NewCausalityGraph oluşturur.
+// NewCausalityGraph, varsayılan üst-sınırlarla bir graf oluşturur.
 func NewCausalityGraph() *CausalityGraph {
-	return &CausalityGraph{nodes: map[string]node{}}
+	return &CausalityGraph{
+		nodes:     map[string]node{},
+		taintSeen: map[edge]struct{}{},
+		writeSeen: map[writeEdge]struct{}{},
+		maxNodes:  defaultMaxNodes,
+		maxEdges:  defaultMaxEdges,
+	}
 }
 
-// AddNode, bir düğüm ekler/günceller.
+// AddNode, bir düğüm ekler/günceller. Yeni bir id kapasiteyi aşarsa en eski eklenen
+// düğüm düşürülür (FIFO); mevcut id'nin güncellenmesi sıralamayı değiştirmez.
 func (g *CausalityGraph) AddNode(id string, kind NodeKind, trust TrustLevel) {
 	if id == "" {
 		return
 	}
+	if _, exists := g.nodes[id]; !exists {
+		if g.maxNodes > 0 && len(g.nodes) >= g.maxNodes {
+			// En eski düğümü düş (FIFO). Ona bağlı kenarlar EffectiveTrust/readsOfKind'da
+			// çözülmeyip atlanır — zararsız (evict edilmiş düğüm için bulgu üretmez).
+			old := g.nodeOrder[0]
+			g.nodeOrder = g.nodeOrder[1:]
+			delete(g.nodes, old)
+		}
+		g.nodeOrder = append(g.nodeOrder, id)
+	}
 	g.nodes[id] = node{ID: id, Kind: kind, Trust: trust}
 }
 
-// AddRead, "agent, source'u okur" — taint source → agent yönünde akar (INV-AG-001/005).
-func (g *CausalityGraph) AddRead(agent, source string) {
-	g.taint = append(g.taint, edge{source, agent})
+// addTaint, bir taint kenarını tekilleştirerek ekler; kapasite aşılırsa en eskiyi düşürür.
+func (g *CausalityGraph) addTaint(e edge) {
+	if _, dup := g.taintSeen[e]; dup {
+		return // aynı gözlem tekrarı → büyütme (amplifikasyon önlenir)
+	}
+	if g.maxEdges > 0 && len(g.taint) >= g.maxEdges {
+		old := g.taint[0]
+		g.taint = g.taint[1:]
+		delete(g.taintSeen, old)
+	}
+	g.taint = append(g.taint, e)
+	g.taintSeen[e] = struct{}{}
 }
 
+// AddRead, "agent, source'u okur" — taint source → agent yönünde akar (INV-AG-001/005).
+func (g *CausalityGraph) AddRead(agent, source string) { g.addTaint(edge{source, agent}) }
+
 // AddInfluence, "from, to'yu etkiler" — taint from → to.
-func (g *CausalityGraph) AddInfluence(from, to string) { g.taint = append(g.taint, edge{from, to}) }
+func (g *CausalityGraph) AddInfluence(from, to string) { g.addTaint(edge{from, to}) }
 
 // AddDelegate, "delegator, delegatee'yi delege eder" — delegatee güveni delegatörünkini
 // AŞAMAZ (INV-AG-003 ruhu; taint delegator → delegatee).
 func (g *CausalityGraph) AddDelegate(delegator, delegatee string) {
-	g.taint = append(g.taint, edge{delegator, delegatee})
+	g.addTaint(edge{delegator, delegatee})
 }
 
-// AddWrite, "agent, sink'e yazar" — egress kenarı (exfil tespiti için).
+// AddWrite, "agent, sink'e yazar" — egress kenarı (exfil tespiti için). Tekilleştirilir;
+// kapasite aşılırsa en eski düşürülür.
 func (g *CausalityGraph) AddWrite(agent, sink string) {
-	g.writes = append(g.writes, writeEdge{agent, sink})
+	w := writeEdge{agent, sink}
+	if _, dup := g.writeSeen[w]; dup {
+		return
+	}
+	if g.maxEdges > 0 && len(g.writes) >= g.maxEdges {
+		old := g.writes[0]
+		g.writes = g.writes[1:]
+		delete(g.writeSeen, old)
+	}
+	g.writes = append(g.writes, w)
+	g.writeSeen[w] = struct{}{}
 }
 
 // EffectiveTrust, taint'i graf boyunca yayarak her düğümün ETKİN güven düzeyini hesaplar

@@ -1,6 +1,60 @@
 package aisec
 
-import "testing"
+import (
+	"strconv"
+	"testing"
+)
+
+// TestCausalityGraphBounded, kaynak-tükenmesi savunmasını doğrular: (1) aynı kenar
+// gözleminin tekrarı grafı BÜYÜTMEZ (dedupe → amplifikasyon yok); (2) düğüm ve kenar
+// sayıları üst-sınırı AŞMAZ (FIFO eviction). HTTP'den beslenen graf sınırsız büyüyemez.
+func TestCausalityGraphBounded(t *testing.T) {
+	g := NewCausalityGraph()
+	g.maxEdges = 5
+	g.maxNodes = 4
+
+	// Dedupe: aynı read 1000 kez → tek kenar.
+	for i := 0; i < 1000; i++ {
+		g.AddRead("agent", "web")
+	}
+	if len(g.taint) != 1 {
+		t.Fatalf("tekrarlı aynı gözlem tekilleştirilmeliydi: len(taint)=%d (1 bekleniyordu)", len(g.taint))
+	}
+
+	// Kenar cap: çok sayıda DİSTİNCT kenar → maxEdges'i aşmaz.
+	for i := 0; i < 100; i++ {
+		g.AddInfluence("n"+strconv.Itoa(i), "n"+strconv.Itoa(i+1))
+	}
+	if len(g.taint) > g.maxEdges {
+		t.Fatalf("taint kenar sayısı cap'i aşmamalı: %d > %d", len(g.taint), g.maxEdges)
+	}
+
+	// Write cap.
+	for i := 0; i < 100; i++ {
+		g.AddWrite("agent", "sink"+strconv.Itoa(i))
+	}
+	if len(g.writes) > g.maxEdges {
+		t.Fatalf("writes kenar sayısı cap'i aşmamalı: %d > %d", len(g.writes), g.maxEdges)
+	}
+	// Write dedupe.
+	before := len(g.writes)
+	g.AddWrite("agent", "sink0-dup")
+	g.AddWrite("agent", "sink0-dup")
+	if len(g.writes)-before > 1 {
+		t.Fatalf("tekrarlı write tekilleştirilmeliydi")
+	}
+
+	// Düğüm cap: çok sayıda distinct düğüm → maxNodes'u aşmaz.
+	for i := 0; i < 100; i++ {
+		g.AddNode("dev"+strconv.Itoa(i), KindAgent, Trusted)
+	}
+	if len(g.nodes) > g.maxNodes {
+		t.Fatalf("düğüm sayısı cap'i aşmamalı: %d > %d", len(g.nodes), g.maxNodes)
+	}
+	if len(g.nodeOrder) != len(g.nodes) {
+		t.Fatalf("nodeOrder ile nodes eşleşmeli: %d != %d", len(g.nodeOrder), len(g.nodes))
+	}
+}
 
 // TestCausalityExfilChain, uçtan-uca AI-agent saldırı zincirini doğrular: untrusted
 // context okuyan agent tainted olur; credential okuyup external'a yazınca exfil olarak
