@@ -50,11 +50,13 @@ import (
 	"kut.corp/suite/server/internal/notify"
 	"kut.corp/suite/server/internal/ratelimit"
 	"kut.corp/suite/server/internal/report"
+	"kut.corp/suite/server/internal/risk"
 	"kut.corp/suite/server/internal/riskfusion"
 	"kut.corp/suite/server/internal/scope"
 	"kut.corp/suite/server/internal/security"
 	"kut.corp/suite/server/internal/telemetryschema"
 	"kut.corp/suite/server/internal/trace"
+	"kut.corp/suite/server/internal/verify"
 	"kut.corp/suite/server/internal/vuln"
 )
 
@@ -110,6 +112,8 @@ type Server struct {
 	agentSec      *aisec.Service                // agentic tehdit savunması (salt-okunur bulgu uçları; nil → uç kapalı)
 	brain         *aibrain.Brain                // SOC AI brain (fail-open; dış AI yoksa deterministik yola döner)
 	agentTrust    *aisec.TrustVerifier          // imzalı agent telemetri doğrulayıcı (nil → /api/agentsec/telemetry kapalı)
+	verifyStore   verify.Store                  // remediation-doğrulama check deposu (nil → /api/verify uçları kapalı)
+	verifier      verify.Verifier               // check değerlendirici (nil → run ucu kapalı)
 }
 
 // MSPStore, MSP müşteri kaydının kalıcı deposudur (§37). db.Store (kalıcı) ve
@@ -309,6 +313,14 @@ func (s *Server) SetCaseStore(cs casemgmt.Store) {
 	}
 }
 
+// SetVerifyStore, remediation-doğrulama check deposunu bağlar. nil → /api/verify uçları
+// kapalı (404). Kalıcılık için DB destekli bir Store ile de sağlanabilir.
+func (s *Server) SetVerifyStore(v verify.Store) { s.verifyStore = v }
+
+// SetVerifier, doğrulama değerlendiricisini bağlar (tespit kuralını taze pencerede
+// yeniden koşturur). nil → /api/verify/{id}/run kapalı.
+func (s *Server) SetVerifier(v verify.Verifier) { s.verifier = v }
+
 // SetSeqModel, süreç-zinciri sekans nadirlik modelini bağlar (ajan olay hattı canlı
 // öğrenir; bu uç salt-okunur skor sorgular). nil → /api/hunt/sequence-score kapalı.
 func (s *Server) SetSeqModel(m *aibrain.SeqModel) { s.seqModel = m }
@@ -462,6 +474,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/cases/{id}", s.authed(s.handleCaseGet))
 	mux.HandleFunc("POST /api/cases/{id}/transition", s.authed(s.handleCaseTransition))
 	mux.HandleFunc("POST /api/cases/{id}/attach", s.authed(s.handleCaseAttach))
+	mux.HandleFunc("POST /api/verify/open", s.authed(s.handleVerifyOpen))
+	mux.HandleFunc("POST /api/verify/{id}/run", s.authed(s.handleVerifyRun))
+	mux.HandleFunc("GET /api/verify", s.authed(s.handleVerifyList))
 	mux.HandleFunc("GET /api/metrics/trends", s.authed(s.handleMetricsTrends))
 	mux.HandleFunc("GET /api/maintenance", s.authed(s.handleMaintenance))
 	mux.HandleFunc("POST /api/hunt/saved", s.authed(s.handleSaveSearch))
@@ -1941,6 +1956,142 @@ func (s *Server) handleCaseAttach(w http.ResponseWriter, r *http.Request, adminI
 		return
 	}
 	writeJSON(w, http.StatusOK, c)
+}
+
+// newVerifyID, kısa rastgele bir doğrulama-check kimliği üretir.
+func newVerifyID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return "vchk-" + hex.EncodeToString(b)
+}
+
+// handleVerifyOpen, bir remediation-doğrulama check'i açar (OPERATOR+): aksiyon sonrası
+// bulgunun sinyalinin gerçekten kalkıp kalkmadığını ölçmek için. Kiracı SUNUCU-TARAFI.
+func (s *Server) handleVerifyOpen(w http.ResponseWriter, r *http.Request, adminID string) {
+	if s.verifyStore == nil {
+		writeErr(w, http.StatusNotFound, "doğrulama motoru etkin değil")
+		return
+	}
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
+		return
+	}
+	var req struct {
+		FindingRef string       `json:"finding_ref"`
+		DeviceID   string       `json:"device_id"`
+		RuleID     string       `json:"rule_id"`
+		Kind       string       `json:"kind"`
+		Factors    risk.Factors `json:"factors"`
+		WindowSecs int          `json:"window_secs"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	if tenant == "" {
+		tenant = "default" // platform admini: dağıtım varsayılan kovası (check tenant'sız açılamaz)
+	}
+	kind := req.Kind
+	if kind == "" {
+		kind = verify.KindDetection
+	}
+	win := req.WindowSecs
+	if win <= 0 {
+		win = 900 // varsayılan 15 dk doğrulama penceresi
+	}
+	c, err := s.verifyStore.Open(verify.Check{
+		ID: newVerifyID(), TenantID: tenant, FindingRef: req.FindingRef, DeviceID: req.DeviceID,
+		RuleID: req.RuleID, Kind: kind, Factors: req.Factors,
+		WindowEnd: s.now().Add(time.Duration(win) * time.Second),
+	})
+	if respondErr(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusCreated, c)
+}
+
+// handleVerifyList, çağıranın kiracısının doğrulama check'lerini listeler (VIEWER+).
+// Platform admini (boş kiracı) tümünü görür.
+func (s *Server) handleVerifyList(w http.ResponseWriter, r *http.Request, adminID string) {
+	if s.verifyStore == nil {
+		writeErr(w, http.StatusNotFound, "doğrulama motoru etkin değil")
+		return
+	}
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	var list []verify.Check
+	if tenant == "" {
+		list, err = s.verifyStore.ListAll()
+	} else {
+		list, err = s.verifyStore.List(tenant)
+	}
+	if respondErr(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(list), "checks": list})
+}
+
+// handleVerifyRun, bir check'i ÇALIŞTIRIR (OPERATOR+): cihazın açılıştan bu yana taze
+// olaylarını çekip kaynak tespit kuralını yeniden koşturur, sonucu ve kalan riski Resolve
+// eder. Kiracı-kapsamlı (çapraz-kiracı check → 404). Fail-closed: değerlendirilemezse
+// INCONCLUSIVE.
+func (s *Server) handleVerifyRun(w http.ResponseWriter, r *http.Request, adminID string) {
+	if s.verifyStore == nil || s.verifier == nil {
+		writeErr(w, http.StatusNotFound, "doğrulama motoru etkin değil")
+		return
+	}
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
+		return
+	}
+	id := r.PathValue("id")
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	var c verify.Check
+	if tenant == "" {
+		c, err = s.verifyStore.GetAny(id)
+	} else {
+		c, err = s.verifyStore.Get(tenant, id)
+	}
+	if err == verify.ErrCheckNotFound {
+		writeErr(w, http.StatusNotFound, "check bulunamadı")
+		return
+	}
+	if respondErr(w, err) {
+		return
+	}
+	// Açılıştan bu yana cihazın taze olayları (aksiyon-sonrası pencere), kiracı-kapsamlı.
+	rows, err := s.reader.QueryEvents(r.Context(), adminread.EventFilter{
+		DeviceID: c.DeviceID, TenantID: c.TenantID, Since: c.OpenedAt, Limit: 500,
+	})
+	if respondErr(w, err) {
+		return
+	}
+	fresh := make([]model.Event, 0, len(rows))
+	for _, d := range rows {
+		fresh = append(fresh, eventDTOToModel(d))
+	}
+	outcome, residual, err := s.verifier.Evaluate(r.Context(), c, fresh)
+	if respondErr(w, err) {
+		return
+	}
+	resolved, err := s.verifyStore.Resolve(c.TenantID, c.ID, outcome, residual)
+	if respondErr(w, err) {
+		return
+	}
+	switch outcome {
+	case verify.OutcomeVerified:
+		metrics.IncVerifyVerified()
+	case verify.OutcomeRegressed:
+		metrics.IncVerifyRegressed()
+	}
+	s.adminSvc.RecordAudit(r.Context(), adminID, "VERIFY_RUN", "verify", c.ID)
+	writeJSON(w, http.StatusOK, resolved)
 }
 
 // handleSetDeviceTags, cihazın etiketlerini ayarlar (OPERATOR+, servis içinde
