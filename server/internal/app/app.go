@@ -631,6 +631,12 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	verifier := verify.NewDetectionVerifier(detector)
 	adminAPI.SetVerifyStore(verifyStore)
 	adminAPI.SetVerifier(verifier)
+	// Vaka-kapanışı gate'i (opt-in, default KAPALI): açıksa CONTAINED→CLOSED geçişi
+	// vakaya bağlı doğrulanmış (VERIFIED) bir remediation-doğrulaması ister.
+	if os.Getenv("KUT_VERIFY_REQUIRE_ON_CLOSE") == "1" {
+		adminAPI.SetRequireVerifyOnClose(true)
+		log.Println("vaka-kapanışı doğrulama gate'i ETKİN (KUT_VERIFY_REQUIRE_ON_CLOSE=1)")
+	}
 	// Otomatik doğrulama (opsiyonel, default KAPALI): otomatik-karantina sonrası bir
 	// remediation-doğrulama check'i aç ve doğrulama penceresi dolunca cihazın taze
 	// olaylarını yeniden değerlendirip çöz. KUT_VERIFY_AUTO=1 + otomatik-müdahale gerektirir.

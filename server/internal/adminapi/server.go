@@ -70,50 +70,51 @@ type AuthStore interface {
 
 // Server, admin HTTP API'sidir.
 type Server struct {
-	adminSvc      *admin.Service
-	reader        *adminread.Service
-	auth          AuthStore
-	sessions      *security.SessionSigner
-	ttl           time.Duration
-	now           func() time.Time
-	stream        *eventbus.Bus
-	health        func(context.Context) error
-	partReady     func(context.Context) (bool, error) // /readyz olay-partition hazırlığı (yalnız DB; nil → atla)
-	loginLim      *loginLimiter
-	notice        string // TR/KVKK gizlilik metni
-	noticeEN      string // EN/GDPR gizlilik metni (/api/notice?lang=en)
-	dummyHash     string // SEC-004: bilinmeyen e-postada sabit-zaman için sahte Argon2 hash
-	sseConns      int64  // SEC-007: aktif SSE bağlantı sayısı (atomik)
-	auditVerify   func(context.Context) error
-	auditExpKey   ed25519.PrivateKey            // ayarlıysa /api/audit/export imzalı manifest üretir (#16)
-	maintWindows  func() []notify.Window        // ayarlıysa /api/maintenance bakım pencerelerini döner (#18)
-	metricsToken  string                        // ayarlıysa /metrics bu Bearer token ile açılır; boşsa uç kapalı
-	ingestToken   string                        // ayarlıysa POST /api/ingest bu Bearer token ile açılır (#21)
-	tokens        authtoken.Store               // yönetilen API token'ları (rotation/expiry/iptal); nil => yalnız statik env token
-	ingestSink    EventIngestor                 // harici log alımı için olay yazma yolu
-	ingestLimiter *ratelimit.Limiter            // /api/ingest IP-başına hız sınırı (nil = kapalı)
-	ingestLayered *ratelimit.Layered            // /api/ingest KATMANLI hız sınırı (§8; öncelikli, nil = kapalı)
-	ingestDedup   *dedup.Seen                   // /api/ingest yineleme-tespiti (§6; nil = kapalı)
-	ingestDLQ     *dlq.Queue                    // /api/ingest ölü-mektup kuyruğu (§6; nil = kapalı)
-	eventProc     EventProcessor                // ingest edilen olayları tespit+alarm hattından geçirir (nil = yalnız kaydet)
-	detector      atomic.Pointer[detect.Engine] // tespit kural kataloğu (görünürlük ucu; canlı hot-reload için atomik)
-	vulnSet       *vuln.Set                     // zafiyet veri kümesi (nil = kapalı); envanterle eşleşir
-	features      map[string]any                // dağıtım koruma-duruşu (opsiyonel özellik bayrakları)
-	tenantID      string                        // dağıtımın kiracı kimliği (rapor atıfı)
-	aiProvider    aiassist.Provider             // §27 AI asistanı sağlayıcısı (nil → LocalProvider)
-	tracer        *trace.Tracer                 // §14 dağıtık izleme (nil → kapalı)
-	abacEngine    *iam.Engine                   // §35 ABAC motoru (nil → uç kapalı)
-	scim          iam.Provisioner               // §35 SCIM kullanıcı sağlayıcı (nil → uç kapalı)
-	mspStore      MSPStore                      // §37 MSP müşteri deposu (nil → uç kapalı)
-	gateway       *authz.Gateway                // §4 merkezi Action Authorization Gateway (blast-radius + rate-limit)
-	graph         *entitygraph.Graph            // varlık/tehdit grafı (salt-okunur pivot uçları; nil → uç kapalı)
-	cases         casemgmt.Store                // SOC vaka yönetimi (varsayılan bellek-içi; SetCaseStore ile DB destekli)
-	seqModel      *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli (salt-okunur skor sorgusu; nil → uç kapalı)
-	agentSec      *aisec.Service                // agentic tehdit savunması (salt-okunur bulgu uçları; nil → uç kapalı)
-	brain         *aibrain.Brain                // SOC AI brain (fail-open; dış AI yoksa deterministik yola döner)
-	agentTrust    *aisec.TrustVerifier          // imzalı agent telemetri doğrulayıcı (nil → /api/agentsec/telemetry kapalı)
-	verifyStore   verify.Store                  // remediation-doğrulama check deposu (nil → /api/verify uçları kapalı)
-	verifier      verify.Verifier               // check değerlendirici (nil → run ucu kapalı)
+	adminSvc       *admin.Service
+	reader         *adminread.Service
+	auth           AuthStore
+	sessions       *security.SessionSigner
+	ttl            time.Duration
+	now            func() time.Time
+	stream         *eventbus.Bus
+	health         func(context.Context) error
+	partReady      func(context.Context) (bool, error) // /readyz olay-partition hazırlığı (yalnız DB; nil → atla)
+	loginLim       *loginLimiter
+	notice         string // TR/KVKK gizlilik metni
+	noticeEN       string // EN/GDPR gizlilik metni (/api/notice?lang=en)
+	dummyHash      string // SEC-004: bilinmeyen e-postada sabit-zaman için sahte Argon2 hash
+	sseConns       int64  // SEC-007: aktif SSE bağlantı sayısı (atomik)
+	auditVerify    func(context.Context) error
+	auditExpKey    ed25519.PrivateKey            // ayarlıysa /api/audit/export imzalı manifest üretir (#16)
+	maintWindows   func() []notify.Window        // ayarlıysa /api/maintenance bakım pencerelerini döner (#18)
+	metricsToken   string                        // ayarlıysa /metrics bu Bearer token ile açılır; boşsa uç kapalı
+	ingestToken    string                        // ayarlıysa POST /api/ingest bu Bearer token ile açılır (#21)
+	tokens         authtoken.Store               // yönetilen API token'ları (rotation/expiry/iptal); nil => yalnız statik env token
+	ingestSink     EventIngestor                 // harici log alımı için olay yazma yolu
+	ingestLimiter  *ratelimit.Limiter            // /api/ingest IP-başına hız sınırı (nil = kapalı)
+	ingestLayered  *ratelimit.Layered            // /api/ingest KATMANLI hız sınırı (§8; öncelikli, nil = kapalı)
+	ingestDedup    *dedup.Seen                   // /api/ingest yineleme-tespiti (§6; nil = kapalı)
+	ingestDLQ      *dlq.Queue                    // /api/ingest ölü-mektup kuyruğu (§6; nil = kapalı)
+	eventProc      EventProcessor                // ingest edilen olayları tespit+alarm hattından geçirir (nil = yalnız kaydet)
+	detector       atomic.Pointer[detect.Engine] // tespit kural kataloğu (görünürlük ucu; canlı hot-reload için atomik)
+	vulnSet        *vuln.Set                     // zafiyet veri kümesi (nil = kapalı); envanterle eşleşir
+	features       map[string]any                // dağıtım koruma-duruşu (opsiyonel özellik bayrakları)
+	tenantID       string                        // dağıtımın kiracı kimliği (rapor atıfı)
+	aiProvider     aiassist.Provider             // §27 AI asistanı sağlayıcısı (nil → LocalProvider)
+	tracer         *trace.Tracer                 // §14 dağıtık izleme (nil → kapalı)
+	abacEngine     *iam.Engine                   // §35 ABAC motoru (nil → uç kapalı)
+	scim           iam.Provisioner               // §35 SCIM kullanıcı sağlayıcı (nil → uç kapalı)
+	mspStore       MSPStore                      // §37 MSP müşteri deposu (nil → uç kapalı)
+	gateway        *authz.Gateway                // §4 merkezi Action Authorization Gateway (blast-radius + rate-limit)
+	graph          *entitygraph.Graph            // varlık/tehdit grafı (salt-okunur pivot uçları; nil → uç kapalı)
+	cases          casemgmt.Store                // SOC vaka yönetimi (varsayılan bellek-içi; SetCaseStore ile DB destekli)
+	seqModel       *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli (salt-okunur skor sorgusu; nil → uç kapalı)
+	agentSec       *aisec.Service                // agentic tehdit savunması (salt-okunur bulgu uçları; nil → uç kapalı)
+	brain          *aibrain.Brain                // SOC AI brain (fail-open; dış AI yoksa deterministik yola döner)
+	agentTrust     *aisec.TrustVerifier          // imzalı agent telemetri doğrulayıcı (nil → /api/agentsec/telemetry kapalı)
+	verifyStore    verify.Store                  // remediation-doğrulama check deposu (nil → /api/verify uçları kapalı)
+	verifier       verify.Verifier               // check değerlendirici (nil → run ucu kapalı)
+	reqVerifyClose bool                          // true → CONTAINED→CLOSED vaka geçişi VERIFIED check ister (opt-in)
 }
 
 // MSPStore, MSP müşteri kaydının kalıcı deposudur (§37). db.Store (kalıcı) ve
@@ -320,6 +321,11 @@ func (s *Server) SetVerifyStore(v verify.Store) { s.verifyStore = v }
 // SetVerifier, doğrulama değerlendiricisini bağlar (tespit kuralını taze pencerede
 // yeniden koşturur). nil → /api/verify/{id}/run kapalı.
 func (s *Server) SetVerifier(v verify.Verifier) { s.verifier = v }
+
+// SetRequireVerifyOnClose açılırsa (opt-in, default KAPALI), CONTAINED→CLOSED vaka
+// geçişi vakaya bağlı en az bir VERIFIED remediation-doğrulaması ister; yoksa 409.
+// Non-breaking: kapalıyken davranış aynen korunur (bkz. docs/REMEDIATION-VERIFICATION.md).
+func (s *Server) SetRequireVerifyOnClose(on bool) { s.reqVerifyClose = on }
 
 // SetSeqModel, süreç-zinciri sekans nadirlik modelini bağlar (ajan olay hattı canlı
 // öğrenir; bu uç salt-okunur skor sorgular). nil → /api/hunt/sequence-score kapalı.
@@ -1926,12 +1932,49 @@ func (s *Server) handleCaseTransition(w http.ResponseWriter, r *http.Request, ad
 	if writeCaseErr(w, err) {
 		return
 	}
-	c, err := s.cases.Transition(tenant, r.PathValue("id"), adminID,
-		casemgmt.Status(strings.ToUpper(strings.TrimSpace(req.To))), req.Note)
+	to := casemgmt.Status(strings.ToUpper(strings.TrimSpace(req.To)))
+	// Opt-in guard (default KAPALI): CONTAINED→CLOSED, vakaya bağlı doğrulanmış
+	// (VERIFIED) bir remediation-doğrulaması ister. Kapalıyken bu blok atlanır.
+	if s.reqVerifyClose && to == casemgmt.StatusClosed {
+		cur, gerr := s.cases.Get(tenant, r.PathValue("id"))
+		if writeCaseErr(w, gerr) {
+			return
+		}
+		if cur.Status == casemgmt.StatusContained && !s.hasVerifiedCheck(tenant, cur.Verifications) {
+			writeErr(w, http.StatusConflict,
+				"CONTAINED→CLOSED için vakaya bağlı doğrulanmış (VERIFIED) bir remediation-doğrulaması gerekli")
+			return
+		}
+	}
+	c, err := s.cases.Transition(tenant, r.PathValue("id"), adminID, to, req.Note)
 	if writeCaseErr(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, c)
+}
+
+// hasVerifiedCheck, verilen referanslardan en az birinin VERIFIED sonuçlu bir
+// remediation-doğrulama check'ine çözüldüğünü döndürür (kiracı-kapsamlı; boş kiracı
+// = platform admini → GetAny). Fail-closed: depo yoksa veya hiçbiri çözülmezse false.
+func (s *Server) hasVerifiedCheck(tenant string, refs []string) bool {
+	if s.verifyStore == nil {
+		return false
+	}
+	for _, ref := range refs {
+		var (
+			chk verify.Check
+			err error
+		)
+		if strings.TrimSpace(tenant) == "" {
+			chk, err = s.verifyStore.GetAny(ref)
+		} else {
+			chk, err = s.verifyStore.Get(tenant, ref)
+		}
+		if err == nil && chk.Outcome == verify.OutcomeVerified {
+			return true
+		}
+	}
+	return false
 }
 
 // handleCaseAttach, vakaya bir referans (asset/user/mitre/evidence) ekler (OPERATOR+).

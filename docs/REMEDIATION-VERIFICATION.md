@@ -48,7 +48,16 @@ mevcut `*detect.Engine` tarafından doğrudan karşılanır (import döngüsü y
 
 `casemgmt.AttachVerification` ekleme türü + `"verify"` timeline olayı ile bir doğrulama
 sonucu vakanın değişmez zaman çizelgesine ve `Verifications` listesine bağlanır.
-(CONTAINED→CLOSE'u doğrulanmış check'e bağlayan guard ileride adminapi'de.)
+
+### Vaka-kapanışı doğrulama gate'i (opt-in)
+
+`KUT_VERIFY_REQUIRE_ON_CLOSE=1` ile (default KAPALI, non-breaking) bir vaka **CONTAINED→
+CLOSED** geçişi yaparken vakaya bağlı `Verifications` referanslarından en az birinin
+`VERIFIED` sonuçlu bir check'e çözülmesi ZORUNLU olur; yoksa geçiş **409** ile reddedilir
+(fail-closed). Gate yalnızca CONTAINED kaynağını hedefler — OPEN→CLOSED gibi diğer geçişler
+etkilenmez. Böylece "resolved işaretlendi" ≠ "düzeldi" boşluğu vaka-kapanışında kapanır:
+kapatma, ölçülmüş bir düzelme kanıtı ister. Kiracı kapsamı SUNUCU-TARAFI çözülür (platform
+admini → `GetAny`; kiracı-bağlı admin → `Get(tenant, ...)`).
 
 ## Otomatik mod (opsiyonel, default KAPALI)
 
