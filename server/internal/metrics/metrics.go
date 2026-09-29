@@ -48,6 +48,8 @@ var (
 	auditWriteFail   atomic.Int64 // denetim izi (tamper-evident) yazımı BAŞARISIZ — non-repudiation uyarısı
 	eventsDuplicate  atomic.Int64 // yineleme-tespitiyle düşürülen olaylar (§6)
 	eventsDeferred   atomic.Int64 // yazılamayıp ölü-mektup kuyruğuna alınan olaylar (§6 DLQ)
+	verifyVerified   atomic.Int64 // remediation-doğrulama: sinyal doğrulanabilir biçimde kalktı (VERIFIED)
+	verifyRegressed  atomic.Int64 // remediation-doğrulama: sinyal hâlâ tetikliyor (REGRESSED)
 )
 
 // certExpiryDays, CA+sunucu sertifikalarının EN AZ kalan günü (gauge). Sentinel 9999
@@ -98,8 +100,16 @@ func Counters() map[string]int64 {
 		"audit_write_fail":  auditWriteFail.Load(),
 		"events_duplicate":  eventsDuplicate.Load(),
 		"events_deferred":   eventsDeferred.Load(),
+		"verify_verified":   verifyVerified.Load(),
+		"verify_regressed":  verifyRegressed.Load(),
 	}
 }
+
+// IncVerifyVerified, bir doğrulama check'i VERIFIED sonuçlandığında artar.
+func IncVerifyVerified() { verifyVerified.Add(1) }
+
+// IncVerifyRegressed, bir doğrulama check'i REGRESSED sonuçlandığında artar.
+func IncVerifyRegressed() { verifyRegressed.Add(1) }
 
 // UptimeSeconds, süreç çalışma süresini saniye olarak döner.
 func UptimeSeconds() int64 { return int64(time.Since(startTime).Seconds()) }
@@ -314,6 +324,14 @@ func Write(w io.Writer, s Snapshot) {
 	fmt.Fprintf(w, "# HELP kut_events_deferred_total Yazılamayıp ölü-mektup kuyruğuna alınan olaylar (§6 DLQ).\n")
 	fmt.Fprintf(w, "# TYPE kut_events_deferred_total counter\n")
 	fmt.Fprintf(w, "kut_events_deferred_total %d\n", eventsDeferred.Load())
+
+	fmt.Fprintf(w, "# HELP kut_verify_verified_total Remediation-doğrulama: sinyal doğrulanabilir biçimde kalktı.\n")
+	fmt.Fprintf(w, "# TYPE kut_verify_verified_total counter\n")
+	fmt.Fprintf(w, "kut_verify_verified_total %d\n", verifyVerified.Load())
+
+	fmt.Fprintf(w, "# HELP kut_verify_regressed_total Remediation-doğrulama: sinyal hâlâ tetikliyor (düzelme yok).\n")
+	fmt.Fprintf(w, "# TYPE kut_verify_regressed_total counter\n")
+	fmt.Fprintf(w, "kut_verify_regressed_total %d\n", verifyRegressed.Load())
 
 	fmt.Fprintf(w, "# HELP kut_login_lockouts_total Kaba-kuvvet kilidi (admin girişi) tetiklemeleri.\n")
 	fmt.Fprintf(w, "# TYPE kut_login_lockouts_total counter\n")

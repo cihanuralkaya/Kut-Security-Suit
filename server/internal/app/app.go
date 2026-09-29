@@ -70,6 +70,7 @@ import (
 	"kut.corp/suite/server/internal/revocation"
 	"kut.corp/suite/server/internal/scope"
 	"kut.corp/suite/server/internal/security"
+	"kut.corp/suite/server/internal/verify"
 	"kut.corp/suite/server/internal/vuln"
 )
 
@@ -621,6 +622,11 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	adminAPI.SetEntityGraph(entGraph) // salt-okunur pivot uçları (/api/graph/pivot)
 	adminAPI.SetSeqModel(seqModel)    // salt-okunur sekans skoru (/api/hunt/sequence-score)
 	adminAPI.SetAgentSec(agentSec)    // agentic tehdit savunması bulguları (/api/agentsec/findings)
+	// Remediation Verification (DETECTION→RESPONSE→VERIFICATION): bir bulgu kapatılmadan
+	// önce sinyalinin gerçekten kalktığını, kaynak tespit kuralını taze pencerede yeniden
+	// koşturarak ölçer (mevcut detect.Engine RuleRunner'ı karşılar). Fail-closed.
+	adminAPI.SetVerifyStore(verify.NewMemStore())
+	adminAPI.SetVerifier(verify.NewDetectionVerifier(detector))
 	// SOC AI brain (fail-open): KUT_AI_URL varsa dış sağlayıcı; yoksa SIFIR-AĞ deterministik
 	// yerel sağlayıcı (plan varsayılanı) — CANLI seqModel'i paylaşır, böylece yerel AI de
 	// gerçek PROCESS verisinden beslenir (dış servis olmadan triyaj/füzyon çalışır).

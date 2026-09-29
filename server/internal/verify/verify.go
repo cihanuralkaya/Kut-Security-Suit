@@ -87,6 +87,9 @@ type Store interface {
 	List(tenantID string) ([]Check, error)
 	// ListAll, TÜM kiracıların check'lerini döner — YALNIZ platform admini için.
 	ListAll() ([]Check, error)
+	// GetAny, kiracıdan bağımsız id ile tek check döner — YALNIZ platform admini için.
+	// Bulunamazsa ErrCheckNotFound.
+	GetAny(id string) (Check, error)
 	// Resolve, check'i bir sonuca ve residual riske bağlar (VerifiedAt=now). Kiracı-kapsamlı.
 	Resolve(tenantID, id string, o Outcome, residual int) (Check, error)
 	// Restore, kalıcılıktan check'leri aynen yükler (rehydration; doğrulama yapmaz).
@@ -185,6 +188,19 @@ func (m *MemStore) ListAll() ([]Check, error) {
 	}
 	sortByOpened(out)
 	return out, nil
+}
+
+// GetAny, kiracıdan bağımsız id ile check döner (platform admini). Bulunamazsa
+// ErrCheckNotFound. Çağıran katman yalnız kiracısız (platform) admin için çağırmalıdır.
+func (m *MemStore) GetAny(id string) (Check, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, c := range m.checks {
+		if c.ID == id {
+			return c, nil
+		}
+	}
+	return Check{}, ErrCheckNotFound
 }
 
 // Resolve, Store arayüzünü gerçekler (kiracı-kapsamlı). Bulunamazsa ErrCheckNotFound.
