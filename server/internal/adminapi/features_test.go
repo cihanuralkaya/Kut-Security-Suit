@@ -349,6 +349,28 @@ func TestAgentSecEventsIngestEndpoint(t *testing.T) {
 	}
 }
 
+// TestAgentSecEventsRequiresOperator, durum-değiştiren agentsec ingest ucunun VIEWER'a
+// kapalı olduğunu doğrular: salt-okuma bir analist sahte exfil zinciri üretip/gerçek
+// bulguyu bastıramamalı (bütünlük — SEC). VIEWER 403, OPERATOR geçer.
+func TestAgentSecEventsRequiresOperator(t *testing.T) {
+	srv, store := newServer(t)
+	srv.SetAgentSec(aisec.NewService())
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	addAdmin(t, store, "v1", "viewer@x", "secret", admin.RoleViewer)
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+	_, vb := post(t, ts.URL+"/api/login", "", map[string]string{"email": "viewer@x", "password": "secret"})
+	_, ob := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	body := map[string]any{"nodes": []map[string]any{{"id": "a", "kind": "agent", "trust": "TRUSTED"}}}
+
+	if code, _ := post(t, ts.URL+"/api/agentsec/events", vb["token"], body); code != http.StatusForbidden {
+		t.Fatalf("VIEWER agentsec ingest 403 almalıydı, %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/agentsec/events", ob["token"], body); code != http.StatusOK {
+		t.Fatalf("OPERATOR agentsec ingest 200 almalıydı, %d", code)
+	}
+}
+
 // TestAgentSecCanonicalEndpoint, P0-B'yi uçtan doğrular: AG exfil bulgusu, GET
 // /api/agentsec/canonical'da MEVCUT kanonik olay modeli (model.Event) olarak dönmeli —
 // içerik-adresli event_id, kanonik event_type/source/severity ve şema sürümü ile. Böylece

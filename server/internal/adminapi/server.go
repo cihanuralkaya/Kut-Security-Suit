@@ -1546,9 +1546,15 @@ func (s *Server) handleAgentSecCanonical(w http.ResponseWriter, r *http.Request,
 // Causality Graph'ı besler (telemetri kaynağı seam'i). Gözlemler DATA'dır; enforcement
 // üretmez (INV-AG-010). Kenar tipleri: read (agent→source), write (agent→sink), delegate
 // (delegator→delegatee), influence (from→to). Bilinmeyen trust fail-safe Untrusted'a düşer.
-func (s *Server) handleAgentSecEvents(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleAgentSecEvents(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.agentSec == nil {
 		writeErr(w, http.StatusNotFound, "agentic tehdit savunması etkin değil")
+		return
+	}
+	// Bu uç DURUM-DEĞİŞTİRİR (ObserveNode bir düğümün güvenini ÜZERİNE yazar; kenar
+	// ekler) → salt-okuma bir VIEWER sahte exfil zinciri üretemesin ya da gerçek bulguyu
+	// bastıramasın diye OPERATOR+ gerekir (diğer mutasyon yollarıyla tutarlı; SEC).
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
 		return
 	}
 	var req struct {
