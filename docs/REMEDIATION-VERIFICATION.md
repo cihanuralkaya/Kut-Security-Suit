@@ -1,0 +1,68 @@
+# Remediation Verification — KUT Doğrulama Motoru
+
+KUT, DETECTION → RESPONSE → **VERIFICATION** halkasını kapatır: bir bulgu "çözüldü"
+olarak kapatılmadan önce, **gerçekten düzelip düzelmediği** taze telemetriye karşı yeniden
+ölçülür. "resolved işaretlendi" ≠ "düzeldi"; motor bunu ölçer.
+
+Paket: `server/internal/verify` (saf-Go, çekirdek-içi, zero-dep — Lite guard uyumlu).
+
+## Neden çekirdek-içi ve fail-closed?
+
+Doğrulama, vaka-kapanışını gate'ler ve denetim-izi DOĞRULUĞU üretir → **fail-closed**
+olmalı: değerlendirilemeyen bir check ASLA `VERIFIED` vermez. Bu yüzden mevcut fail-open
+AI seam'inin (`aibrain` → `services/ai`, sağlayıcı yoksa "sonuç yok, devam") arkasına
+KONMAZ; oraya konsa güvenlik özelliği tersine dönerdi. (İleride **predictive / what-if**
+risk-azalması ayrı, advisory, fail-open bir Python kuzeni olabilir — doğrulama karar
+yolunda DEĞİL.)
+
+## Sonuçlar (Outcome)
+
+- `PENDING` — pencere (WindowEnd) henüz dolmadı.
+- `VERIFIED` — kaynak sinyal taze pencerede doğrulanabilir biçimde kayboldu.
+- `REGRESSED` — sinyal hâlâ tetikliyor (düzelme yok).
+- `INCONCLUSIVE` — pencerede telemetri yok → karar verilemez (fail-closed: VERIFIED değil).
+
+## Nasıl çalışır (DetectionVerifier)
+
+`adminread.ReplayDetections`'ın TERSİ: replay "bu kural geçmişte kaç olayı yakalardı?"
+der; doğrulama "kaynak kural taze (aksiyon-sonrası) pencerede ARTIK tetikliyor mu?" der ve
+**sıfır eşleşme** bekler. `RuleRunner` arayüzü (`Evaluate(model.Event) []detect.Detection`)
+mevcut `*detect.Engine` tarafından doğrudan karşılanır (import döngüsü yok).
+
+## Gerçekleşen (ölçülen) risk azalması
+
+- Açılışta `Baseline = risk.Score(Factors)` (bulgunun risk girdileri).
+- `VERIFIED`'de kalan risk = sinyal-bağımlı faktörler asgariye indirilmiş skor (Confidence
+  küçük epsilon — `risk.Score` 0'ı "tam güven" sayar —, Exploitability 0); yapısal risk
+  (varlık kritikliği + maruziyet) dürüstçe kalır.
+- `RiskReduced() = Baseline − Residual` (0 tabanlı): VERIFIED'de pozitif, REGRESSED/
+  INCONCLUSIVE'de 0; kalan asla Baseline'ı aşmaz.
+
+## API (kiracı SUNUCU-TARAFI; bkz. docs/MULTI-TENANCY.md)
+
+- `POST /api/verify/open` (OPERATOR+) — `{finding_ref, device_id, rule_id, kind, factors, window_secs}`; kiracıya bağlı check açar.
+- `POST /api/verify/{id}/run` (OPERATOR+) — cihazın açılış-sonrası taze olaylarını (QueryEvents, kiracı-kapsamlı) çekip yeniden değerlendirir, çözer ve denetim izine yazar.
+- `GET /api/verify` (VIEWER+) — çağıranın kiracısının check'leri; platform admini (boş kiracı) tümünü.
+
+## Vaka bağlama
+
+`casemgmt.AttachVerification` ekleme türü + `"verify"` timeline olayı ile bir doğrulama
+sonucu vakanın değişmez zaman çizelgesine ve `Verifications` listesine bağlanır.
+(CONTAINED→CLOSE'u doğrulanmış check'e bağlayan guard ileride adminapi'de.)
+
+## Otomatik mod (opsiyonel, default KAPALI)
+
+`KUT_VERIFY_AUTO=1` (+ otomatik-müdahale) ile: `response.AutoQuarantiner` bir cihazı
+karantinaya aldığında generic karantina-sonrası kanca bir check açar (kural-id boş →
+"cihazda ARTIK herhangi bir tespit tetikliyor mu?"); arka-plan worker'ı pencere dolunca
+yeniden değerlendirip çözer. Pencere: `KUT_VERIFY_WINDOW` (varsayılan 15dk).
+
+## Metrikler
+
+`kut_verify_verified_total`, `kut_verify_regressed_total` (Prometheus; /metrics).
+
+## Kapsam-dışı (ilk sürüm)
+
+Attack-path/graf-tabanlı doğrulama; `vuln`/`compliance` re-scan kind'ları; **predictive**
+(what-if) beklenen risk-azalması ve simülasyon (ölçülen/gerçekleşen azalma yeterli); kalıcı
+DB geçmişi (MemStore + Restore, casemgmt deseni). Bunlar rezerve/ileri fazlardır.
