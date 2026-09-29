@@ -11,6 +11,7 @@ import (
 
 	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/model"
+	"kut.corp/suite/server/internal/risk"
 )
 
 // RuleRunner, taze bir olayı tespit kurallarına karşı değerlendirir. `*detect.Engine`
@@ -40,25 +41,44 @@ func NewDetectionVerifier(r RuleRunner) *DetectionVerifier { return &DetectionVe
 
 var _ Verifier = (*DetectionVerifier)(nil)
 
-// Evaluate, Verifier arayüzünü gerçekler. Döndürülen int, KALAN risktir (Dilim 3'te
-// risk.Score ile inceltilir; burada: sinyal varsa/bilinmiyorsa Baseline korunur, yoksa 0).
+// Evaluate, Verifier arayüzünü gerçekler. Döndürülen int, KALAN risktir:
+//   - INCONCLUSIVE/REGRESSED → Baseline (azalma yok/ölçülemedi)
+//   - VERIFIED → sinyal-bağımlı faktörler (Confidence, Exploitability) SIFIRLANMIŞ
+//     risk.Score'u — yani bu tespit artık tetiklemediğinde kalan YAPISAL risk (varlık
+//     kritikliği + maruziyet). Dürüst: bir cihaz bu tespit temizlense de hâlâ açık olabilir.
 func (v *DetectionVerifier) Evaluate(_ context.Context, c Check, fresh []model.Event) (Outcome, int, error) {
-	// Fail-closed: değerlendirilecek taze telemetri yoksa "düzeldi" DENEMEYİZ.
-	if len(fresh) == 0 {
-		return OutcomeInconclusive, c.Baseline, nil
+	baseline := c.Baseline
+	if baseline == 0 {
+		baseline = risk.Score(c.Factors)
 	}
-	if v.runner == nil {
-		return OutcomeInconclusive, c.Baseline, nil
+	// Fail-closed: değerlendirilecek taze telemetri veya runner yoksa "düzeldi" DENEMEYİZ.
+	if len(fresh) == 0 || v.runner == nil {
+		return OutcomeInconclusive, baseline, nil
 	}
 	for _, ev := range fresh {
 		for _, d := range v.runner.Evaluate(ev) {
 			// RuleID boşsa (kaynak kural bilinmiyor) herhangi bir tespit sinyalin
 			// sürdüğünü gösterir; doluysa yalnız AYNI kural sayılır.
 			if c.RuleID == "" || d.RuleID == c.RuleID {
-				return OutcomeRegressed, c.Baseline, nil // sinyal hâlâ var → azalma yok
+				return OutcomeRegressed, baseline, nil // sinyal hâlâ var → azalma yok
 			}
 		}
 	}
-	// Kaynak kural taze pencerede ARTIK tetiklemiyor → doğrulanmış düzelme.
-	return OutcomeVerified, 0, nil
+	// Kaynak kural taze pencerede ARTIK tetiklemiyor → doğrulanmış düzelme; kalan risk =
+	// sinyal-bağımlı faktörler asgariye indirilmiş skor. NOT: risk.Score, Confidence<=0'ı
+	// "belirtilmemiş → tam güven" sayar; bu yüzden "sinyal yok"u temsil için 0 değil küçük
+	// bir epsilon kullanılır (güveni asgariye indirir). Exploitability doğrudan eklenti
+	// olduğundan 0 doğru (istismar sinyali kaldırılır).
+	residualFactors := c.Factors
+	residualFactors.Confidence = signalGoneConfidence
+	residualFactors.Exploitability = 0
+	residual := risk.Score(residualFactors)
+	if residual > baseline {
+		residual = baseline // güvenlik: kalan, başlangıcı asla aşmaz
+	}
+	return OutcomeVerified, residual, nil
 }
+
+// signalGoneConfidence, doğrulanmış-düzelme sonrası kalan-risk hesabında kullanılan
+// asgari güven değeridir (risk.Score'un 0=tam-güven yorumundan kaçınmak için >0).
+const signalGoneConfidence = 0.05

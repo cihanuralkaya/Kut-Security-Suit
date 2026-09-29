@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"kut.corp/suite/server/internal/risk"
 )
 
 // Outcome, bir doğrulama check'inin sonucudur.
@@ -48,18 +50,19 @@ var (
 // kiracısı); istemciden gelmez. Baseline, açılışta bulgunun risk skoru; ResidualRisk,
 // değerlendirme sonrası kalan risk.
 type Check struct {
-	ID         string    `json:"id"`
-	TenantID   string    `json:"tenant_id"`
-	FindingRef string    `json:"finding_ref"` // bağlı bulgu/olay/incident kimliği
-	DeviceID   string    `json:"device_id"`
-	RuleID     string    `json:"rule_id"` // yeniden koşulacak tespit kuralı (Kind=detection)
-	Kind       string    `json:"kind"`
-	Baseline   int       `json:"baseline"`
-	Residual   int       `json:"residual_risk"`
-	Outcome    Outcome   `json:"outcome"`
-	OpenedAt   time.Time `json:"opened_at"`
-	WindowEnd  time.Time `json:"window_end"`  // bu andan sonra değerlendirilebilir
-	VerifiedAt time.Time `json:"verified_at"` // çözümleme anı (Resolve)
+	ID         string       `json:"id"`
+	TenantID   string       `json:"tenant_id"`
+	FindingRef string       `json:"finding_ref"` // bağlı bulgu/olay/incident kimliği
+	DeviceID   string       `json:"device_id"`
+	RuleID     string       `json:"rule_id"` // yeniden koşulacak tespit kuralı (Kind=detection)
+	Kind       string       `json:"kind"`
+	Factors    risk.Factors `json:"factors"` // bulgunun açılıştaki risk girdileri; Baseline bundan türer
+	Baseline   int          `json:"baseline"`
+	Residual   int          `json:"residual_risk"`
+	Outcome    Outcome      `json:"outcome"`
+	OpenedAt   time.Time    `json:"opened_at"`
+	WindowEnd  time.Time    `json:"window_end"`  // bu andan sonra değerlendirilebilir
+	VerifiedAt time.Time    `json:"verified_at"` // çözümleme anı (Resolve)
 }
 
 // RiskReduced, gerçekleşen (ölçülen) risk azalmasıdır: Baseline − Residual, 0'da taban.
@@ -124,6 +127,11 @@ func (m *MemStore) Open(c Check) (Check, error) {
 	}
 	if c.Outcome == "" {
 		c.Outcome = OutcomePending
+	}
+	// Baseline verilmemişse bulgunun risk faktörlerinden türet (gerçekleşen risk-azalması
+	// hesabının referansı). Residual, doğrulama sonucuna göre Verifier tarafından hesaplanır.
+	if c.Baseline == 0 {
+		c.Baseline = risk.Score(c.Factors)
 	}
 	t := m.nowTime()
 	if c.OpenedAt.IsZero() {
