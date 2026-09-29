@@ -75,6 +75,23 @@ func TestAutoQuarantineEnqueuesAndAudits(t *testing.T) {
 	}
 }
 
+// TestAutoQuarantineAfterHook, başarılı karantina sonrası kancanın (ör. otomatik
+// remediation-doğrulama check'i) doğru cihaz/gerekçeyle çağrıldığını doğrular.
+func TestAutoQuarantineAfterHook(t *testing.T) {
+	f := newFake()
+	a := New(f, nil, "")
+	var gotDev, gotReason string
+	a.SetAfterQuarantine(func(_ context.Context, deviceID, reason string) {
+		gotDev, gotReason = deviceID, reason
+	})
+	if err := a.AutoQuarantine(context.Background(), "dev-9", "kritik"); err != nil {
+		t.Fatal(err)
+	}
+	if gotDev != "dev-9" || gotReason != "kritik" {
+		t.Fatalf("kanca doğru cihaz/gerekçeyle çağrılmalıydı: dev=%q reason=%q", gotDev, gotReason)
+	}
+}
+
 func TestAutoQuarantineReturnsErrOnEnqueueFailure(t *testing.T) {
 	f := newFake()
 	f.failCmd = true

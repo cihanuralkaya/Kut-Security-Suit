@@ -44,6 +44,16 @@ type AutoQuarantiner struct {
 	store    Store
 	authz    Authorizer // nil = geçiş (transitional); üretimde daima kurulur (NewGuarded)
 	tenantID string     // yapılandırılmış kiracı (CONTRACTS §10; fail-closed gateway için)
+	// after, karantina BAŞARIYLA uygulandıktan sonra (best-effort) çağrılan opsiyonel
+	// kancadır. Bağımlılık-ters-çevirme: response paketi üst-seviye modülleri (ör.
+	// remediation-verification) import ETMEZ; wiring katmanı bir kanca bağlar. nil → no-op.
+	after func(ctx context.Context, deviceID, reason string)
+}
+
+// SetAfterQuarantine, başarılı otomatik-karantina sonrası çağrılacak kancayı bağlar
+// (ör. bir remediation-doğrulama check'i açmak). Karantina yolunu bloklamaz/başarısız etmez.
+func (a *AutoQuarantiner) SetAfterQuarantine(fn func(ctx context.Context, deviceID, reason string)) {
+	a.after = fn
 }
 
 // New, verilen yetki-karar sınırıyla bir AutoQuarantiner kurar (dependency injection —
@@ -88,6 +98,11 @@ func (a *AutoQuarantiner) AutoQuarantine(ctx context.Context, deviceID, reason s
 	}
 	_ = a.store.SetDeviceStatus(ctx, deviceID, "QUARANTINE_PENDING") // DESIRED; effective ajan onayıyla (F-D)
 	_ = a.store.WriteAudit(ctx, systemActor, "AUTO_QUARANTINE", "device", deviceID)
+	// Best-effort kanca (ör. otomatik remediation-doğrulama check'i aç). Karantina zaten
+	// uygulandı; kanca hatası akışı bozmaz.
+	if a.after != nil {
+		a.after(ctx, deviceID, reason)
+	}
 	return nil
 }
 

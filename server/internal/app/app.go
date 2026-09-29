@@ -559,8 +559,10 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 
 	// Otomatik müdahale (SOAR): KUT_AUTO_RESPONSE=1 ise kritik güvenlik olayında
 	// cihaz otomatik karantinaya alınır. Varsayılan KAPALI (karantina bozucudur).
+	var autoResp *response.AutoQuarantiner
 	if os.Getenv("KUT_AUTO_RESPONSE") == "1" {
-		agentHandler.SetAutoResponder(response.NewGuarded(backend, cfg.TenantID))
+		autoResp = response.NewGuarded(backend, cfg.TenantID)
+		agentHandler.SetAutoResponder(autoResp)
 		autoRespOn = true
 		log.Println("otomatik müdahale: kritik olayda otomatik karantina ETKİN")
 	}
@@ -625,8 +627,29 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	// Remediation Verification (DETECTION→RESPONSE→VERIFICATION): bir bulgu kapatılmadan
 	// önce sinyalinin gerçekten kalktığını, kaynak tespit kuralını taze pencerede yeniden
 	// koşturarak ölçer (mevcut detect.Engine RuleRunner'ı karşılar). Fail-closed.
-	adminAPI.SetVerifyStore(verify.NewMemStore())
-	adminAPI.SetVerifier(verify.NewDetectionVerifier(detector))
+	verifyStore := verify.NewMemStore()
+	verifier := verify.NewDetectionVerifier(detector)
+	adminAPI.SetVerifyStore(verifyStore)
+	adminAPI.SetVerifier(verifier)
+	// Otomatik doğrulama (opsiyonel, default KAPALI): otomatik-karantina sonrası bir
+	// remediation-doğrulama check'i aç ve doğrulama penceresi dolunca cihazın taze
+	// olaylarını yeniden değerlendirip çöz. KUT_VERIFY_AUTO=1 + otomatik-müdahale gerektirir.
+	if os.Getenv("KUT_VERIFY_AUTO") == "1" && autoResp != nil {
+		win := 15 * time.Minute
+		if d, err := time.ParseDuration(os.Getenv("KUT_VERIFY_WINDOW")); err == nil && d > 0 {
+			win = d
+		}
+		autoResp.SetAfterQuarantine(func(_ context.Context, deviceID, reason string) {
+			// Kaynak kural bilinmiyor (karantina cihaz-seviyesi) → RuleID boş: "cihazda
+			// ARTIK hiçbir tespit tetiklemiyor mu?" doğrulaması.
+			_, _ = verifyStore.Open(verify.Check{
+				ID: newAutoVerifyID(), TenantID: cfg.TenantID, FindingRef: reason, DeviceID: deviceID,
+				Kind: verify.KindDetection, WindowEnd: time.Now().Add(win),
+			})
+		})
+		go runVerifyWorker(ctx, verifyStore, verifier, readSvc, win)
+		log.Println("otomatik remediation-doğrulama ETKİN (KUT_VERIFY_AUTO=1)")
+	}
 	// SOC AI brain (fail-open): KUT_AI_URL varsa dış sağlayıcı; yoksa SIFIR-AĞ deterministik
 	// yerel sağlayıcı (plan varsayılanı) — CANLI seqModel'i paylaşır, böylece yerel AI de
 	// gerçek PROCESS verisinden beslenir (dış servis olmadan triyaj/füzyon çalışır).
@@ -1542,4 +1565,68 @@ func buildScopeEngine(tenantID string) (eng *scope.Engine, enforce bool, configu
 		return nil, false, false
 	}
 	return scope.New(&scope.Policy{Allowed: allow, Excluded: excl, Actions: actions}), enforce, true
+}
+
+// newAutoVerifyID, otomatik açılan remediation-doğrulama check'i için kısa rastgele
+// kimlik üretir.
+func newAutoVerifyID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return "avchk-" + hex.EncodeToString(b)
+}
+
+// runVerifyWorker, doğrulama penceresi (WindowEnd) dolmuş PENDING check'leri periyodik
+// olarak değerlendirir: cihazın açılıştan bu yana taze olaylarını çeker, kaynak sinyali
+// yeniden ölçer ve check'i çözer. Fail-closed: telemetri yoksa INCONCLUSIVE. Otomatik
+// remediation-doğrulama (KUT_VERIFY_AUTO) etkinken çalışır; ctx iptalinde durur.
+func runVerifyWorker(ctx context.Context, store *verify.MemStore, v verify.Verifier, rd *adminread.Service, window time.Duration) {
+	tick := window / 3
+	if tick < time.Minute {
+		tick = time.Minute
+	}
+	t := time.NewTicker(tick)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			all, err := store.ListAll()
+			if err != nil {
+				continue
+			}
+			now := time.Now()
+			for _, c := range all {
+				if c.Outcome != verify.OutcomePending || now.Before(c.WindowEnd) {
+					continue // henüz değerlendirilmedi ya da pencere dolmadı
+				}
+				rows, err := rd.QueryEvents(ctx, adminread.EventFilter{
+					DeviceID: c.DeviceID, TenantID: c.TenantID, Since: c.OpenedAt, Limit: 500,
+				})
+				if err != nil {
+					continue
+				}
+				fresh := make([]model.Event, 0, len(rows))
+				for _, d := range rows {
+					fresh = append(fresh, model.Event{
+						EventID: d.EventID, Category: d.Category, Severity: d.Severity, Message: d.Message,
+						OccurredAt: d.OccurredAt, DeviceID: d.DeviceID, TenantID: c.TenantID, Details: string(d.Details),
+					})
+				}
+				outcome, residual, err := v.Evaluate(ctx, c, fresh)
+				if err != nil {
+					continue
+				}
+				if _, err := store.Resolve(c.TenantID, c.ID, outcome, residual); err != nil {
+					continue
+				}
+				switch outcome {
+				case verify.OutcomeVerified:
+					metrics.IncVerifyVerified()
+				case verify.OutcomeRegressed:
+					metrics.IncVerifyRegressed()
+				}
+			}
+		}
+	}
 }
