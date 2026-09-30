@@ -686,7 +686,7 @@
             <button class="btn ghost sm" id="aud-csv" title="Görünen kayıtları CSV indir">↓ CSV</button>
             <button class="btn ghost sm" id="aud-refresh">↻</button></div>
           <div class="tbl-wrap">
-            <table><thead><tr><th scope="col">Zaman</th><th scope="col">Yönetici</th><th scope="col">Eylem</th><th scope="col">Hedef</th></tr></thead>
+            <table><thead><tr id="aud-thead"><th scope="col" class="sortable" data-sortkey="created_at" aria-sort="descending">Zaman</th><th scope="col" class="sortable" data-sortkey="admin_email">Yönetici</th><th scope="col" class="sortable" data-sortkey="action">Eylem</th><th scope="col" class="sortable" data-sortkey="target_type">Hedef</th></tr></thead>
               <tbody id="aud-body"></tbody></table>
           </div>
           <div id="aud-empty" class="empty">Kayıt yok.</div>
@@ -2038,6 +2038,10 @@
   function renderAudit(){
     var body=$("aud-body"); body.innerHTML="";
     var a=filteredAudit();
+    var asc2=state.audSort||(state.audSort={key:"created_at",dir:-1});
+    var aacc={ created_at:function(x){return x.created_at||"";}, admin_email:function(x){return (x.admin_email||"").toLowerCase();},
+               action:function(x){return (x.action||"").toLowerCase();}, target_type:function(x){return (x.target_type||"").toLowerCase();} }[asc2.key];
+    if(aacc){ a=a.slice().sort(function(p,q){ var xx=aacc(p),yy=aacc(q); return xx<yy?-asc2.dir:(xx>yy?asc2.dir:0); }); }
     $("aud-count").textContent=a.length + (state.actFilter?(" · "+state.actFilter):"");
     $("aud-empty").style.display=a.length?"none":"block";
     if(((state.audSearch||"").trim()||state.actFilter) && a.length===0){ $("aud-empty").textContent="Eşleşen kayıt yok."; }
@@ -3225,6 +3229,7 @@
   }
   wireSortHead($("evt-thead"), "evtSort", renderEvents, {created_at:1, severity:1});
   wireSortHead($("dev-thead"), "devSort", renderDevices, {last_seen:1, status:1});
+  wireSortHead($("aud-thead"), "audSort", renderAudit, {created_at:1});
 
   // ---------- Komut paleti (Ctrl/Cmd-K): hızlı gezinme + eylemler ----------
   (function(){
