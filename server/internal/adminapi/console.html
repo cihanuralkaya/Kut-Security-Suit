@@ -633,7 +633,7 @@
           </div>
           <div class="tbl-wrap">
             <table>
-              <thead><tr><th scope="col">Durum</th><th scope="col">Hostname</th><th scope="col">MAC</th><th scope="col">OS</th><th scope="col">Sürüm</th><th scope="col">Son görülme</th></tr></thead>
+              <thead><tr id="dev-thead"><th scope="col" class="sortable" data-sortkey="status">Durum</th><th scope="col" class="sortable" data-sortkey="hostname">Hostname</th><th scope="col" class="sortable" data-sortkey="mac">MAC</th><th scope="col" class="sortable" data-sortkey="os_version">OS</th><th scope="col" class="sortable" data-sortkey="agent_version">Sürüm</th><th scope="col" class="sortable" data-sortkey="last_seen" aria-sort="descending">Son görülme</th></tr></thead>
               <tbody id="dev-body"></tbody>
             </table>
           </div>
@@ -1737,6 +1737,14 @@
              (d.os_version||"").toLowerCase().indexOf(q)>=0 || (d.os_platform||"").toLowerCase().indexOf(q)>=0 ||
              (d.tags||[]).some(function(t){ return t.toLowerCase().indexOf(q)>=0; });
     });
+    var dsc=state.devSort||(state.devSort={key:"last_seen",dir:-1});
+    var dacc={ status:function(d){return ({QUARANTINED:3,QUARANTINE_PENDING:3}[d.status]!=null)?3:(isOnline(d)?2:1);},
+               hostname:function(d){return (d.hostname||"").toLowerCase();},
+               mac:function(d){return (d.mac||"").toLowerCase();},
+               os_version:function(d){return (d.os_version||d.os_platform||"").toLowerCase();},
+               agent_version:function(d){return (d.agent_version||"").toLowerCase();},
+               last_seen:function(d){return d.last_seen||"";} }[dsc.key];
+    if(dacc){ list.sort(function(a,b){ var x=dacc(a),y=dacc(b); return x<y?-dsc.dir:(x>y?dsc.dir:0); }); }
     $("dev-count").textContent=list.length + (f?(" · "+f):"");
     $("dev-empty").style.display = list.length ? "none" : "block";
     if((q||f) && list.length===0){ $("dev-empty").textContent="Bu süzgeçle eşleşen cihaz yok."; }
@@ -3196,10 +3204,10 @@
     apply(init);
   })();
 
-  // ---------- Olaylar tablosu sıralama (başlık tıkla → sütun seç / yön çevir) ----------
-  (function(){
-    var head=$("evt-thead"); if(!head) return;
-    function upd(){ var sc=state.evtSort||{key:"created_at",dir:-1};
+  // ---------- Tablo sıralama (başlık tıkla → sütun seç / yön çevir); klavye + aria-sort ----------
+  function wireSortHead(head, stateKey, renderFn, descKeys){
+    if(!head) return;
+    function upd(){ var sc=state[stateKey]||{};
       Array.prototype.forEach.call(head.querySelectorAll("th.sortable"),function(th){
         var k=th.getAttribute("data-sortkey");
         th.setAttribute("aria-sort", k===sc.key ? (sc.dir<0?"descending":"ascending") : "none");
@@ -3207,14 +3215,16 @@
     }
     Array.prototype.forEach.call(head.querySelectorAll("th.sortable"),function(th){
       th.tabIndex=0;
-      var go=function(){ var k=th.getAttribute("data-sortkey"); var sc=state.evtSort||(state.evtSort={key:"created_at",dir:-1});
-        if(sc.key===k){ sc.dir=-sc.dir; } else { sc.key=k; sc.dir=(k==="created_at"||k==="severity")?-1:1; }
-        renderEvents(); upd(); };
+      var go=function(){ var k=th.getAttribute("data-sortkey"); var sc=state[stateKey]||(state[stateKey]={key:k,dir:1});
+        if(sc.key===k){ sc.dir=-sc.dir; } else { sc.key=k; sc.dir=descKeys[k]?-1:1; }
+        renderFn(); upd(); };
       th.onclick=go;
       th.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); go(); } };
     });
     upd();
-  })();
+  }
+  wireSortHead($("evt-thead"), "evtSort", renderEvents, {created_at:1, severity:1});
+  wireSortHead($("dev-thead"), "devSort", renderDevices, {last_seen:1, status:1});
 
   // ---------- Komut paleti (Ctrl/Cmd-K): hızlı gezinme + eylemler ----------
   (function(){
