@@ -217,6 +217,16 @@ curl -sk "$B/api/cases/$CID/transition" -X POST -H "Authorization: Bearer $TOK" 
   && pass "SOC vaka geçişi OPEN→INVESTIGATING (fail-closed durum makinesi)" || fail "SOC vaka geçişi başarısız"
 curl -sk "$B/api/audit?limit=20" -H "Authorization: Bearer $TOK" | grep -q "EVENT_CASE" \
   && pass "vaka ataması denetim izine yazıldı" || fail "vaka denetim izinde yok"
+# Remediation Doğrulama (verify, kalıcı DB yolu): check aç → listede (write-through DB) →
+# çalıştır (DB Resolve). Açma/çalıştırma DB'ye upsert/update eder; şema/SQL hatası 500'e düşer.
+VID="$(curl -sk "$B/api/verify/open" -X POST -H "Authorization: Bearer $TOK" \
+  -H 'Content-Type: application/json' -d "{\"device_id\":\"$DID\",\"rule_id\":\"smoke-rule\",\"kind\":\"detection\"}" \
+  | sed -E 's/.*"id":"([^"]+)".*/\1/')"
+{ [ -n "$VID" ] && curl -sk "$B/api/verify" -H "Authorization: Bearer $TOK" | grep -q "$VID" ; } \
+  && pass "doğrulama check açıldı + kalıcı ($VID)" || fail "doğrulama check açma/kalıcılık başarısız"
+curl -sk "$B/api/verify/$VID/run" -X POST -H "Authorization: Bearer $TOK" \
+  | grep -qE '"outcome":"(VERIFIED|REGRESSED|INCONCLUSIVE)"' \
+  && pass "doğrulama check çalıştı + çözüldü (DB Resolve)" || fail "doğrulama run/resolve başarısız"
 # Kurcalama-kanıtlı denetim dışa aktarımı (#16): hash-zincirli JSONL üretilir.
 exp="$(curl -sk "$B/api/audit/export" -H "Authorization: Bearer $TOK")"
 echo "$exp" | grep -q '"hash"' \

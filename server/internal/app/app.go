@@ -627,7 +627,13 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	// Remediation Verification (DETECTION→RESPONSE→VERIFICATION): bir bulgu kapatılmadan
 	// önce sinyalinin gerçekten kalktığını, kaynak tespit kuralını taze pencerede yeniden
 	// koşturarak ölçer (mevcut detect.Engine RuleRunner'ı karşılar). Fail-closed.
-	verifyStore := verify.NewMemStore()
+	// Depo: DB modunda kalıcı (verify_checks tablosu, cluster-safe doğrudan-okuma),
+	// demo/tek-düğüm modunda bellek-içi. casemgmt deseniyle aynı.
+	var verifyStore verify.Store = verify.NewMemStore()
+	if dbStore, ok := backend.(*db.Store); ok {
+		verifyStore = dbStore.VerifyStore()
+		log.Println("remediation-doğrulama deposu ETKİN (kalıcı — PostgreSQL): /api/verify")
+	}
 	verifier := verify.NewDetectionVerifier(detector)
 	adminAPI.SetVerifyStore(verifyStore)
 	adminAPI.SetVerifier(verifier)
@@ -1585,7 +1591,7 @@ func newAutoVerifyID() string {
 // olarak değerlendirir: cihazın açılıştan bu yana taze olaylarını çeker, kaynak sinyali
 // yeniden ölçer ve check'i çözer. Fail-closed: telemetri yoksa INCONCLUSIVE. Otomatik
 // remediation-doğrulama (KUT_VERIFY_AUTO) etkinken çalışır; ctx iptalinde durur.
-func runVerifyWorker(ctx context.Context, store *verify.MemStore, v verify.Verifier, rd *adminread.Service, window time.Duration) {
+func runVerifyWorker(ctx context.Context, store verify.Store, v verify.Verifier, rd *adminread.Service, window time.Duration) {
 	tick := window / 3
 	if tick < time.Minute {
 		tick = time.Minute

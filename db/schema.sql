@@ -324,6 +324,24 @@ CREATE TABLE cases (
 );
 CREATE INDEX idx_cases_tenant_created ON cases (tenant_id, created_at);
 
+-- REMEDIATION DOĞRULAMA (verify): DETECTION→RESPONSE→VERIFICATION check'leri. Bir bulgu
+-- "çözüldü" kapatılmadan önce kaynak tespit kuralı taze pencerede yeniden ölçülür. Tam
+-- kaynak (factors/baseline/residual/outcome/pencere) `doc` JSONB'de; çekirdek alanlar
+-- sorgulanabilir sütunlarda. Kiracı kapsamı (tenant_id, id) bileşik anahtarıyla — id
+-- kiracılar arası yeniden kullanılabilir. Cluster-safe: okumalar doğrudan DB'den.
+CREATE TABLE verify_checks (
+    id         TEXT NOT NULL,
+    tenant_id  TEXT NOT NULL DEFAULT 'default',
+    device_id  TEXT NOT NULL DEFAULT '',
+    rule_id    TEXT NOT NULL DEFAULT '',
+    kind       TEXT NOT NULL DEFAULT '',
+    outcome    TEXT NOT NULL DEFAULT 'PENDING',
+    doc        JSONB NOT NULL,                 -- tam verify.Check
+    opened_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+CREATE INDEX idx_verify_tenant_opened ON verify_checks (tenant_id, opened_at);
+
 -- YÖNETİLEN API TOKEN'LARI: metrics/ingest uçları için statik ortam token'larına
 -- alternatif — oluşturma/İPTAL, SÜRE (expires_at) ve KAPSAM (scope) ile. Yalnız
 -- SHA-256 özeti saklanır (düz sır yalnız oluşturmada döner). Rotation = yeni token
