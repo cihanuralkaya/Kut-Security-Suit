@@ -205,6 +205,7 @@
   .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg); overflow:hidden; box-shadow:var(--shadow-1), var(--hl-top); }
   .card > .head { display:flex; align-items:center; gap:10px; padding:13px 16px; border-bottom:1px solid var(--line); }
   .card > .head h2 { font-size:13px; margin:0; font-weight:650; letter-spacing:.02em; display:flex; align-items:center; gap:8px; }
+  .card > .head h2 svg.hi { width:16px; height:16px; flex:none; color:var(--muted); }
   .card > .head .count { font-family:var(--mono); font-size:12px; color:var(--faint);
     background:var(--panel2); border:1px solid var(--line); border-radius:20px; padding:1px 9px; }
   .card > .head .sp { flex:1; }
@@ -337,6 +338,78 @@
     <symbol id="i-admin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.2a3 3 0 0 1 0 5.6"/><path d="M17.5 20a5.5 5.5 0 0 0-3-4.9"/>
     </symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 21h18"/><rect x="5" y="11" width="3.4" height="8" rx="1"/><rect x="10.3" y="6" width="3.4" height="13" rx="1"/><rect x="15.6" y="14" width="3.4" height="5" rx="1"/>
+    </symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 12h4l3 8 4-16 3 8h4"/>
+    </symbol>
+    <symbol id="i-coverage" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>
+    </symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 16a8 8 0 0 1 16 0"/><path d="M12 16l4-3.5"/><circle cx="12" cy="16" r="1.2"/>
+    </symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3c3 3.6 5 6 5 9a5 5 0 0 1-10 0c0-1.6.6-2.7 1.6-3.7C10 10 11 9 12 3z"/>
+    </symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4.5" y="10" width="15" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>
+    </symbol>
+    <symbol id="i-signal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 14a8 8 0 0 1 8-8M4 18a12 12 0 0 1 12-12"/><circle cx="5" cy="19" r="1.4" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/>
+    </symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 2L4 14h6l-1 8 9-12h-6z"/>
+    </symbol>
+    <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>
+    </symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>
+    </symbol>
+    <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="8" cy="8" r="4"/><path d="M11 11l8 8M16 16l2-2M14 18l2-2"/>
+    </symbol>
+    <symbol id="i-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+    </symbol>
+    <symbol id="i-radar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 12l6-4"/><path d="M20.5 12a8.5 8.5 0 1 1-4.2-7.3"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="i-shield-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M12 8v4"/><path d="M12 15h.01"/>
+    </symbol>
+    <symbol id="i-beaker" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 14h9"/>
+    </symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><circle cx="12" cy="12" r="3"/>
+    </symbol>
+    <symbol id="i-network" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4M10.5 13.5L6.5 17M13.5 13.5l4 3.5"/>
+    </symbol>
+    <symbol id="i-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6"/>
+    </symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/>
+    </symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 21v-7M5 10V3M12 21v-9M12 8V3M19 21v-5M19 12V3"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="19" cy="14" r="2"/>
+    </symbol>
+    <symbol id="i-verify" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><path d="M8.5 12l2.5 2.5 4.5-5"/>
+    </symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>
+    </symbol>
   </defs>
 </svg>
 
@@ -417,7 +490,7 @@
     <section class="stats" id="stats" data-view="overview"></section>
 
     <div class="card" id="sevcard" data-view="overview" style="display:none">
-      <div class="head"><h2>📊 Önem Dağılımı <span class="count" id="sev-total">0</span></h2>
+      <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chart"/></svg>Önem Dağılımı <span class="count" id="sev-total">0</span></h2>
         <span class="sp"></span><span class="mono" id="sev-window" style="color:var(--faint);font-size:11px"></span></div>
       <div class="body">
         <div id="sevbar" style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--panel2);border:1px solid var(--line)"></div>
@@ -426,7 +499,7 @@
     </div>
 
     <div class="card" data-view="overview">
-      <div class="head"><h2>⚔️ Tehdit Etkinliği <span class="count" id="act-uptime">—</span></h2>
+      <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-activity"/></svg>Tehdit Etkinliği <span class="count" id="act-uptime">—</span></h2>
         <span class="sp"></span>
         <button class="btn ghost sm" data-act="reportHTML" title="Güvenlik duruş raporunu HTML olarak aç">📄 Rapor</button>
         <button class="btn ghost sm" data-act="reportCSV" title="KPI'ları CSV olarak indir">⬇ CSV</button>
@@ -439,14 +512,14 @@
     </div>
 
     <div class="card" data-view="overview">
-      <div class="head"><h2>🖥️ OS Envanteri <span class="count" id="osinv-count">0</span></h2></div>
+      <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-devices"/></svg>OS Envanteri <span class="count" id="osinv-count">0</span></h2></div>
       <div class="body">
         <div id="osinv" style="display:flex;flex-direction:column;gap:6px"></div>
       </div>
     </div>
 
     <div class="card" data-view="overview">
-      <div class="head"><h2>🛰️ Filo Kapsamı <span class="count" id="cov-pct">—</span></h2>
+      <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-coverage"/></svg>Filo Kapsamı <span class="count" id="cov-pct">—</span></h2>
         <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">kim korunuyor?</span></div>
       <div class="body">
         <p class="hint" style="margin:0 0 8px">Çevrimiçi (korunan) oran ve ajan sürüm dağılımı (sürüm-kayması). Sessiz/eski ajanlar gerçek dağıtım boşluğudur.</p>
@@ -457,7 +530,7 @@
     </div>
 
     <div class="card" data-view="overview">
-      <div class="head"><h2>📊 Risk &amp; Uyum <span class="count" id="risk-score">—</span></h2>
+      <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gauge"/></svg>Risk &amp; Uyum <span class="count" id="risk-score">—</span></h2>
         <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">çok-faktörlü</span></div>
       <div class="body">
         <p class="hint" style="margin:0 0 8px">Açık incident, uyum ihlali ve karantina durumundan hesaplanan filo riski; uyum çerçeveleri; tespit/yanıt süreleri.</p>
@@ -474,7 +547,7 @@
     </div>
 
     <div class="card" data-view="overview">
-      <div class="head"><h2>🔥 En Çok Olay Üreten Cihazlar <span class="count" id="topdev-count">0</span></h2>
+      <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-flame"/></svg>En Çok Olay Üreten Cihazlar <span class="count" id="topdev-count">0</span></h2>
         <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">son olaylardan · triyaj</span></div>
       <div class="body">
         <div id="topdev" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -483,7 +556,7 @@
     </div>
 
     <div class="card" data-view="overview">
-      <div class="head"><h2>🔒 Disk Şifreleme Uyumu <span class="count" id="enc-count">0</span></h2>
+      <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-lock"/></svg>Disk Şifreleme Uyumu <span class="count" id="enc-count">0</span></h2>
         <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">cihaz uyum durumundan</span></div>
       <div class="body">
         <div id="enc-summary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px"></div>
@@ -497,7 +570,7 @@
         <!-- DEVICES -->
         <div class="card" data-view="devices" data-span="2">
           <div class="head">
-            <h2>💻 Cihazlar <span id="dev-count" class="count">0</span></h2>
+            <h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-devices"/></svg>Cihazlar <span id="dev-count" class="count">0</span></h2>
             <span class="sp"></span>
             <div class="seg" id="devfilter" title="Duruma göre süz">
               <button data-status="" class="on" type="button">Tümü</button>
@@ -520,7 +593,7 @@
 
         <!-- SOFTWARE SEARCH -->
         <div class="card" data-view="devices" data-span="2">
-          <div class="head"><h2>🔎 Yazılım Ara <span id="sw-count" class="count">0</span></h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"/></svg>Yazılım Ara <span id="sw-count" class="count">0</span></h2>
             <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">zafiyet müdahalesi</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Filo genelinde yüklü yazılım arayın — "hangi cihazlarda X kurulu?". Her cihazın en son envanterinde aranır.</p>
@@ -535,7 +608,7 @@
         <!-- EVENTS -->
         <div class="card" data-view="devices" data-span="2">
           <div class="head">
-            <h2>📡 Olaylar <span id="evt-count" class="count">0</span></h2>
+            <h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-signal"/></svg>Olaylar <span id="evt-count" class="count">0</span></h2>
             <span class="sp"></span>
             <div class="seg" id="sevfilter" title="Öneme göre süz">
               <button data-sev="" class="on">Tümü</button>
@@ -557,7 +630,7 @@
 
         <!-- AUDIT -->
         <div class="card" data-view="admin" data-span="2">
-          <div class="head"><h2>📝 Denetim İzi <span id="aud-count" class="count">0</span></h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-file"/></svg>Denetim İzi <span id="aud-count" class="count">0</span></h2>
             <span class="sp"></span>
             <input id="aud-search" placeholder="🔍 yönetici / eylem / hedef" style="width:auto;padding:5px 10px;font-size:12px">
             <button class="btn ghost sm" id="aud-verify" title="Denetim izi hash-zincirinin bütünlüğünü doğrula">🔐 Zinciri Doğrula</button>
@@ -574,7 +647,7 @@
       <!-- ACTIONS -->
       <div class="col">
         <div class="card" data-view="devices">
-          <div class="head"><h2>⚡ Cihaz Eylemleri</h2></div>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bolt"/></svg>Cihaz Eylemleri</h2></div>
           <div class="body">
             <div id="sel-head" class="sel-head sel-none">Bir cihaz seçmek için tablodan satıra tıklayın.</div>
             <div class="actions">
@@ -619,7 +692,7 @@
         </div>
 
         <div class="card" data-view="policies">
-          <div class="head"><h2>🎫 Kayıt & Politika</h2></div>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-policies"/></svg>Kayıt & Politika</h2></div>
           <div class="body">
             <div class="lbl">Yeni cihaz kaydı</div>
             <button class="btn sm" data-act="token" style="margin-top:10px">Enrollment Token Üret</button>
@@ -659,7 +732,7 @@
 
         <!-- POLICIES -->
         <div class="card" data-view="policies" data-span="2">
-          <div class="head"><h2>📋 Politikalar <span id="pol-count" class="count">0</span></h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-list"/></svg>Politikalar <span id="pol-count" class="count">0</span></h2>
             <span class="sp"></span><button class="btn ghost sm" data-act="loadPolicies">↻</button></div>
           <div class="tbl-wrap">
             <table><thead><tr><th>Ad</th><th>Sürüm</th><th>Kural</th><th>Cihaz</th><th></th></tr></thead>
@@ -670,7 +743,7 @@
 
         <!-- BULK -->
         <div class="card" data-view="policies">
-          <div class="head"><h2>🎯 Toplu İşlem (etikete göre)</h2></div>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-layers"/></svg>Toplu İşlem (etikete göre)</h2></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Bir <b>etikete</b> sahip TÜM cihazlara tek seferde eylem uygular (filo yönetimi).</p>
             <div class="field"><input id="bulk-tag" type="text" placeholder="etiket (ör. prod)"></div>
@@ -689,7 +762,7 @@
 
         <!-- ADMINS -->
         <div class="card" data-view="admin">
-          <div class="head"><h2>👥 Yöneticiler <span id="adm-count" class="count">0</span></h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-admin"/></svg>Yöneticiler <span id="adm-count" class="count">0</span></h2>
             <span class="sp"></span><button class="btn ghost sm" data-act="loadAdmins">↻</button></div>
           <div class="body">
             <div class="tbl-wrap">
@@ -711,7 +784,7 @@
           </div>
         </div>
         <div class="card" data-view="admin">
-          <div class="head"><h2>🔐 İki Adımlı Doğrulama (2FA)</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-key"/></svg>İki Adımlı Doğrulama (2FA)</h2>
             <span class="sp"></span><span id="mfa-status" class="count">—</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Hesabınızı TOTP (authenticator uygulaması) ile koruyun. Etkinleştirildiğinde girişte parola + kod gerekir.</p>
@@ -734,7 +807,7 @@
           </div>
         </div>
         <div class="card" data-view="admin">
-          <div class="head"><h2>🛡️ Koruma Katmanları</h2><span class="sp"></span>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-security"/></svg>Koruma Katmanları</h2><span class="sp"></span>
             <button class="btn ghost sm" id="feat-refresh">↻</button></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Dağıtımda hangi opsiyonel korumaların etkin olduğu (yalnız ADMIN).</p>
@@ -742,7 +815,7 @@
           </div>
         </div>
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🎯 MITRE ATT&amp;CK Kapsamı</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-target"/></svg>MITRE ATT&amp;CK Kapsamı</h2>
             <span class="sp"></span><span id="mitre-gap" class="count" style="display:none"></span>
             <span id="mitre-count" class="count">0</span>
             <button class="btn ghost sm" id="posture-csv" title="Tespit duruşunu (teknik + kural + boşluk) JSON olarak indir">↓ JSON</button></div>
@@ -756,7 +829,7 @@
           </div>
         </div>
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🛰️ Tespit Kuralları</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-radar"/></svg>Tespit Kuralları</h2>
             <span class="sp"></span><span id="det-count" class="count">0</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Sunucu-taraflı, adlandırılmış tespit kuralları (olay örüntüsü → önem + ATT&amp;CK).</p>
@@ -769,7 +842,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🩹 Zafiyetler (CVE) <span id="vuln-count" class="count">0</span></h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-shield-alert"/></svg>Zafiyetler (CVE) <span id="vuln-count" class="count">0</span></h2>
             <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">envanter × CVE veri kümesi</span>
             <button class="btn ghost sm" id="vuln-refresh" title="Yenile">↻</button></div>
           <div class="body">
@@ -780,7 +853,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🧪 Kural Test Aracı</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-beaker"/></svg>Kural Test Aracı</h2>
             <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">kuru çalıştırma</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Örnek bir olay girip hangi tespit kurallarının tetikleneceğini görün — gerçek olay beklemeden kapsamı doğrulayın. Salt-okunur; hiçbir olay saklanmaz.</p>
@@ -805,7 +878,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🔎 Retro-Hunt / Arama</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"/></svg>Retro-Hunt / Arama</h2>
             <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">geçmiş olaylar</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Mevcut tespit kurallarını GEÇMİŞ olaylara uygula ("yeni göstergeyle eski olayları tara — zaten vurulduk mu?") ya da olay geçmişinde alan/zaman filtreli arama yap. Salt-okunur.</p>
@@ -832,7 +905,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🕵️ Agentic Tehdit Savunması</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-scan"/></svg>Agentic Tehdit Savunması</h2>
             <span class="sp"></span><span id="ag-count" class="count">0</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">AI-agent nedensellik grafından exfiltration zincirleri (untrusted bağlam → credential okuma → dış yazma). Salt-okunur; telemetri <code>/api/agentsec/events</code> ile beslenir.</p>
@@ -852,7 +925,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🕸️ Varlık Graf Anomalisi</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-network"/></svg>Varlık Graf Anomalisi</h2>
             <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">yapısal skor</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Bir varlığın (cihaz/ip/domain/süreç) yapısal anomali skoru — fan-out/in + nadir kenarlardan türetilir. Salt-okunur.</p>
@@ -873,7 +946,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🔗 Varlık Graf Pivot</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-share"/></svg>Varlık Graf Pivot</h2>
             <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">ilişki gezinme</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Bir varlıktan ilişkili varlıklara pivot (cihaz→domain, ip→cihaz...). Salt-okunur.</p>
@@ -902,7 +975,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🤖 AI Triyaj Önerisi</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cpu"/></svg>AI Triyaj Önerisi</h2>
             <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">salt-öneri · fail-open</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Opsiyonel dış AI'dan bir incident için triyaj önerisi (öncelik / muhtemel-FP / sonraki adımlar). Dış AI yapılandırılmamışsa devre dışıdır ve çekirdek deterministik yola devam eder. Aksiyon tetiklemez.</p>
@@ -917,7 +990,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🧮 AI Risk Füzyonu</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sliders"/></svg>AI Risk Füzyonu</h2>
             <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">açıklanabilir · fail-open</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Deterministik sinyalleri opsiyonel AI'ın sekans/graf skorlarıyla birleştirir ve her katkıyı ayrıştırır. AI yoksa/başarısızsa sonuç yalnız verilen sinyallerin füzyonudur (denetlenebilir). Aksiyon tetiklemez.</p>
@@ -935,7 +1008,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🔁 Remediation Doğrulama <span class="count" id="vf-count">0</span></h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-verify"/></svg>Remediation Doğrulama <span class="count" id="vf-count">0</span></h2>
             <span class="sp"></span>
             <span class="mono" style="color:var(--faint);font-size:11px">resolved ≠ fixed · fail-closed</span>
             <button class="btn ghost sm" id="vf-refresh" type="button" style="margin-left:8px">🔄 Yenile</button></div>
@@ -948,7 +1021,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>🧩 Olay Korelasyonu (Incident)</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-layers"/></svg>Olay Korelasyonu (Incident)</h2>
             <span class="sp"></span><span id="inc-count" class="count">0</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">İlişkili tespitler tek bir incident'e gruplanır (aynı cihaz+kural penceresinde) — yinelenen alarmlar bastırılır. Tekrar sayısı ve son-görülme izlenir.</p>
@@ -960,7 +1033,7 @@
         </div>
 
         <div class="card" data-view="security">
-          <div class="head"><h2>🧭 MITRE Taktik Dağılımı <span class="count" id="tac-count">0</span></h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-compass"/></svg>MITRE Taktik Dağılımı <span class="count" id="tac-count">0</span></h2>
             <span class="sp"></span><span class="mono" style="color:var(--faint);font-size:11px">son olaylardan</span></div>
           <div class="body">
             <div id="tac-grid" style="display:flex;flex-direction:column;gap:6px"></div>
