@@ -155,7 +155,8 @@
     color:var(--muted); font-size:13.5px; font-weight:550; cursor:pointer; border:1px solid transparent;
     background:transparent; text-align:left; width:100%; font-family:inherit;
     transition:background .15s ease,color .15s ease; }
-  .nav-item .ic { font-size:15px; width:20px; text-align:center; flex:none; }
+  .nav-item .ic { width:20px; height:20px; flex:none; display:flex; align-items:center; justify-content:center; }
+  .nav-item .ic svg { width:18px; height:18px; display:block; }
   .nav-item:hover { background:var(--panel); color:var(--ink); }
   .nav-item.active { background:var(--accent-dim); color:var(--accent); border-color:var(--line2); }
   .nav-item:focus-visible { outline:2px solid var(--accent-glow,var(--accent)); outline-offset:1px; }
@@ -317,6 +318,28 @@
 </head>
 <body>
 
+<!-- Monokrom inline-SVG ikon sprite'ı (kurumsal ikonografi; CSP-güvenli, harici köken yok).
+     Semboller stroke=currentColor taşır → kullanıldıkları yerin metin rengini alır. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false" overflow="hidden">
+  <defs>
+    <symbol id="i-overview" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>
+    </symbol>
+    <symbol id="i-devices" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/><path d="M10 16v4M14 16v4"/>
+    </symbol>
+    <symbol id="i-policies" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 5h16v5a2 2 0 0 0 0 4v5H4v-5a2 2 0 0 0 0-4z"/><path d="M13 5v14" stroke-dasharray="2 2"/>
+    </symbol>
+    <symbol id="i-security" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/>
+    </symbol>
+    <symbol id="i-admin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.2a3 3 0 0 1 0 5.6"/><path d="M17.5 20a5.5 5.5 0 0 0-3-4.9"/>
+    </symbol>
+  </defs>
+</svg>
+
 <!-- LOGIN -->
 <div id="login">
   <div class="login-card">
@@ -382,12 +405,12 @@
   </header>
 
   <aside class="sidebar" id="sidebar">
-    <button class="nav-item active" data-nav="overview" type="button"><span class="ic">📊</span><span class="lbl" data-i18n="nav.overview">Genel Bakış</span></button>
-    <button class="nav-item" data-nav="devices" type="button"><span class="ic">💻</span><span class="lbl" data-i18n="nav.devices">Cihazlar</span></button>
-    <button class="nav-item" data-nav="policies" type="button"><span class="ic">🎫</span><span class="lbl" data-i18n="nav.policies">Politika &amp; Kayıt</span></button>
+    <button class="nav-item active" data-nav="overview" type="button"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-overview"/></svg></span><span class="lbl" data-i18n="nav.overview">Genel Bakış</span></button>
+    <button class="nav-item" data-nav="devices" type="button"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-devices"/></svg></span><span class="lbl" data-i18n="nav.devices">Cihazlar</span></button>
+    <button class="nav-item" data-nav="policies" type="button"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-policies"/></svg></span><span class="lbl" data-i18n="nav.policies">Politika &amp; Kayıt</span></button>
     <div class="nav-sep"></div>
-    <button class="nav-item" data-nav="security" type="button"><span class="ic">🛡️</span><span class="lbl" data-i18n="nav.security">Güvenlik</span></button>
-    <button class="nav-item" data-nav="admin" type="button"><span class="ic">👥</span><span class="lbl" data-i18n="nav.admin">Yönetim</span></button>
+    <button class="nav-item" data-nav="security" type="button"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-security"/></svg></span><span class="lbl" data-i18n="nav.security">Güvenlik</span></button>
+    <button class="nav-item" data-nav="admin" type="button"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-admin"/></svg></span><span class="lbl" data-i18n="nav.admin">Yönetim</span></button>
   </aside>
 
   <main data-active="overview">
