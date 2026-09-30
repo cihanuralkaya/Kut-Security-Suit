@@ -600,7 +600,7 @@
           </div>
           <div class="tbl-wrap">
             <table>
-              <thead><tr><th>Durum</th><th>Hostname</th><th>MAC</th><th>OS</th><th>Sürüm</th><th>Son görülme</th></tr></thead>
+              <thead><tr><th scope="col">Durum</th><th scope="col">Hostname</th><th scope="col">MAC</th><th scope="col">OS</th><th scope="col">Sürüm</th><th scope="col">Son görülme</th></tr></thead>
               <tbody id="dev-body"></tbody>
             </table>
           </div>
@@ -637,7 +637,7 @@
           </div>
           <div class="tbl-wrap">
             <table>
-              <thead><tr><th>Zaman</th><th>Kategori</th><th>Önem</th><th>Mesaj</th></tr></thead>
+              <thead><tr><th scope="col">Zaman</th><th scope="col">Kategori</th><th scope="col">Önem</th><th scope="col">Mesaj</th></tr></thead>
               <tbody id="evt-body"></tbody>
             </table>
           </div>
@@ -653,7 +653,7 @@
             <button class="btn ghost sm" id="aud-csv" title="Görünen kayıtları CSV indir">↓ CSV</button>
             <button class="btn ghost sm" id="aud-refresh">↻</button></div>
           <div class="tbl-wrap">
-            <table><thead><tr><th>Zaman</th><th>Yönetici</th><th>Eylem</th><th>Hedef</th></tr></thead>
+            <table><thead><tr><th scope="col">Zaman</th><th scope="col">Yönetici</th><th scope="col">Eylem</th><th scope="col">Hedef</th></tr></thead>
               <tbody id="aud-body"></tbody></table>
           </div>
           <div id="aud-empty" class="empty">Kayıt yok.</div>
@@ -719,7 +719,7 @@
               <button class="btn ghost sm" data-act="loadTokens" style="padding:3px 8px">↻</button>
             </div>
             <div class="tbl-wrap" style="margin-top:6px">
-              <table><thead><tr><th>ID</th><th>Üreten</th><th>Durum</th><th></th></tr></thead>
+              <table><thead><tr><th scope="col">ID</th><th scope="col">Üreten</th><th scope="col">Durum</th><th scope="col"></th></tr></thead>
                 <tbody id="tok-body"></tbody></table>
             </div>
             <div id="tok-empty" class="empty" style="padding:14px">Aktif token yok.</div>
@@ -751,7 +751,7 @@
           <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-list"/></svg>Politikalar <span id="pol-count" class="count">0</span></h2>
             <span class="sp"></span><button class="btn ghost sm" data-act="loadPolicies">↻</button></div>
           <div class="tbl-wrap">
-            <table><thead><tr><th>Ad</th><th>Sürüm</th><th>Kural</th><th>Cihaz</th><th></th></tr></thead>
+            <table><thead><tr><th scope="col">Ad</th><th scope="col">Sürüm</th><th scope="col">Kural</th><th scope="col">Cihaz</th><th scope="col"></th></tr></thead>
               <tbody id="pol-body"></tbody></table>
           </div>
           <div id="pol-empty" class="empty" style="padding:14px">Henüz politika yok. Yukarıdan oluşturun.</div>
@@ -782,7 +782,7 @@
             <span class="sp"></span><button class="btn ghost sm" data-act="loadAdmins">↻</button></div>
           <div class="body">
             <div class="tbl-wrap">
-              <table><thead><tr><th>E-posta</th><th>Rol</th><th>Durum</th><th></th></tr></thead>
+              <table><thead><tr><th scope="col">E-posta</th><th scope="col">Rol</th><th scope="col">Durum</th><th scope="col"></th></tr></thead>
                 <tbody id="adm-body"></tbody></table>
             </div>
             <div id="adm-empty" class="empty" style="padding:14px">Yönetici listesi yükleniyor…</div>
@@ -838,7 +838,7 @@
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Bu dağıtımın eşleyebildiği düşman teknikleri ve her biri için etkin tespit kuralı olup olmadığı (kapsam boşluğu analizi).</p>
             <div class="tbl-wrap">
-              <table><thead><tr><th>Teknik</th><th>Ad</th><th>Taktik</th><th>Kapsam</th></tr></thead>
+              <table><thead><tr><th scope="col">Teknik</th><th scope="col">Ad</th><th scope="col">Taktik</th><th scope="col">Kapsam</th></tr></thead>
                 <tbody id="mitre-body"></tbody></table>
             </div>
             <div id="mitre-empty" class="empty" style="padding:14px">Yükleniyor…</div>
@@ -850,7 +850,7 @@
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Sunucu-taraflı, adlandırılmış tespit kuralları (olay örüntüsü → önem + ATT&amp;CK).</p>
             <div class="tbl-wrap">
-              <table><thead><tr><th>ID</th><th>Ad</th><th>Önem</th><th>Teknik</th></tr></thead>
+              <table><thead><tr><th scope="col">ID</th><th scope="col">Ad</th><th scope="col">Önem</th><th scope="col">Teknik</th></tr></thead>
                 <tbody id="det-body"></tbody></table>
             </div>
             <div id="det-empty" class="empty" style="padding:14px">Yükleniyor…</div>
@@ -1030,7 +1030,7 @@
             <button class="btn ghost sm" id="vf-refresh" type="button" style="margin-left:8px">🔄 Yenile</button></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Bir bulgu "çözüldü" kapatılmadan önce kaynak tespit kuralı taze (aksiyon-sonrası) pencerede yeniden ölçülür: 0 eşleşme → DOĞRULANDI, hâlâ tetikliyor → REGRESYON, telemetri yok → KARARSIZ (fail-closed). Bekleyen bir check'i "▶ Çalıştır" ile şimdi değerlendirin. Ölçülen (gerçekleşen) risk azalması gösterilir.</p>
-            <div class="tbl-wrap"><table><thead><tr><th>Sonuç</th><th>Cihaz</th><th>Kural / Beklenen</th><th>Tür</th><th>Baseline</th><th>Kalan</th><th>Azalma</th><th></th></tr></thead>
+            <div class="tbl-wrap"><table><thead><tr><th scope="col">Sonuç</th><th scope="col">Cihaz</th><th scope="col">Kural / Beklenen</th><th scope="col">Tür</th><th scope="col">Baseline</th><th scope="col">Kalan</th><th scope="col">Azalma</th><th scope="col"></th></tr></thead>
               <tbody id="vf-body"></tbody></table></div>
             <div id="vf-empty" class="empty" style="padding:12px">Henüz doğrulama check'i yok. (Motor kapalıysa uç 404 döner.)</div>
           </div>
@@ -1041,7 +1041,7 @@
             <span class="sp"></span><span id="inc-count" class="count">0</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">İlişkili tespitler tek bir incident'e gruplanır (aynı cihaz+kural penceresinde) — yinelenen alarmlar bastırılır. Tekrar sayısı ve son-görülme izlenir.</p>
-            <div class="tbl-wrap"><table><thead><tr><th>Son görülme</th><th>Cihaz</th><th>Kural</th><th>Önem</th><th>Tekrar</th><th>Örnek</th></tr></thead>
+            <div class="tbl-wrap"><table><thead><tr><th scope="col">Son görülme</th><th scope="col">Cihaz</th><th scope="col">Kural</th><th scope="col">Önem</th><th scope="col">Tekrar</th><th scope="col">Örnek</th></tr></thead>
               <tbody id="inc-body"></tbody></table></div>
             <div id="inc-empty" class="empty" style="padding:12px">Henüz korelasyonlu olay yok.</div>
             <div id="inc-timeline" style="display:none;margin-top:10px;border-top:1px solid var(--line);padding-top:8px"></div>
@@ -2251,7 +2251,7 @@
           "<td><span class='sev "+esc(x.severity)+"'>"+esc(x.severity)+"</span></td><td class='mono'>"+esc(tech)+"</td></tr>";
       }).join("");
       out.innerHTML='<p class="hint" style="margin:0 0 8px">⚡ '+m.length+' kural tetiklenir:</p>'+
-        '<div class="tbl-wrap"><table><thead><tr><th>ID</th><th>Ad</th><th>Önem</th><th>Teknik</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+        '<div class="tbl-wrap"><table><thead><tr><th scope="col">ID</th><th scope="col">Ad</th><th scope="col">Önem</th><th scope="col">Teknik</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Test başarısız: '+esc(e.message)+'</p>'; });
   }
   // loadCoverage: filo koruma-kapsamı + ajan sürüm dağılımı ("kim korunuyor?").
@@ -2400,10 +2400,10 @@
           "<td>"+esc(e.message||"")+"</td>"+
           (mode==="rules"?("<td class='mono' style='color:var(--accent)'>"+esc(m)+"</td>"):"")+"</tr>";
       }).join("");
-      var techHdr = mode==="rules" ? "<th>Eşleşen kural</th>" : "";
+      var techHdr = mode==="rules" ? "<th scope="col">Eşleşen kural</th>" : "";
       out.innerHTML='<p class="hint" style="margin:0 0 8px">⚡ '+hits.length+' isabet / '+scanned+' olay tarandı'+
         (mode==="rules"?" (geçmiş olaylara mevcut kurallar uygulandı)":"")+':</p>'+
-        '<div class="tbl-wrap"><table><thead><tr><th>Zaman</th><th>Cihaz</th><th>Önem</th><th>Mesaj</th>'+techHdr+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+        '<div class="tbl-wrap"><table><thead><tr><th scope="col">Zaman</th><th scope="col">Cihaz</th><th scope="col">Önem</th><th scope="col">Mesaj</th>'+techHdr+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Tarama başarısız: '+esc(e.message)+'</p>'; });
   }
   // loadAgentSec: agentic tehdit savunması bulgularını (Agent Causality Graph exfil
@@ -2422,7 +2422,7 @@
           "<td><span class='sev CRITICAL'>"+esc(x.trust||"")+"</span></td></tr>";
       }).join("");
       out.innerHTML='<p class="hint" style="margin:0 0 8px;color:var(--crit,#f43f5e)">⚠ '+f.length+' exfiltration zinciri (untrusted → credential → dış):</p>'+
-        '<div class="tbl-wrap"><table><thead><tr><th>Agent</th><th>Credential</th><th>Sink</th><th>Güven</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+        '<div class="tbl-wrap"><table><thead><tr><th scope="col">Agent</th><th scope="col">Credential</th><th scope="col">Sink</th><th scope="col">Güven</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
   }
   // loadCases: SOC vaka listesini (tespit→incident→otomatik vaka) salt-okunur çeker.
@@ -2440,7 +2440,7 @@
           "<td>"+esc(c.status||"")+"</td>"+
           "<td class='mono' style='font-size:11px'>"+esc(relTime(c.created_at||""))+"</td></tr>";
       }).join("");
-      out.innerHTML='<div class="tbl-wrap"><table><thead><tr><th>ID</th><th>Başlık</th><th>Önem</th><th>Durum</th><th>Oluşturuldu</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+      out.innerHTML='<div class="tbl-wrap"><table><thead><tr><th scope="col">ID</th><th scope="col">Başlık</th><th scope="col">Önem</th><th scope="col">Durum</th><th scope="col">Oluşturuldu</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
   }
   // loadGraphAnomaly: bir varlığın yapısal graf anomali skorunu salt-okunur çeker.
@@ -2467,7 +2467,7 @@
       var ns=(r&&r.nodes)||[];
       if(!ns.length){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">İlişkili varlık yok.</p>'; return; }
       var rows=ns.map(function(n){ return "<tr><td class='mono'>"+esc(n.kind||"")+"</td><td class='mono'>"+esc(n.id||"")+"</td></tr>"; }).join("");
-      out.innerHTML='<p class="hint" style="margin:0 0 8px">'+ns.length+' ilişkili varlık:</p><div class="tbl-wrap"><table><thead><tr><th>Tür</th><th>Kimlik</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+      out.innerHTML='<p class="hint" style="margin:0 0 8px">'+ns.length+' ilişkili varlık:</p><div class="tbl-wrap"><table><thead><tr><th scope="col">Tür</th><th scope="col">Kimlik</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Yüklenemedi: '+esc(e.message)+'</p>'; });
   }
   // loadAITriage: opsiyonel dış AI'dan bir incident için salt-öneri triyaj ister (fail-open).
@@ -2511,7 +2511,7 @@
         '<div style="font-size:26px;font-weight:700;color:'+(sc>=70?"var(--crit,#f43f5e)":"var(--accent)")+'">'+esc(String(Math.round(sc)))+'<span style="font-size:12px;color:var(--faint)"> /100</span></div>'+
         '<span class="sev '+esc(lvl)+'">'+esc(lvl)+'</span>'+
         '<span class="mini" style="color:var(--faint)">AI: '+(ai?"etkin":"devre dışı (deterministik)")+'</span></div>'+
-        (rows?('<div class="tbl-wrap"><table><thead><tr><th>Sinyal</th><th>Puan</th><th>Pay</th></tr></thead><tbody>'+rows+'</tbody></table></div>'):'<p class="hint" style="margin:0;color:var(--faint)">Katkı yok (skor 0).</p>');
+        (rows?('<div class="tbl-wrap"><table><thead><tr><th scope="col">Sinyal</th><th scope="col">Puan</th><th scope="col">Pay</th></tr></thead><tbody>'+rows+'</tbody></table></div>'):'<p class="hint" style="margin:0;color:var(--faint)">Katkı yok (skor 0).</p>');
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Füzyon başarısız: '+esc(e.message)+'</p>'; });
   }
   // loadVerify: remediation-doğrulama check'lerini listeler (GET /api/verify) ve her
@@ -2578,7 +2578,7 @@
       $("sw-count").textContent=m.length;
       if(!m.length){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">"'+esc(q)+'" hiçbir cihazda bulunamadı.</p>'; return; }
       out.innerHTML='<p class="hint" style="margin:0 0 8px">⚡ '+m.length+' cihazda bulundu:</p>'+
-        '<div class="tbl-wrap"><table><thead><tr><th>Cihaz</th><th>Eşleşen paket(ler)</th></tr></thead><tbody>'+
+        '<div class="tbl-wrap"><table><thead><tr><th scope="col">Cihaz</th><th scope="col">Eşleşen paket(ler)</th></tr></thead><tbody>'+
         m.map(function(d){
           var pkgs=(d.matches||[]).map(esc).join(", ");
           return "<tr class='click' data-swdev='"+esc(d.device_id)+"' title='Bu cihazı seç'><td>"+esc(d.hostname||d.device_id)+"</td><td>"+pkgs+"</td></tr>";
