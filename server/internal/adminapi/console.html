@@ -230,6 +230,12 @@
   table { width:100%; border-collapse:collapse; font-size:13px; }
   thead th { text-align:left; padding:9px 14px; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
     color:var(--faint); border-bottom:1px solid var(--line); font-weight:600; white-space:nowrap; }
+  thead th.sortable { cursor:pointer; user-select:none; }
+  thead th.sortable:hover { color:var(--muted); }
+  thead th.sortable::after { content:"↕"; opacity:.3; margin-left:5px; font-size:10px; }
+  thead th.sortable[aria-sort="ascending"]::after { content:"↑"; opacity:1; color:var(--accent); }
+  thead th.sortable[aria-sort="descending"]::after { content:"↓"; opacity:1; color:var(--accent); }
+  thead th.sortable:focus-visible { outline:none; box-shadow:inset 0 0 0 2px var(--accent-glow); }
   tbody td { padding:10px 14px; border-bottom:1px solid var(--line); white-space:nowrap; vertical-align:middle; }
   tbody tr:last-child td { border-bottom:0; }
   tbody tr.sel td { background:var(--accent-dim); }
@@ -664,7 +670,7 @@
           </div>
           <div class="tbl-wrap">
             <table>
-              <thead><tr><th scope="col">Zaman</th><th scope="col">Kategori</th><th scope="col">Önem</th><th scope="col">Mesaj</th></tr></thead>
+              <thead><tr id="evt-thead"><th scope="col" class="sortable" data-sortkey="created_at" aria-sort="descending">Zaman</th><th scope="col" class="sortable" data-sortkey="category">Kategori</th><th scope="col" class="sortable" data-sortkey="severity">Önem</th><th scope="col">Mesaj</th></tr></thead>
               <tbody id="evt-body"></tbody>
             </table>
           </div>
@@ -1773,6 +1779,12 @@
       if(state.sevFilter==="CRITICAL") return e.severity==="CRITICAL";
       return e.severity==="CRITICAL"||e.severity==="HIGH";
     });
+    // Sıralama (kullanıcı sütun başlığına tıklayarak seçer; varsayılan: zaman azalan).
+    var sc=state.evtSort||(state.evtSort={key:"created_at",dir:-1});
+    var acc={ created_at:function(e){return e.created_at||"";},
+              category:function(e){return (e.category||"").toLowerCase();},
+              severity:function(e){return ({CRITICAL:5,HIGH:4,MEDIUM:3,LOW:2,INFO:1})[e.severity]||0;} }[sc.key];
+    if(acc){ list.sort(function(a,b){ var x=acc(a),y=acc(b); return x<y?-sc.dir:(x>y?sc.dir:0); }); }
     $("evt-count").textContent=list.length + (state.catFilter?(" · "+state.catFilter):"") + (state.pendingOnly?" · bekleyen":"");
     $("evt-empty").style.display = list.length ? "none" : "block";
     list.forEach(function(e){
@@ -3182,6 +3194,26 @@
     var init="detect"; try{ var s=localStorage.getItem("xdr_secsub"); if(s&&/^(detect|investigate|graph)$/.test(s)) init=s; }catch(e){}
     btns.forEach(function(b){ b.onclick=function(){ apply(b.getAttribute("data-secsub")); }; });
     apply(init);
+  })();
+
+  // ---------- Olaylar tablosu sıralama (başlık tıkla → sütun seç / yön çevir) ----------
+  (function(){
+    var head=$("evt-thead"); if(!head) return;
+    function upd(){ var sc=state.evtSort||{key:"created_at",dir:-1};
+      Array.prototype.forEach.call(head.querySelectorAll("th.sortable"),function(th){
+        var k=th.getAttribute("data-sortkey");
+        th.setAttribute("aria-sort", k===sc.key ? (sc.dir<0?"descending":"ascending") : "none");
+      });
+    }
+    Array.prototype.forEach.call(head.querySelectorAll("th.sortable"),function(th){
+      th.tabIndex=0;
+      var go=function(){ var k=th.getAttribute("data-sortkey"); var sc=state.evtSort||(state.evtSort={key:"created_at",dir:-1});
+        if(sc.key===k){ sc.dir=-sc.dir; } else { sc.key=k; sc.dir=(k==="created_at"||k==="severity")?-1:1; }
+        renderEvents(); upd(); };
+      th.onclick=go;
+      th.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); go(); } };
+    });
+    upd();
   })();
 
   // ---------- Komut paleti (Ctrl/Cmd-K): hızlı gezinme + eylemler ----------
