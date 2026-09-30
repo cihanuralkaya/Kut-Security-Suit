@@ -228,6 +228,10 @@
     background:linear-gradient(90deg, transparent, var(--line2), transparent); animation:skelsheen 1.2s infinite; }
   @media (prefers-reduced-motion:reduce){ .skel::after { animation:none; } }
   @keyframes skelsheen { 100% { transform:translateX(100%); } }
+  /* Kompakt yoğunluk: daha sık satırlar (güç-kullanıcı; ekranda daha çok veri). */
+  :root[data-density="compact"] tbody td { padding:5px 10px; }
+  :root[data-density="compact"] thead th { padding:5px 10px; }
+  :root[data-density="compact"] .stat { padding:11px 14px; }
   /* Güvenlik görünümü alt-navigasyonu (14 kartı 3 odaklı gruba böler) */
   .secsub { grid-column:1/-1; display:flex; gap:6px; flex-wrap:wrap; margin:0 0 2px; }
   .secsub-btn { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:9px;
@@ -527,6 +531,13 @@
             </button>
           </div>
           <button id="accent-reset" class="link-btn" type="button">Varsayılana döndür</button>
+        </div>
+        <div class="grp">
+          <h3>Yoğunluk</h3>
+          <div class="theme-seg" id="density-seg" role="group" aria-label="Tablo yoğunluğu">
+            <button id="density-comfortable" type="button" data-density="comfortable" aria-pressed="true">Rahat</button>
+            <button id="density-compact" type="button" data-density="compact" aria-pressed="false">Kompakt</button>
+          </div>
         </div>
       </div>
     </div>
@@ -3250,6 +3261,21 @@
   wireSortHead($("evt-thead"), "evtSort", renderEvents, {created_at:1, severity:1});
   wireSortHead($("dev-thead"), "devSort", renderDevices, {last_seen:1, status:1});
   wireSortHead($("aud-thead"), "audSort", renderAudit, {created_at:1});
+
+  // ---------- Tablo yoğunluğu (rahat/kompakt); localStorage'da kalıcı ----------
+  (function(){
+    var segBtns=document.querySelectorAll("#density-seg button"); if(!segBtns.length) return;
+    function apply(m){
+      var compact = m==="compact";
+      document.documentElement.setAttribute("data-density", compact?"compact":"comfortable");
+      segBtns.forEach(function(b){ var on=b.getAttribute("data-density")===(compact?"compact":"comfortable");
+        b.classList.toggle("on",on); b.setAttribute("aria-pressed", on?"true":"false"); });
+      try{ localStorage.setItem("xdr_density", compact?"compact":"comfortable"); }catch(e){}
+    }
+    var init="comfortable"; try{ if(localStorage.getItem("xdr_density")==="compact") init="compact"; }catch(e){}
+    segBtns.forEach(function(b){ b.onclick=function(){ apply(b.getAttribute("data-density")); }; });
+    apply(init);
+  })();
 
   // ---------- Komut paleti (Ctrl/Cmd-K): hızlı gezinme + eylemler ----------
   (function(){
