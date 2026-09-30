@@ -220,6 +220,13 @@
 
   /* ---------- TABLES ---------- */
   .tbl-wrap { overflow-x:auto; }
+  /* Güvenlik görünümü alt-navigasyonu (14 kartı 3 odaklı gruba böler) */
+  .secsub { grid-column:1/-1; display:flex; gap:6px; flex-wrap:wrap; margin:0 0 2px; }
+  .secsub-btn { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:9px;
+    padding:8px 15px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .secsub-btn:hover { color:var(--ink); border-color:var(--line2); }
+  .secsub-btn.on { background:var(--accent-dim); color:var(--accent); border-color:var(--line2); }
+  .secsub-btn:focus-visible { outline:none; box-shadow:0 0 0 3px var(--accent-glow); }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   thead th { text-align:left; padding:9px 14px; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
     color:var(--faint); border-bottom:1px solid var(--line); font-weight:600; white-space:nowrap; }
@@ -442,6 +449,9 @@
     </symbol>
     <symbol id="i-compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>
+    </symbol>
+    <symbol id="i-cases" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
     </symbol>
   </defs>
 </svg>
@@ -847,6 +857,11 @@
             <div id="feat-grid" style="display:flex;flex-direction:column;gap:8px"></div>
           </div>
         </div>
+        <div class="secsub" data-view="security" role="group" aria-label="Güvenlik alt-bölümleri">
+          <button class="secsub-btn on" type="button" data-secsub="detect" aria-pressed="true">Tespit &amp; Kapsam</button>
+          <button class="secsub-btn" type="button" data-secsub="investigate" aria-pressed="false">İncelemeler</button>
+          <button class="secsub-btn" type="button" data-secsub="graph" aria-pressed="false">Graf &amp; AI</button>
+        </div>
         <div class="card" data-view="security" data-span="2">
           <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-target"/></svg>MITRE ATT&amp;CK Kapsamı</h2>
             <span class="sp"></span><span id="mitre-gap" class="count" style="display:none"></span>
@@ -948,7 +963,7 @@
         </div>
 
         <div class="card" data-view="security" data-span="2">
-          <div class="head"><h2>📁 SOC Vakaları</h2>
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cases"/></svg>SOC Vakaları</h2>
             <span class="sp"></span><span id="case-count" class="count">0</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Tespit → incident → otomatik SOC vakası yaşam döngüsü. Salt-okunur liste.</p>
@@ -3146,6 +3161,28 @@
   $("r-type").onchange=function(){ $("r-times").style.display = this.value==="APP_TIME_BLOCK" ? "flex" : "none"; };
   bindActions();
   setupAppearance();
+
+  // ---------- Güvenlik görünümü alt-navigasyonu (14 kartı 3 odaklı gruba böler) ----------
+  (function(){
+    var btns=document.querySelectorAll(".secsub-btn"); if(!btns.length) return;
+    var groupOf={ "i-target":"detect","i-radar":"detect","i-shield-alert":"detect","i-beaker":"detect","i-compass":"detect",
+      "i-search":"investigate","i-scan":"investigate","i-verify":"investigate","i-layers":"investigate","i-cases":"investigate",
+      "i-network":"graph","i-share":"graph","i-cpu":"graph","i-sliders":"graph" };
+    var cards=[].slice.call(document.querySelectorAll('.card[data-view~="security"]'));
+    cards.forEach(function(c){
+      var u=c.querySelector('.head h2 svg.hi use');
+      var href=u?((u.getAttribute("href")||u.getAttribute("xlink:href")||"").replace("#","")):"";
+      c.__secgrp=groupOf[href]||null; // tanınmayan → null (her sekmede görünür, asla kaybolmaz)
+    });
+    function apply(g){
+      cards.forEach(function(c){ c.style.display = (!c.__secgrp || c.__secgrp===g) ? "" : "none"; });
+      btns.forEach(function(b){ var on=b.getAttribute("data-secsub")===g; b.classList.toggle("on",on); b.setAttribute("aria-pressed", on?"true":"false"); });
+      try{ localStorage.setItem("xdr_secsub", g); }catch(e){}
+    }
+    var init="detect"; try{ var s=localStorage.getItem("xdr_secsub"); if(s&&/^(detect|investigate|graph)$/.test(s)) init=s; }catch(e){}
+    btns.forEach(function(b){ b.onclick=function(){ apply(b.getAttribute("data-secsub")); }; });
+    apply(init);
+  })();
 
   // ---------- Komut paleti (Ctrl/Cmd-K): hızlı gezinme + eylemler ----------
   (function(){
