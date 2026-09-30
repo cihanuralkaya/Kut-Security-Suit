@@ -349,3 +349,32 @@ func TestInjectedClock(t *testing.T) {
 		t.Fatalf("enjekte saat kullanılmadı: %v", c.CreatedAt)
 	}
 }
+
+// TestMostRecentOpenForAsset, otomatik doğrulama-bağlama için vaka seçimini sınar:
+// varlığı taşıyan, KAPANMAMIŞ, EN YENİ vaka seçilir; kapalı/eşleşmeyen elenir.
+func TestMostRecentOpenForAsset(t *testing.T) {
+	base := time.Now()
+	cases := []Case{
+		{ID: "c-old", Assets: []string{"dev-1"}, Status: StatusOpen, CreatedAt: base},
+		{ID: "c-new", Assets: []string{"dev-1"}, Status: StatusInvestigating, CreatedAt: base.Add(time.Hour)},
+		{ID: "c-closed", Assets: []string{"dev-1"}, Status: StatusClosed, CreatedAt: base.Add(2 * time.Hour)},
+		{ID: "c-other", Assets: []string{"dev-2"}, Status: StatusOpen, CreatedAt: base.Add(3 * time.Hour)},
+	}
+	// En yeni AÇIK + eşleşen vaka: c-new (c-closed kapalı elenir, c-other cihaz eşleşmez).
+	if got, ok := MostRecentOpenForAsset(cases, "dev-1"); !ok || got.ID != "c-new" {
+		t.Fatalf("c-new seçilmeliydi: ok=%v id=%q", ok, got.ID)
+	}
+	// Eşleşen açık vaka yok (dev-3) → bulunamadı.
+	if _, ok := MostRecentOpenForAsset(cases, "dev-3"); ok {
+		t.Fatal("eşleşmeyen varlık için bulunmamalıydı")
+	}
+	// Yalnız kapalı vaka taşıyan varlık → bulunamadı (fail-safe: kapalıya bağlama).
+	only := []Case{{ID: "c-x", Assets: []string{"dev-9"}, Status: StatusClosed, CreatedAt: base}}
+	if _, ok := MostRecentOpenForAsset(only, "dev-9"); ok {
+		t.Fatal("yalnız kapalı vaka varken bulunmamalıydı")
+	}
+	// Boş asset → bulunamadı.
+	if _, ok := MostRecentOpenForAsset(cases, "  "); ok {
+		t.Fatal("boş varlık için bulunmamalıydı")
+	}
+}

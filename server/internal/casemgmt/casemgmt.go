@@ -218,6 +218,38 @@ func NormTenant(tenantID string) string {
 	return strings.ToLower(strings.TrimSpace(tenantID))
 }
 
+// MostRecentOpenForAsset, verilen varlığı (asset, ör. cihaz-id) Assets'inde taşıyan ve
+// KAPANMAMIŞ (Status != CLOSED) vakalardan CreatedAt'e göre EN YENİsini döner. Otomatik
+// remediation-doğrulama sonucunu ilgili açık vakaya bağlamak için kullanılır (best-effort:
+// eşleşen açık vaka yoksa ok=false). Salt-okuma; girdi dilimini değiştirmez.
+func MostRecentOpenForAsset(cases []Case, asset string) (Case, bool) {
+	asset = strings.TrimSpace(asset)
+	if asset == "" {
+		return Case{}, false
+	}
+	var best Case
+	found := false
+	for _, c := range cases {
+		if c.Status == StatusClosed {
+			continue
+		}
+		hit := false
+		for _, a := range c.Assets {
+			if a == asset {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			continue
+		}
+		if !found || c.CreatedAt.After(best.CreatedAt) {
+			best, found = c, true
+		}
+	}
+	return best, found
+}
+
 // MemStore, Store arayüzünün eşzamanlı-güvenli, bellek-içi gerçeklemesidir.
 // Test ve tek-düğüm kurulumlar için uygundur. Vakalar (kiracı, id) çiftiyle
 // anahtarlanır; böylece farklı kiracılar aynı ham id'yi yeniden kullanabilir.
