@@ -219,7 +219,9 @@
   .card > .body { padding:14px 16px; }
 
   /* ---------- TABLES ---------- */
-  .tbl-wrap { overflow-x:auto; }
+  .tbl-wrap { overflow:auto; max-height:62vh; }
+  /* Uzun tablolarda başlıklar kaydırırken görünür kalır (yapışkan) — sıralanabilir başlıklarla eşleşir. */
+  .tbl-wrap thead th { position:sticky; top:0; z-index:1; background:var(--panel); }
   /* Güvenlik görünümü alt-navigasyonu (14 kartı 3 odaklı gruba böler) */
   .secsub { grid-column:1/-1; display:flex; gap:6px; flex-wrap:wrap; margin:0 0 2px; }
   .secsub-btn { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:9px;
