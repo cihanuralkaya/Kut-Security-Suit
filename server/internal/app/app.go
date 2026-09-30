@@ -1612,22 +1612,40 @@ func runVerifyWorker(ctx context.Context, store verify.Store, v verify.Verifier,
 				if c.Outcome != verify.OutcomePending || now.Before(c.WindowEnd) {
 					continue // henüz değerlendirilmedi ya da pencere dolmadı
 				}
-				rows, err := rd.QueryEvents(ctx, adminread.EventFilter{
-					DeviceID: c.DeviceID, TenantID: c.TenantID, Since: c.OpenedAt, Limit: 500,
-				})
-				if err != nil {
-					continue
-				}
-				fresh := make([]model.Event, 0, len(rows))
-				for _, d := range rows {
-					fresh = append(fresh, model.Event{
-						EventID: d.EventID, Category: d.Category, Severity: d.Severity, Message: d.Message,
-						OccurredAt: d.OccurredAt, DeviceID: d.DeviceID, TenantID: c.TenantID, Details: string(d.Details),
+				var (
+					outcome  verify.Outcome
+					residual int
+				)
+				if c.Kind == verify.KindDeviceStatus {
+					// Cihazın güncel efektif durumu beklenen duruma karşı (desired≠effective).
+					dd, ok, derr := rd.DeviceDetail(ctx, c.DeviceID, c.TenantID)
+					if derr != nil {
+						continue
+					}
+					cur := ""
+					if ok {
+						cur = dd.Device.Status
+					}
+					outcome, residual = verify.EvaluateDeviceStatus(c, cur)
+				} else {
+					rows, err := rd.QueryEvents(ctx, adminread.EventFilter{
+						DeviceID: c.DeviceID, TenantID: c.TenantID, Since: c.OpenedAt, Limit: 500,
 					})
-				}
-				outcome, residual, err := v.Evaluate(ctx, c, fresh)
-				if err != nil {
-					continue
+					if err != nil {
+						continue
+					}
+					fresh := make([]model.Event, 0, len(rows))
+					for _, d := range rows {
+						fresh = append(fresh, model.Event{
+							EventID: d.EventID, Category: d.Category, Severity: d.Severity, Message: d.Message,
+							OccurredAt: d.OccurredAt, DeviceID: d.DeviceID, TenantID: c.TenantID, Details: string(d.Details),
+						})
+					}
+					var eerr error
+					outcome, residual, eerr = v.Evaluate(ctx, c, fresh)
+					if eerr != nil {
+						continue
+					}
 				}
 				if _, err := store.Resolve(c.TenantID, c.ID, outcome, residual); err != nil {
 					continue

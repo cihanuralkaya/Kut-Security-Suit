@@ -89,3 +89,29 @@ func TestDetectionVerifierRealizedRisk(t *testing.T) {
 		t.Fatalf("REGRESSED residual=Baseline olmalı: %s %d", o2, residual2)
 	}
 }
+
+// TestEvaluateDeviceStatus, Kind=device_status doğrulayıcısını sınar: cihazın güncel
+// efektif durumu beklenen duruma eşitse VERIFIED (yapısal kalan risk), değilse REGRESSED,
+// durum/beklenti boşsa INCONCLUSIVE (fail-closed). Karşılaştırma harf/boşluk duyarsız.
+func TestEvaluateDeviceStatus(t *testing.T) {
+	f := risk.Factors{Severity: "HIGH", AssetCriticality: 5, Exposure: 3, Confidence: 0.9, Exploitability: 0.8}
+	c := Check{ID: "c1", TenantID: "acme", DeviceID: "pc-1", Kind: KindDeviceStatus, Expected: "QUARANTINED", Factors: f}
+	c.Baseline = risk.Score(f)
+
+	// Eşleşme (harf/boşluk duyarsız) → VERIFIED, residual < baseline.
+	if o, r := EvaluateDeviceStatus(c, "  quarantined "); o != OutcomeVerified || r >= c.Baseline || r < 0 {
+		t.Fatalf("eşleşen durum VERIFIED + residual<baseline olmalı: %s %d (baseline %d)", o, r, c.Baseline)
+	}
+	// Uyuşmazlık (cihaz beklenen duruma ulaşmadı) → REGRESSED, residual = baseline.
+	if o, r := EvaluateDeviceStatus(c, "QUARANTINE_PENDING"); o != OutcomeRegressed || r != c.Baseline {
+		t.Fatalf("uyuşmayan durum REGRESSED/Baseline olmalı: %s %d", o, r)
+	}
+	// Durum bilinmiyor (cihaz bulunamadı) → INCONCLUSIVE (fail-closed).
+	if o, r := EvaluateDeviceStatus(c, ""); o != OutcomeInconclusive || r != c.Baseline {
+		t.Fatalf("boş durum INCONCLUSIVE/Baseline olmalı: %s %d", o, r)
+	}
+	// Beklenti boş → INCONCLUSIVE (yanlış yapılandırma VERIFIED üretmez).
+	if o, _ := EvaluateDeviceStatus(Check{Kind: KindDeviceStatus, Factors: f, Baseline: risk.Score(f)}, "ACTIVE"); o != OutcomeInconclusive {
+		t.Fatalf("beklenti boşken INCONCLUSIVE olmalı: %s", o)
+	}
+}
