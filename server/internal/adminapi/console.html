@@ -283,6 +283,23 @@
   .toast-x:hover { color:var(--ink); }
   .toast-x:focus-visible { outline:none; box-shadow:0 0 0 3px var(--accent-glow); }
   @keyframes slidein { from{ transform:translateY(8px); opacity:0; } to{ transform:none; opacity:1; } }
+  /* Komut paleti (Ctrl/Cmd-K) */
+  .cmdk { position:fixed; inset:0; z-index:200; display:flex; align-items:flex-start; justify-content:center;
+    padding-top:12vh; background:rgba(3,7,12,.55); }
+  .cmdk[hidden] { display:none; }
+  .cmdk-box { width:min(560px,92vw); background:var(--panel); border:1px solid var(--line2);
+    border-radius:var(--radius-lg); box-shadow:var(--shadow-3); overflow:hidden; animation:slidein .15s ease; }
+  #cmdk-input { width:100%; border:0; border-bottom:1px solid var(--line); background:transparent;
+    color:var(--ink); font-size:15px; padding:14px 16px; }
+  #cmdk-input:focus { outline:none; box-shadow:none; }
+  #cmdk-list { list-style:none; margin:0; padding:6px; max-height:52vh; overflow-y:auto; }
+  #cmdk-list li { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:8px;
+    cursor:pointer; font-size:13.5px; color:var(--ink); }
+  #cmdk-list li .k { color:var(--faint); font-size:11px; margin-left:auto; }
+  #cmdk-list li[aria-selected="true"], #cmdk-list li:hover { background:var(--accent-dim); color:var(--accent); }
+  #cmdk-list li .ci { width:16px; height:16px; flex:none; color:var(--muted); }
+  #cmdk-list li[aria-selected="true"] .ci { color:var(--accent); }
+  #cmdk-empty { padding:14px 16px; color:var(--faint); font-size:13px; }
 
   .row { display:flex; gap:8px; align-items:center; }
   .seg { display:inline-flex; border:1px solid var(--line2); border-radius:8px; overflow:hidden; }
@@ -1061,6 +1078,14 @@
 </div>
 
 <div id="toasts" role="region" aria-live="polite" aria-label="Bildirimler"></div>
+
+<!-- Komut paleti (Ctrl/Cmd-K): hızlı gezinme + eylemler. Vanilla; CSP-güvenli. -->
+<div id="cmdk" class="cmdk" role="dialog" aria-modal="true" aria-label="Komut paleti" hidden>
+  <div class="cmdk-box" role="document">
+    <input id="cmdk-input" type="text" autocomplete="off" spellcheck="false" placeholder="Komut veya bölüm ara… (Esc kapatır)" aria-label="Komut ara" aria-controls="cmdk-list" aria-expanded="true" role="combobox">
+    <ul id="cmdk-list" role="listbox" aria-label="Sonuçlar"></ul>
+  </div>
+</div>
 
 <script nonce="__CSP_NONCE__">
 (function () {
@@ -2400,7 +2425,7 @@
           "<td>"+esc(e.message||"")+"</td>"+
           (mode==="rules"?("<td class='mono' style='color:var(--accent)'>"+esc(m)+"</td>"):"")+"</tr>";
       }).join("");
-      var techHdr = mode==="rules" ? "<th scope="col">Eşleşen kural</th>" : "";
+      var techHdr = mode==="rules" ? "<th scope=\"col\">Eşleşen kural</th>" : "";
       out.innerHTML='<p class="hint" style="margin:0 0 8px">⚡ '+hits.length+' isabet / '+scanned+' olay tarandı'+
         (mode==="rules"?" (geçmiş olaylara mevcut kurallar uygulandı)":"")+':</p>'+
         '<div class="tbl-wrap"><table><thead><tr><th scope="col">Zaman</th><th scope="col">Cihaz</th><th scope="col">Önem</th><th scope="col">Mesaj</th>'+techHdr+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
@@ -3121,6 +3146,53 @@
   $("r-type").onchange=function(){ $("r-times").style.display = this.value==="APP_TIME_BLOCK" ? "flex" : "none"; };
   bindActions();
   setupAppearance();
+
+  // ---------- Komut paleti (Ctrl/Cmd-K): hızlı gezinme + eylemler ----------
+  (function(){
+    var overlay=$("cmdk"), input=$("cmdk-input"), list=$("cmdk-list");
+    if(!overlay||!input||!list) return;
+    var cmds=[
+      {label:"Genel Bakış", icon:"i-overview", run:function(){ setView("overview"); }},
+      {label:"Cihazlar", icon:"i-devices", run:function(){ setView("devices"); }},
+      {label:"Politika & Kayıt", icon:"i-policies", run:function(){ setView("policies"); }},
+      {label:"Güvenlik", icon:"i-security", run:function(){ setView("security"); }},
+      {label:"Yönetim", icon:"i-admin", run:function(){ setView("admin"); }},
+      {label:"Tümünü yenile", icon:"i-activity", run:function(){ if(typeof refresh==="function") refresh(); }},
+      {label:"Temayı değiştir", icon:"i-lock", run:function(){ var b=$("theme-toggle"); if(b) b.click(); }},
+      {label:"Dili değiştir", icon:"i-file", run:function(){ var b=$("lang-toggle"); if(b) b.click(); }},
+      {label:"Çıkış", icon:"i-key", run:function(){ var b=$("logout"); if(b) b.click(); }}
+    ];
+    var sel=0, filtered=cmds, lastFocus=null;
+    function loggedIn(){ var a=$("app"); return a && getComputedStyle(a).display!=="none"; }
+    function render(){
+      list.innerHTML="";
+      if(!filtered.length){ var e=document.createElement("li"); e.id="cmdk-empty"; e.setAttribute("role","option"); e.textContent="Sonuç yok"; list.appendChild(e); return; }
+      filtered.forEach(function(c,i){
+        var li=document.createElement("li"); li.setAttribute("role","option"); li.setAttribute("aria-selected", i===sel?"true":"false");
+        var sv=document.createElementNS("http://www.w3.org/2000/svg","svg"); sv.setAttribute("class","ci"); sv.setAttribute("viewBox","0 0 24 24"); sv.setAttribute("aria-hidden","true");
+        var u=document.createElementNS("http://www.w3.org/2000/svg","use"); u.setAttribute("href","#"+c.icon); sv.appendChild(u); li.appendChild(sv);
+        var t=document.createElement("span"); t.textContent=c.label; li.appendChild(t);
+        var k=document.createElement("span"); k.className="k"; k.textContent="↵"; li.appendChild(k);
+        li.onclick=function(){ exec(i); };
+        list.appendChild(li);
+      });
+    }
+    function doFilter(){ var q=input.value.trim().toLowerCase(); filtered=q?cmds.filter(function(c){return c.label.toLowerCase().indexOf(q)>=0;}):cmds; sel=0; render(); }
+    function open(){ if(!loggedIn()) return; lastFocus=document.activeElement; overlay.hidden=false; input.value=""; doFilter(); input.focus(); }
+    function close(){ overlay.hidden=true; if(lastFocus&&lastFocus.focus) lastFocus.focus(); }
+    function exec(i){ var c=filtered[i]; close(); if(c&&c.run) c.run(); }
+    input.addEventListener("input", doFilter);
+    input.addEventListener("keydown", function(ev){
+      if(ev.key==="ArrowDown"){ ev.preventDefault(); sel=Math.min(sel+1, filtered.length-1); render(); }
+      else if(ev.key==="ArrowUp"){ ev.preventDefault(); sel=Math.max(sel-1, 0); render(); }
+      else if(ev.key==="Enter"){ ev.preventDefault(); if(filtered.length) exec(sel); }
+      else if(ev.key==="Escape"){ ev.preventDefault(); close(); }
+    });
+    overlay.addEventListener("click", function(ev){ if(ev.target===overlay) close(); });
+    document.addEventListener("keydown", function(ev){
+      if((ev.ctrlKey||ev.metaKey) && (ev.key==="k"||ev.key==="K")){ ev.preventDefault(); if(overlay.hidden) open(); else close(); }
+    });
+  })();
 
   // Gizlilik aydınlatma metnini yükle (public, giriş öncesi). Dile göre: TR=KVKK, EN=GDPR.
   function loadNotice(){
