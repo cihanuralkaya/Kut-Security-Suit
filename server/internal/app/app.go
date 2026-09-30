@@ -652,11 +652,19 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 			win = d
 		}
 		autoResp.SetAfterQuarantine(func(_ context.Context, deviceID, reason string) {
-			// Kaynak kural bilinmiyor (karantina cihaz-seviyesi) → RuleID boş: "cihazda
-			// ARTIK hiçbir tespit tetiklemiyor mu?" doğrulaması.
+			end := time.Now().Add(win)
+			// (1) Tespit doğrulaması: kaynak kural bilinmiyor (karantina cihaz-seviyesi) →
+			// RuleID boş: "cihazda ARTIK hiçbir tespit tetiklemiyor mu?".
 			_, _ = verifyStore.Open(verify.Check{
 				ID: newAutoVerifyID(), TenantID: cfg.TenantID, FindingRef: reason, DeviceID: deviceID,
-				Kind: verify.KindDetection, WindowEnd: time.Now().Add(win),
+				Kind: verify.KindDetection, WindowEnd: end,
+			})
+			// (2) Durum doğrulaması (desired≠effective): karantina komutu gerçekten UYGULANDI
+			// mı? Pencere sonunda cihaz QUARANTINED efektif durumda değilse (ör. hâlâ
+			// QUARANTINE_PENDING → ajan onaylamadı) REGRESSED işaretlenir.
+			_, _ = verifyStore.Open(verify.Check{
+				ID: newAutoVerifyID(), TenantID: cfg.TenantID, FindingRef: reason, DeviceID: deviceID,
+				Kind: verify.KindDeviceStatus, Expected: "QUARANTINED", WindowEnd: end,
 			})
 		})
 		go runVerifyWorker(ctx, verifyStore, verifier, readSvc, win)

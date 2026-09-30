@@ -73,9 +73,12 @@ admini → `GetAny`; kiracı-bağlı admin → `Get(tenant, ...)`).
 ## Otomatik mod (opsiyonel, default KAPALI)
 
 `KUT_VERIFY_AUTO=1` (+ otomatik-müdahale) ile: `response.AutoQuarantiner` bir cihazı
-karantinaya aldığında generic karantina-sonrası kanca bir check açar (kural-id boş →
-"cihazda ARTIK herhangi bir tespit tetikliyor mu?"); arka-plan worker'ı pencere dolunca
-yeniden değerlendirip çözer. Pencere: `KUT_VERIFY_WINDOW` (varsayılan 15dk).
+karantinaya aldığında generic karantina-sonrası kanca İKİ check açar: (1) **detection** —
+kural-id boş → "cihazda ARTIK herhangi bir tespit tetikliyor mu?"; (2) **device_status**
+(`expected=QUARANTINED`) — "karantina gerçekten UYGULANDI mı?" (desired≠effective). Arka-plan
+worker'ı pencere dolunca her ikisini de tür'e göre yeniden değerlendirip çözer; cihaz
+pencere sonunda hâlâ `QUARANTINE_PENDING` ise durum check'i REGRESSED işaretler. Pencere:
+`KUT_VERIFY_WINDOW` (varsayılan 15dk).
 
 ## Metrikler
 
