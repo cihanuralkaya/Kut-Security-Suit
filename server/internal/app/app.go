@@ -1668,6 +1668,8 @@ func runVerifyWorker(ctx context.Context, store verify.Store, v verify.Verifier,
 					metrics.IncVerifyVerified()
 				case verify.OutcomeRegressed:
 					metrics.IncVerifyRegressed()
+				case verify.OutcomeInconclusive:
+					metrics.IncVerifyInconclusive()
 				}
 				// Otomatik çözümü denetim izine yaz (izlenebilirlik): manuel VERIFY_RUN'dan
 				// ayırt edilir; actor "system". nil audit → yaz-atla (test/geriye-uyum).

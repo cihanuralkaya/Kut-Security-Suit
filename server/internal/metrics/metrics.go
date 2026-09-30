@@ -50,6 +50,7 @@ var (
 	eventsDeferred   atomic.Int64 // yazılamayıp ölü-mektup kuyruğuna alınan olaylar (§6 DLQ)
 	verifyVerified   atomic.Int64 // remediation-doğrulama: sinyal doğrulanabilir biçimde kalktı (VERIFIED)
 	verifyRegressed  atomic.Int64 // remediation-doğrulama: sinyal hâlâ tetikliyor (REGRESSED)
+	verifyInconcl    atomic.Int64 // remediation-doğrulama: değerlendirilemedi — telemetri yok (INCONCLUSIVE)
 )
 
 // certExpiryDays, CA+sunucu sertifikalarının EN AZ kalan günü (gauge). Sentinel 9999
@@ -75,33 +76,34 @@ func Version() string { return buildVersion }
 // gibi kimlik-doğrulanmış görünümler için; /metrics ile aynı kaynak).
 func Counters() map[string]int64 {
 	return map[string]int64{
-		"login_success":     loginSuccess.Load(),
-		"login_failure":     loginFailure.Load(),
-		"events_ingested":   eventsIngested.Load(),
-		"detections":        detections.Load(),
-		"alerts_raised":     alertsRaised.Load(),
-		"auto_quarantine":   autoQuarantine.Load(),
-		"ioc_hits":          iocHits.Load(),
-		"alerts_suppressed": alertsSuppress.Load(),
-		"threshold_gated":   thresholdGated.Load(),
-		"bits_gated":        bitsGated.Load(),
-		"cluster_published": clusterPublished.Load(),
-		"cluster_received":  clusterReceived.Load(),
-		"cluster_fallback":  clusterFallback.Load(),
-		"chain_fired":       chainFired.Load(),
-		"lateral_movement":  lateralMovement.Load(),
-		"dns_tunnel":        dnsTunnel.Load(),
-		"brute_force":       bruteForce.Load(),
-		"brute_force_win":   bruteForceWin.Load(),
-		"saved_search_hits": savedSearchHits.Load(),
-		"login_lockouts":    loginLockouts.Load(),
-		"scope_denied":      scopeDenied.Load(),
-		"scope_would_deny":  scopeWouldDeny.Load(),
-		"audit_write_fail":  auditWriteFail.Load(),
-		"events_duplicate":  eventsDuplicate.Load(),
-		"events_deferred":   eventsDeferred.Load(),
-		"verify_verified":   verifyVerified.Load(),
-		"verify_regressed":  verifyRegressed.Load(),
+		"login_success":       loginSuccess.Load(),
+		"login_failure":       loginFailure.Load(),
+		"events_ingested":     eventsIngested.Load(),
+		"detections":          detections.Load(),
+		"alerts_raised":       alertsRaised.Load(),
+		"auto_quarantine":     autoQuarantine.Load(),
+		"ioc_hits":            iocHits.Load(),
+		"alerts_suppressed":   alertsSuppress.Load(),
+		"threshold_gated":     thresholdGated.Load(),
+		"bits_gated":          bitsGated.Load(),
+		"cluster_published":   clusterPublished.Load(),
+		"cluster_received":    clusterReceived.Load(),
+		"cluster_fallback":    clusterFallback.Load(),
+		"chain_fired":         chainFired.Load(),
+		"lateral_movement":    lateralMovement.Load(),
+		"dns_tunnel":          dnsTunnel.Load(),
+		"brute_force":         bruteForce.Load(),
+		"brute_force_win":     bruteForceWin.Load(),
+		"saved_search_hits":   savedSearchHits.Load(),
+		"login_lockouts":      loginLockouts.Load(),
+		"scope_denied":        scopeDenied.Load(),
+		"scope_would_deny":    scopeWouldDeny.Load(),
+		"audit_write_fail":    auditWriteFail.Load(),
+		"events_duplicate":    eventsDuplicate.Load(),
+		"events_deferred":     eventsDeferred.Load(),
+		"verify_verified":     verifyVerified.Load(),
+		"verify_regressed":    verifyRegressed.Load(),
+		"verify_inconclusive": verifyInconcl.Load(),
 	}
 }
 
@@ -110,6 +112,10 @@ func IncVerifyVerified() { verifyVerified.Add(1) }
 
 // IncVerifyRegressed, bir doğrulama check'i REGRESSED sonuçlandığında artar.
 func IncVerifyRegressed() { verifyRegressed.Add(1) }
+
+// IncVerifyInconclusive, bir doğrulama check'i INCONCLUSIVE (telemetri yok →
+// değerlendirilemedi, fail-closed) sonuçlandığında artar. Yüksek oran = telemetri boşluğu.
+func IncVerifyInconclusive() { verifyInconcl.Add(1) }
 
 // UptimeSeconds, süreç çalışma süresini saniye olarak döner.
 func UptimeSeconds() int64 { return int64(time.Since(startTime).Seconds()) }
@@ -332,6 +338,10 @@ func Write(w io.Writer, s Snapshot) {
 	fmt.Fprintf(w, "# HELP kut_verify_regressed_total Remediation-doğrulama: sinyal hâlâ tetikliyor (düzelme yok).\n")
 	fmt.Fprintf(w, "# TYPE kut_verify_regressed_total counter\n")
 	fmt.Fprintf(w, "kut_verify_regressed_total %d\n", verifyRegressed.Load())
+
+	fmt.Fprintf(w, "# HELP kut_verify_inconclusive_total Remediation-doğrulama: telemetri yok → değerlendirilemedi (fail-closed).\n")
+	fmt.Fprintf(w, "# TYPE kut_verify_inconclusive_total counter\n")
+	fmt.Fprintf(w, "kut_verify_inconclusive_total %d\n", verifyInconcl.Load())
 
 	fmt.Fprintf(w, "# HELP kut_login_lockouts_total Kaba-kuvvet kilidi (admin girişi) tetiklemeleri.\n")
 	fmt.Fprintf(w, "# TYPE kut_login_lockouts_total counter\n")
