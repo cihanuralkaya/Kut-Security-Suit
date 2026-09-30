@@ -222,6 +222,12 @@
   .tbl-wrap { overflow:auto; max-height:62vh; }
   /* Uzun tablolarda başlıklar kaydırırken görünür kalır (yapışkan) — sıralanabilir başlıklarla eşleşir. */
   .tbl-wrap thead th { position:sticky; top:0; z-index:1; background:var(--panel); }
+  /* Yükleme iskeleti (skeleton): veri gelene kadar shimmer yer-tutucu ("pop-in" hissini giderir). */
+  .skel { display:block; height:11px; border-radius:5px; background:var(--panel2); position:relative; overflow:hidden; }
+  .skel::after { content:""; position:absolute; inset:0; transform:translateX(-100%);
+    background:linear-gradient(90deg, transparent, var(--line2), transparent); animation:skelsheen 1.2s infinite; }
+  @media (prefers-reduced-motion:reduce){ .skel::after { animation:none; } }
+  @keyframes skelsheen { 100% { transform:translateX(100%); } }
   /* Güvenlik görünümü alt-navigasyonu (14 kartı 3 odaklı gruba böler) */
   .secsub { grid-column:1/-1; display:flex; gap:6px; flex-wrap:wrap; margin:0 0 2px; }
   .secsub-btn { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:9px;
@@ -3097,11 +3103,23 @@
       enterApp(d.token, $("l-email").value);
     }).catch(function(e){ $("l-err").textContent=e.message; });
   }
+  // skeletonRows: veri gelene kadar tbody'yi shimmer yer-tutucu satırlarla doldurur (ilk
+  // gerçek render bunları üzerine yazar). Eşlenik boş-durum div'ini gizler (kısa süreli).
+  function skeletonRows(tbodyId, rows, cols){
+    var b=$(tbodyId); if(!b) return; b.innerHTML="";
+    var emptyEl=$(tbodyId.replace("-body","-empty")); if(emptyEl) emptyEl.style.display="none";
+    for(var i=0;i<rows;i++){ var tr=document.createElement("tr");
+      for(var j=0;j<cols;j++){ var td=document.createElement("td"); var s=document.createElement("span");
+        s.className="skel"; s.style.width=(40+((i*7+j*13)%50))+"%"; td.appendChild(s); tr.appendChild(td); }
+      b.appendChild(tr);
+    }
+  }
   function enterApp(token, email){
     state.token=token; state.email=email;
     try { sessionStorage.setItem("xdr_tok", token); sessionStorage.setItem("xdr_email", email); } catch(e){}
     $("who").textContent=email;
     $("login").style.display="none"; $("app").style.display="grid";
+    skeletonRows("dev-body",6,6); skeletonRows("evt-body",6,4); skeletonRows("aud-body",5,4); // veri gelene kadar iskelet
     loadMitre();
     loadDetections();
     loadVulnerabilities();
