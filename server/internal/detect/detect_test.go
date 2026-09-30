@@ -230,6 +230,12 @@ func TestDefaultRulesCoverNewEventTypes(t *testing.T) {
 		{"SECURITY", "içerik-tarama eşleşmesi (R1): /tmp/x", "T1105"},
 		{"SECURITY", "olası yanal hareket: 5dk içinde 9 farklı iç hedefe bağlantı", "T1046"},
 		{"SECURITY", "olası DNS tünelleme: evil.com altında 25 farklı alt alan", "T1071"},
+		// v3: ATT&CK kapsam-boşluğunu kapatan kurallar (KUT-0015..0019).
+		{"PROCESS", "sc.exe create EvilSvc binPath= C:\\evil.exe start= auto", "T1543"},
+		{"PROCESS", "schtasks /create /tn Evil /tr calc.exe /sc daily", "T1053"},
+		{"SECURITY", "net user hacker P@ssw0rd /add", "T1136"},
+		{"SECURITY", "net localgroup administrators hacker /add", "T1098"},
+		{"SECURITY", "5 başarısız oturum (failed logon) event 4625", "T1110"},
 	}
 	for _, c := range cases {
 		dets := e.Evaluate(model.Event{Category: c.cat, Severity: "HIGH", Message: c.msg})

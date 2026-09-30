@@ -506,5 +506,23 @@ func DefaultRules() []Rule {
 			Contains: []string{"yanal hareket"}, Severity: "HIGH", Technique: tNetworkDiscov},
 		{ID: "KUT-0014", Name: "DNS tünelleme / veri sızdırma", Category: "SECURITY",
 			Contains: []string{"dns tünelleme"}, Severity: "HIGH", Technique: tAppLayerC2},
+		// v3: ATT&CK kapsam-boşluklarını kapatan kurallar (persistence/execution/credential-access).
+		// Süreç/komut telemetrisinde tipik saldırgan tekniklerini yakalayan regex'ler (küçük/büyük harf duyarsız).
+		{ID: "KUT-0015", Name: "Sistem servisi oluşturma/değiştirme", Category: "PROCESS",
+			MessageRegex: `sc(\.exe)?\s+.*\bcreate\b|New-Service|Set-Service|systemctl\s+(enable|start)|/etc/systemd/system`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1543", Name: "Create or Modify System Process", Tactic: "Persistence"}},
+		{ID: "KUT-0016", Name: "Zamanlanmış görev/iş oluşturma", Category: "PROCESS",
+			MessageRegex: `schtasks.*\/create|New-ScheduledTask|Register-ScheduledTask|crontab\s+-|/etc/cron`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1053", Name: "Scheduled Task/Job", Tactic: "Execution"}},
+		{ID: "KUT-0017", Name: "Yeni hesap oluşturma", Category: "SECURITY",
+			MessageRegex: `net\s+user\s+\S+\s+.*\/add|New-LocalUser|\buseradd\b|\badduser\b`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1136", Name: "Create Account", Tactic: "Persistence"}},
+		{ID: "KUT-0018", Name: "Hesap manipülasyonu (yetki/grup değişikliği)", Category: "SECURITY",
+			MessageRegex: `net\s+localgroup\s+administrators\s+.*\/add|Add-ADGroupMember|net\s+user\s+\S+\s+\/active:yes|usermod\s+-a?G`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1098", Name: "Account Manipulation", Tactic: "Persistence"}},
+		{ID: "KUT-0019", Name: "Kaba-kuvvet / parola püskürtme (eşik)", Category: "SECURITY",
+			MessageRegex: `(başarısız|failed)\s+(oturum|logon|login)|authentication failure|event\s*4625|kaba-kuvvet|brute`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1110", Name: "Brute Force", Tactic: "Credential Access"},
+			Threshold: &ThresholdSpec{Count: 5, Seconds: 300, Track: "device"}},
 	}
 }
