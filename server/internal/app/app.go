@@ -667,7 +667,9 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				Kind: verify.KindDeviceStatus, Expected: "QUARANTINED", WindowEnd: end,
 			})
 		})
-		go runVerifyWorker(ctx, verifyStore, verifier, readSvc, win)
+		go runVerifyWorker(ctx, verifyStore, verifier, readSvc, win, func(action, targetID string) {
+			_ = backend.WriteAudit(ctx, "system", action, "verify", targetID) // otomatik çözüm izi
+		})
 		log.Println("otomatik remediation-doğrulama ETKİN (KUT_VERIFY_AUTO=1)")
 	}
 	// SOC AI brain (fail-open): KUT_AI_URL varsa dış sağlayıcı; yoksa SIFIR-AĞ deterministik
@@ -1599,7 +1601,7 @@ func newAutoVerifyID() string {
 // olarak değerlendirir: cihazın açılıştan bu yana taze olaylarını çeker, kaynak sinyali
 // yeniden ölçer ve check'i çözer. Fail-closed: telemetri yoksa INCONCLUSIVE. Otomatik
 // remediation-doğrulama (KUT_VERIFY_AUTO) etkinken çalışır; ctx iptalinde durur.
-func runVerifyWorker(ctx context.Context, store verify.Store, v verify.Verifier, rd *adminread.Service, window time.Duration) {
+func runVerifyWorker(ctx context.Context, store verify.Store, v verify.Verifier, rd *adminread.Service, window time.Duration, audit func(action, targetID string)) {
 	tick := window / 3
 	if tick < time.Minute {
 		tick = time.Minute
@@ -1666,6 +1668,11 @@ func runVerifyWorker(ctx context.Context, store verify.Store, v verify.Verifier,
 					metrics.IncVerifyVerified()
 				case verify.OutcomeRegressed:
 					metrics.IncVerifyRegressed()
+				}
+				// Otomatik çözümü denetim izine yaz (izlenebilirlik): manuel VERIFY_RUN'dan
+				// ayırt edilir; actor "system". nil audit → yaz-atla (test/geriye-uyum).
+				if audit != nil {
+					audit("VERIFY_AUTO_"+string(outcome), c.ID)
 				}
 			}
 		}
