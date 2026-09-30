@@ -901,7 +901,7 @@
             <button class="btn ghost sm" id="vf-refresh" type="button" style="margin-left:8px">🔄 Yenile</button></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Bir bulgu "çözüldü" kapatılmadan önce kaynak tespit kuralı taze (aksiyon-sonrası) pencerede yeniden ölçülür: 0 eşleşme → DOĞRULANDI, hâlâ tetikliyor → REGRESYON, telemetri yok → KARARSIZ (fail-closed). Bekleyen bir check'i "▶ Çalıştır" ile şimdi değerlendirin. Ölçülen (gerçekleşen) risk azalması gösterilir.</p>
-            <div class="tbl-wrap"><table><thead><tr><th>Sonuç</th><th>Cihaz</th><th>Kural</th><th>Tür</th><th>Baseline</th><th>Kalan</th><th>Azalma</th><th></th></tr></thead>
+            <div class="tbl-wrap"><table><thead><tr><th>Sonuç</th><th>Cihaz</th><th>Kural / Beklenen</th><th>Tür</th><th>Baseline</th><th>Kalan</th><th>Azalma</th><th></th></tr></thead>
               <tbody id="vf-body"></tbody></table></div>
             <div id="vf-empty" class="empty" style="padding:12px">Henüz doğrulama check'i yok. (Motor kapalıysa uç 404 döner.)</div>
           </div>
@@ -2389,7 +2389,7 @@
           ("<span style='color:"+(red>0?"var(--good,#22c55e)":"var(--faint)")+"'>"+(red>0?("−"+esc(String(red))):"0")+"</span>");
         return "<tr><td><span style='font-weight:600;color:"+(col[oc]||"var(--faint)")+"'>"+esc(oc)+"</span></td>"+
           "<td class='mono'>"+esc(c.device_id||"—")+"</td>"+
-          "<td class='mono'>"+esc(c.rule_id||"—")+"</td>"+
+          "<td class='mono'>"+esc(c.rule_id||c.expected||"—")+"</td>"+
           "<td>"+esc(c.kind||"")+"</td>"+
           "<td>"+esc(String(base))+"</td>"+
           "<td>"+kalan+"</td>"+
