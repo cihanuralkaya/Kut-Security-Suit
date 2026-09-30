@@ -2169,6 +2169,8 @@ func (s *Server) handleVerifyRun(w http.ResponseWriter, r *http.Request, adminID
 		metrics.IncVerifyVerified()
 	case verify.OutcomeRegressed:
 		metrics.IncVerifyRegressed()
+	case verify.OutcomeInconclusive:
+		metrics.IncVerifyInconclusive()
 	}
 	s.adminSvc.RecordAudit(r.Context(), adminID, "VERIFY_RUN", "verify", c.ID)
 	writeJSON(w, http.StatusOK, resolved)
