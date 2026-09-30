@@ -226,8 +226,9 @@
   tbody td { padding:10px 14px; border-bottom:1px solid var(--line); white-space:nowrap; vertical-align:middle; }
   tbody tr:last-child td { border-bottom:0; }
   tbody tr.sel td { background:var(--accent-dim); }
-  tbody tr.click { cursor:pointer; }
-  tbody tr.click:hover td { background:var(--panel2); }
+  tbody tr.click, tbody tr[role="button"] { cursor:pointer; }
+  tbody tr.click:hover td, tbody tr[role="button"]:hover td { background:var(--panel2); }
+  tbody tr[role="button"]:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
   td.mono, .mono { font-family:var(--mono); font-size:12px; }
   .empty { padding:26px 16px; text-align:center; color:var(--faint); font-size:13px; }
 
@@ -1318,6 +1319,15 @@
   }
   function cell(text, cls){ var td=document.createElement("td"); td.textContent=esc(text); if(cls) td.className=cls; return td; }
   // filterChip: tıkla-süz için erişilebilir chip (klavye ile de kullanılabilir).
+  // rowActivate: bir tablo satırını klavye-operable yapar (WCAG 2.1.1) — tıklama + Enter/
+  // Space + role/tabindex; expanded verilirse aria-expanded yönetir (açılır satırlar).
+  function rowActivate(tr, fn, expanded){
+    tr.onclick=fn;
+    tr.tabIndex=0;
+    tr.setAttribute("role","button");
+    if(expanded!==undefined && expanded!==null) tr.setAttribute("aria-expanded", expanded?"true":"false");
+    tr.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); fn(); } };
+  }
   // role=button + tabindex ile odaklanabilir; Enter/Space tıklamayı tetikler;
   // aria-pressed etkin filtreyi ekran okuyuculara bildirir.
   function filterChip(text, active, title, handler){
@@ -1709,7 +1719,7 @@
       tr.appendChild(cell(d.os_version||d.os_platform||"-"));
       tr.appendChild(cell(d.agent_version||"-","mono"));
       tr.appendChild(cell(relTime(d.last_seen)));
-      tr.onclick=function(){ selectDevice(d.id); };
+      rowActivate(tr, function(){ selectDevice(d.id); });
       body.appendChild(tr);
     });
   }
@@ -1741,7 +1751,7 @@
       var msg=cell((open?"▾ ":"▸ ")+(e.message||"-")); msg.style.whiteSpace="normal";
       if(e.ack_status){ msg.appendChild(ackBadge(e)); }
       tr.appendChild(msg);
-      tr.onclick=function(){ state.evtOpen[e.id]=!state.evtOpen[e.id]; renderEvents(); };
+      rowActivate(tr, function(){ state.evtOpen[e.id]=!state.evtOpen[e.id]; renderEvents(); }, !!state.evtOpen[e.id]);
       body.appendChild(tr);
       if(open){
         var dr=document.createElement("tr"); var dtd=document.createElement("td");
@@ -2344,7 +2354,7 @@
         if(x.id){
           tr.style.cursor="pointer";
           tr.title="Zaman çizelgesini göster";
-          tr.onclick=function(){ loadIncidentTimeline(x.id); };
+          rowActivate(tr, function(){ loadIncidentTimeline(x.id); });
         }
         body.appendChild(tr);
       });
@@ -2575,7 +2585,7 @@
         }).join("")+'</tbody></table></div>';
       Array.prototype.forEach.call(out.querySelectorAll("[data-swdev]"),function(tr){
         tr.style.cursor="pointer";
-        tr.onclick=function(){ selectDevice(tr.getAttribute("data-swdev")); };
+        rowActivate(tr, function(){ selectDevice(tr.getAttribute("data-swdev")); });
       });
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Arama başarısız: '+esc(e.message)+'</p>'; });
   }
@@ -2610,7 +2620,7 @@
       b.onclick=function(ev){ ev.stopPropagation(); $("r-pol").value=x.id; $("r-target").focus();
         toast("Politika seçildi",(x.name||x.id)+" — kural ekleyin","ok"); };
       actTd.appendChild(b); tr.appendChild(actTd);
-      tr.onclick=function(){ state.polOpen[x.id]=!state.polOpen[x.id]; renderPolicies(); };
+      rowActivate(tr, function(){ state.polOpen[x.id]=!state.polOpen[x.id]; renderPolicies(); }, !!state.polOpen[x.id]);
       body.appendChild(tr);
       if(open){
         var dr=document.createElement("tr"); var dtd=document.createElement("td");
