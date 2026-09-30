@@ -2125,6 +2125,24 @@ func (s *Server) handleVerifyRun(w http.ResponseWriter, r *http.Request, adminID
 			cur = dd.Device.Status // cihaz yoksa boş → INCONCLUSIVE (fail-closed)
 		}
 		outcome, residual = verify.EvaluateDeviceStatus(c, cur)
+	} else if c.Kind == verify.KindVuln {
+		// CVE re-scan: cihazın GÜNCEL yazılım envanterini zafiyet veri kümesiyle eşleştir;
+		// beklenen CVE artık eşleşmiyorsa yamalanmış (VERIFIED). Veri yoksa INCONCLUSIVE.
+		dataAvail := false
+		var cur []string
+		if s.vulnSet != nil && s.vulnSet.Size() > 0 {
+			byDev, derr := s.reader.LatestSoftwareByDevice(r.Context(), c.TenantID)
+			if respondErr(w, derr) {
+				return
+			}
+			if sw, ok := byDev[c.DeviceID]; ok {
+				dataAvail = true
+				for _, f := range s.vulnSet.Match(sw) {
+					cur = append(cur, f.CVE)
+				}
+			}
+		}
+		outcome, residual = verify.EvaluateVulnCleared(c, dataAvail, cur)
 	} else {
 		// Açılıştan bu yana cihazın taze olayları (aksiyon-sonrası pencere), kiracı-kapsamlı.
 		rows, err := s.reader.QueryEvents(r.Context(), adminread.EventFilter{

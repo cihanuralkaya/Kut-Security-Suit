@@ -115,3 +115,29 @@ func TestEvaluateDeviceStatus(t *testing.T) {
 		t.Fatalf("beklenti boşken INCONCLUSIVE olmalı: %s", o)
 	}
 }
+
+// TestEvaluateVulnCleared, Kind=vuln doğrulayıcısını sınar: beklenen CVE cihazın güncel
+// eşleşen CVE'lerinde yoksa VERIFIED, hâlâ varsa REGRESSED, envanter yoksa/beklenti boşsa
+// INCONCLUSIVE (fail-closed). CVE karşılaştırması harf/boşluk duyarsız.
+func TestEvaluateVulnCleared(t *testing.T) {
+	f := risk.Factors{Severity: "CRITICAL", AssetCriticality: 5, Exposure: 4, Confidence: 0.9, Exploitability: 0.9}
+	c := Check{ID: "c1", TenantID: "acme", DeviceID: "pc-1", Kind: KindVuln, Expected: "CVE-2021-44228", Factors: f}
+	c.Baseline = risk.Score(f)
+
+	// CVE artık eşleşmiyor (yamalandı) → VERIFIED, residual < baseline.
+	if o, r := EvaluateVulnCleared(c, true, []string{"CVE-2020-0001"}); o != OutcomeVerified || r >= c.Baseline {
+		t.Fatalf("CVE temizlenmiş → VERIFIED + residual<baseline olmalı: %s %d", o, r)
+	}
+	// CVE hâlâ eşleşiyor (harf duyarsız) → REGRESSED, residual = baseline.
+	if o, r := EvaluateVulnCleared(c, true, []string{"cve-2021-44228"}); o != OutcomeRegressed || r != c.Baseline {
+		t.Fatalf("CVE hâlâ var → REGRESSED/Baseline olmalı: %s %d", o, r)
+	}
+	// Envanter verisi yok → INCONCLUSIVE (fail-closed).
+	if o, _ := EvaluateVulnCleared(c, false, nil); o != OutcomeInconclusive {
+		t.Fatalf("envanter yokken INCONCLUSIVE olmalı: %s", o)
+	}
+	// Beklenen CVE boş → INCONCLUSIVE.
+	if o, _ := EvaluateVulnCleared(Check{Kind: KindVuln, Factors: f, Baseline: risk.Score(f)}, true, []string{"CVE-X"}); o != OutcomeInconclusive {
+		t.Fatalf("beklenen CVE boşken INCONCLUSIVE olmalı: %s", o)
+	}
+}

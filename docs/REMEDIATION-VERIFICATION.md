@@ -39,6 +39,12 @@ mevcut `*detect.Engine` tarafından doğrudan karşılanır (import döngüsü y
   bilinmiyor → INCONCLUSIVE (fail-closed). **desired≠effective boşluğunu kapatır:** bir
   karantina komutu verildikten sonra cihazın gerçekten `QUARANTINED` efektif duruma
   ulaştığını (yalnız `QUARANTINE_PENDING`'de takılı kalmadığını) doğrular.
+- **`vuln`** — bir CVE'nin (`expected`, ör. `CVE-2021-44228`) cihazın GÜNCEL yazılım
+  envanterinde ARTIK eşleşmediğini ölçer (`EvaluateVulnCleared`). Sinyal = güncel envanter
+  × zafiyet veri kümesi (`LatestSoftwareByDevice` + `vuln.Set.Match`): CVE hâlâ eşleşiyor →
+  REGRESSED (yamalanmadı), eşleşmiyor → VERIFIED (yamalandı), envanter yok/veri kümesi boş
+  → INCONCLUSIVE (fail-closed). Yalnız API ile koşar (arka-plan worker'da zafiyet veri
+  kümesi bağlı değildir; worker bu türü atlar).
 
 ## Gerçekleşen (ölçülen) risk azalması
 
@@ -51,7 +57,7 @@ mevcut `*detect.Engine` tarafından doğrudan karşılanır (import döngüsü y
 
 ## API (kiracı SUNUCU-TARAFI; bkz. docs/MULTI-TENANCY.md)
 
-- `POST /api/verify/open` (OPERATOR+) — `{finding_ref, device_id, rule_id, kind, expected, factors, window_secs}`; kiracıya bağlı check açar (`expected` yalnız `kind=device_status` için).
+- `POST /api/verify/open` (OPERATOR+) — `{finding_ref, device_id, rule_id, kind, expected, factors, window_secs}`; kiracıya bağlı check açar (`expected` = `device_status` için beklenen durum, `vuln` için CVE kimliği).
 - `POST /api/verify/{id}/run` (OPERATOR+) — cihazın açılış-sonrası taze olaylarını (QueryEvents, kiracı-kapsamlı) çekip yeniden değerlendirir, çözer ve denetim izine yazar.
 - `GET /api/verify` (VIEWER+) — çağıranın kiracısının check'leri; platform admini (boş kiracı) tümünü.
 
