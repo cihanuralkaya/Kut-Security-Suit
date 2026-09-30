@@ -99,3 +99,41 @@ func TestVerifyEndpoints(t *testing.T) {
 		t.Fatalf("verify list 1 VERIFIED check dönmeliydi: %+v", out)
 	}
 }
+
+// TestVerifyDeviceStatusRun, Kind=device_status doğrulama yolunu uçtan uca sınar: cihazın
+// GÜNCEL efektif durumu beklenen duruma karşı ölçülür (olay değil). Beklenen=QUARANTINED
+// ve cihaz QUARANTINED → VERIFIED; beklenen=ACTIVE iken cihaz QUARANTINED → REGRESSED.
+func TestVerifyDeviceStatusRun(t *testing.T) {
+	srv, store := newServer(t)
+	srv.SetVerifyStore(verify.NewMemStore())
+	srv.SetVerifier(verify.NewDetectionVerifier(fakeRuleRunner{fireRuleID: "rule-A"})) // nil-guard için (device_status kullanmaz)
+	// Cihaz efektif durumu QUARANTINED (platform admini → check kiracısı "default").
+	store.devRows = []adminread.DeviceRow{{ID: "dev-q", Status: "QUARANTINED", TenantID: "default"}}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+	_, ob := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	tok := ob["token"]
+
+	// Beklenen QUARANTINED = cihazın durumu → VERIFIED.
+	code, body := postAny(t, ts.URL+"/api/verify/open", tok, map[string]any{
+		"device_id": "dev-q", "kind": "device_status", "expected": "QUARANTINED",
+	})
+	id, _ := body["id"].(string)
+	if code != http.StatusCreated || id == "" {
+		t.Fatalf("device_status open 201+id dönmeliydi: %d %v", code, body)
+	}
+	if rc, rb := postAny(t, ts.URL+"/api/verify/"+id+"/run", tok, map[string]any{}); rc != http.StatusOK || rb["outcome"] != "VERIFIED" {
+		t.Fatalf("cihaz beklenen durumda → VERIFIED olmalı: %d %v", rc, rb)
+	}
+
+	// Beklenen ACTIVE iken cihaz QUARANTINED → REGRESSED (beklenen duruma ulaşmadı).
+	_, b2 := postAny(t, ts.URL+"/api/verify/open", tok, map[string]any{
+		"device_id": "dev-q", "kind": "device_status", "expected": "ACTIVE",
+	})
+	id2, _ := b2["id"].(string)
+	if rc, rb := postAny(t, ts.URL+"/api/verify/"+id2+"/run", tok, map[string]any{}); rc != http.StatusOK || rb["outcome"] != "REGRESSED" {
+		t.Fatalf("cihaz beklenen durumda değil → REGRESSED olmalı: %d %v", rc, rb)
+	}
+}

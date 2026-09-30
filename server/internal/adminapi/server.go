@@ -2023,6 +2023,7 @@ func (s *Server) handleVerifyOpen(w http.ResponseWriter, r *http.Request, adminI
 		DeviceID   string       `json:"device_id"`
 		RuleID     string       `json:"rule_id"`
 		Kind       string       `json:"kind"`
+		Expected   string       `json:"expected"` // Kind=device_status: beklenen efektif durum
 		Factors    risk.Factors `json:"factors"`
 		WindowSecs int          `json:"window_secs"`
 	}
@@ -2046,7 +2047,7 @@ func (s *Server) handleVerifyOpen(w http.ResponseWriter, r *http.Request, adminI
 	}
 	c, err := s.verifyStore.Open(verify.Check{
 		ID: newVerifyID(), TenantID: tenant, FindingRef: req.FindingRef, DeviceID: req.DeviceID,
-		RuleID: req.RuleID, Kind: kind, Factors: req.Factors,
+		RuleID: req.RuleID, Kind: kind, Expected: req.Expected, Factors: req.Factors,
 		WindowEnd: s.now().Add(time.Duration(win) * time.Second),
 	})
 	if respondErr(w, err) {
@@ -2108,20 +2109,38 @@ func (s *Server) handleVerifyRun(w http.ResponseWriter, r *http.Request, adminID
 	if respondErr(w, err) {
 		return
 	}
-	// Açılıştan bu yana cihazın taze olayları (aksiyon-sonrası pencere), kiracı-kapsamlı.
-	rows, err := s.reader.QueryEvents(r.Context(), adminread.EventFilter{
-		DeviceID: c.DeviceID, TenantID: c.TenantID, Since: c.OpenedAt, Limit: 500,
-	})
-	if respondErr(w, err) {
-		return
-	}
-	fresh := make([]model.Event, 0, len(rows))
-	for _, d := range rows {
-		fresh = append(fresh, eventDTOToModel(d))
-	}
-	outcome, residual, err := s.verifier.Evaluate(r.Context(), c, fresh)
-	if respondErr(w, err) {
-		return
+	var (
+		outcome  verify.Outcome
+		residual int
+	)
+	if c.Kind == verify.KindDeviceStatus {
+		// Cihazın GÜNCEL efektif durumunu beklenen duruma karşı ölç (olay değil durum sinyali).
+		// desired≠effective boşluğu: "karantina gerçekten uygulandı mı?" doğrulaması.
+		dd, ok, derr := s.reader.DeviceDetail(r.Context(), c.DeviceID, c.TenantID)
+		if respondErr(w, derr) {
+			return
+		}
+		cur := ""
+		if ok {
+			cur = dd.Device.Status // cihaz yoksa boş → INCONCLUSIVE (fail-closed)
+		}
+		outcome, residual = verify.EvaluateDeviceStatus(c, cur)
+	} else {
+		// Açılıştan bu yana cihazın taze olayları (aksiyon-sonrası pencere), kiracı-kapsamlı.
+		rows, err := s.reader.QueryEvents(r.Context(), adminread.EventFilter{
+			DeviceID: c.DeviceID, TenantID: c.TenantID, Since: c.OpenedAt, Limit: 500,
+		})
+		if respondErr(w, err) {
+			return
+		}
+		fresh := make([]model.Event, 0, len(rows))
+		for _, d := range rows {
+			fresh = append(fresh, eventDTOToModel(d))
+		}
+		outcome, residual, err = s.verifier.Evaluate(r.Context(), c, fresh)
+		if respondErr(w, err) {
+			return
+		}
 	}
 	resolved, err := s.verifyStore.Resolve(c.TenantID, c.ID, outcome, residual)
 	if respondErr(w, err) {

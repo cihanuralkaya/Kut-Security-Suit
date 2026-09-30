@@ -56,7 +56,8 @@ type Check struct {
 	DeviceID   string       `json:"device_id"`
 	RuleID     string       `json:"rule_id"` // yeniden koşulacak tespit kuralı (Kind=detection)
 	Kind       string       `json:"kind"`
-	Factors    risk.Factors `json:"factors"` // bulgunun açılıştaki risk girdileri; Baseline bundan türer
+	Expected   string       `json:"expected,omitempty"` // Kind=device_status: cihazın ulaşması beklenen efektif durum (ör. QUARANTINED/ACTIVE)
+	Factors    risk.Factors `json:"factors"`            // bulgunun açılıştaki risk girdileri; Baseline bundan türer
 	Baseline   int          `json:"baseline"`
 	Residual   int          `json:"residual_risk"`
 	Outcome    Outcome      `json:"outcome"`

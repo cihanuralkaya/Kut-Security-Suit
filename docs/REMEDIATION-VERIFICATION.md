@@ -29,6 +29,17 @@ der; doğrulama "kaynak kural taze (aksiyon-sonrası) pencerede ARTIK tetikliyor
 **sıfır eşleşme** bekler. `RuleRunner` arayüzü (`Evaluate(model.Event) []detect.Detection`)
 mevcut `*detect.Engine` tarafından doğrudan karşılanır (import döngüsü yok).
 
+## Doğrulama türleri (Kind)
+
+- **`detection`** (varsayılan) — kaynak tespit kuralını taze pencerede yeniden koşturur
+  (`DetectionVerifier`, yukarıda). Sinyal = olaylar.
+- **`device_status`** — cihazın GÜNCEL efektif durumunu beklenen duruma (`expected`, ör.
+  `QUARANTINED`/`ACTIVE`) karşı ölçer (`EvaluateDeviceStatus`). Sinyal = cihazın DURUMu
+  (olay değil): `DeviceDetail` ile okunur; eşleşme → VERIFIED, aksi → REGRESSED, durum
+  bilinmiyor → INCONCLUSIVE (fail-closed). **desired≠effective boşluğunu kapatır:** bir
+  karantina komutu verildikten sonra cihazın gerçekten `QUARANTINED` efektif duruma
+  ulaştığını (yalnız `QUARANTINE_PENDING`'de takılı kalmadığını) doğrular.
+
 ## Gerçekleşen (ölçülen) risk azalması
 
 - Açılışta `Baseline = risk.Score(Factors)` (bulgunun risk girdileri).
@@ -40,7 +51,7 @@ mevcut `*detect.Engine` tarafından doğrudan karşılanır (import döngüsü y
 
 ## API (kiracı SUNUCU-TARAFI; bkz. docs/MULTI-TENANCY.md)
 
-- `POST /api/verify/open` (OPERATOR+) — `{finding_ref, device_id, rule_id, kind, factors, window_secs}`; kiracıya bağlı check açar.
+- `POST /api/verify/open` (OPERATOR+) — `{finding_ref, device_id, rule_id, kind, expected, factors, window_secs}`; kiracıya bağlı check açar (`expected` yalnız `kind=device_status` için).
 - `POST /api/verify/{id}/run` (OPERATOR+) — cihazın açılış-sonrası taze olaylarını (QueryEvents, kiracı-kapsamlı) çekip yeniden değerlendirir, çözer ve denetim izine yazar.
 - `GET /api/verify` (VIEWER+) — çağıranın kiracısının check'leri; platform admini (boş kiracı) tümünü.
 

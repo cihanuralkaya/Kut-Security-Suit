@@ -8,6 +8,7 @@ package verify
 
 import (
 	"context"
+	"strings"
 
 	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/model"
@@ -65,20 +66,46 @@ func (v *DetectionVerifier) Evaluate(_ context.Context, c Check, fresh []model.E
 		}
 	}
 	// Kaynak kural taze pencerede ARTIK tetiklemiyor → doğrulanmış düzelme; kalan risk =
-	// sinyal-bağımlı faktörler asgariye indirilmiş skor. NOT: risk.Score, Confidence<=0'ı
-	// "belirtilmemiş → tam güven" sayar; bu yüzden "sinyal yok"u temsil için 0 değil küçük
-	// bir epsilon kullanılır (güveni asgariye indirir). Exploitability doğrudan eklenti
-	// olduğundan 0 doğru (istismar sinyali kaldırılır).
-	residualFactors := c.Factors
-	residualFactors.Confidence = signalGoneConfidence
-	residualFactors.Exploitability = 0
-	residual := risk.Score(residualFactors)
-	if residual > baseline {
-		residual = baseline // güvenlik: kalan, başlangıcı asla aşmaz
-	}
-	return OutcomeVerified, residual, nil
+	// sinyal-bağımlı faktörler asgariye indirilmiş skor (verifiedResidual).
+	return OutcomeVerified, verifiedResidual(c, baseline), nil
 }
 
 // signalGoneConfidence, doğrulanmış-düzelme sonrası kalan-risk hesabında kullanılan
 // asgari güven değeridir (risk.Score'un 0=tam-güven yorumundan kaçınmak için >0).
 const signalGoneConfidence = 0.05
+
+// verifiedResidual, doğrulanmış-düzelme sonrası kalan (yapısal) riski hesaplar: sinyal-
+// bağımlı faktörler asgariye indirilmiş skor. NOT: risk.Score, Confidence<=0'ı "belirtilmemiş
+// → tam güven" sayar; bu yüzden "sinyal yok"u temsil için 0 değil küçük bir epsilon
+// kullanılır. Exploitability doğrudan eklenti olduğundan 0 doğru. Kalan, baseline'ı aşmaz.
+func verifiedResidual(c Check, baseline int) int {
+	rf := c.Factors
+	rf.Confidence = signalGoneConfidence
+	rf.Exploitability = 0
+	res := risk.Score(rf)
+	if res > baseline {
+		res = baseline // güvenlik: kalan, başlangıcı asla aşmaz
+	}
+	return res
+}
+
+// EvaluateDeviceStatus, Kind=device_status için doğrulayıcıdır: cihazın GÜNCEL efektif
+// durumunu (current) beklenen duruma (c.Expected) karşı ölçer — DetectionVerifier'ın olay
+// tabanlı yolundan farklı olarak sinyal cihazın DURUMUdur. Karşılaştırma büyük/küçük harf
+// ve boşluk duyarsızdır. Fail-closed: durum ya da beklenti bilinmiyorsa (boş) INCONCLUSIVE
+// (VERIFIED verilmez). Eşleşme → VERIFIED (yapısal kalan risk); aksi → REGRESSED (baseline).
+func EvaluateDeviceStatus(c Check, current string) (Outcome, int) {
+	baseline := c.Baseline
+	if baseline == 0 {
+		baseline = risk.Score(c.Factors)
+	}
+	cur := strings.ToUpper(strings.TrimSpace(current))
+	exp := strings.ToUpper(strings.TrimSpace(c.Expected))
+	if cur == "" || exp == "" {
+		return OutcomeInconclusive, baseline
+	}
+	if cur == exp {
+		return OutcomeVerified, verifiedResidual(c, baseline)
+	}
+	return OutcomeRegressed, baseline
+}
