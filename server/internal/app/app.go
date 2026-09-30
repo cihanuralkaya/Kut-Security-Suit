@@ -667,7 +667,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				Kind: verify.KindDeviceStatus, Expected: "QUARANTINED", WindowEnd: end,
 			})
 		})
-		go runVerifyWorker(ctx, verifyStore, verifier, readSvc, win, func(action, targetID string) {
+		go runVerifyWorker(ctx, verifyStore, verifier, readSvc, caseStore, win, func(action, targetID string) {
 			_ = backend.WriteAudit(ctx, "system", action, "verify", targetID) // otomatik çözüm izi
 		})
 		log.Println("otomatik remediation-doğrulama ETKİN (KUT_VERIFY_AUTO=1)")
@@ -1601,7 +1601,7 @@ func newAutoVerifyID() string {
 // olarak değerlendirir: cihazın açılıştan bu yana taze olaylarını çeker, kaynak sinyali
 // yeniden ölçer ve check'i çözer. Fail-closed: telemetri yoksa INCONCLUSIVE. Otomatik
 // remediation-doğrulama (KUT_VERIFY_AUTO) etkinken çalışır; ctx iptalinde durur.
-func runVerifyWorker(ctx context.Context, store verify.Store, v verify.Verifier, rd *adminread.Service, window time.Duration, audit func(action, targetID string)) {
+func runVerifyWorker(ctx context.Context, store verify.Store, v verify.Verifier, rd *adminread.Service, caseStore casemgmt.Store, window time.Duration, audit func(action, targetID string)) {
 	tick := window / 3
 	if tick < time.Minute {
 		tick = time.Minute
@@ -1673,6 +1673,16 @@ func runVerifyWorker(ctx context.Context, store verify.Store, v verify.Verifier,
 				// ayırt edilir; actor "system". nil audit → yaz-atla (test/geriye-uyum).
 				if audit != nil {
 					audit("VERIFY_AUTO_"+string(outcome), c.ID)
+				}
+				// VERIFIED olan otomatik check'i cihazın AÇIK vakasına bağla (best-effort):
+				// böylece kapanış-gate (KUT_VERIFY_REQUIRE_ON_CLOSE) otomatik akışta da
+				// doğrulanmış kanıta erişir. Eşleşen açık vaka yoksa sessizce atlanır.
+				if outcome == verify.OutcomeVerified && caseStore != nil && c.DeviceID != "" {
+					if list, lerr := caseStore.List(c.TenantID); lerr == nil {
+						if cs, ok := casemgmt.MostRecentOpenForAsset(list, c.DeviceID); ok {
+							_, _ = caseStore.Attach(c.TenantID, cs.ID, "system", casemgmt.AttachVerification, c.ID)
+						}
+					}
 				}
 			}
 		}

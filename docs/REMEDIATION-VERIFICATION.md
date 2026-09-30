@@ -84,7 +84,10 @@ kural-id boş → "cihazda ARTIK herhangi bir tespit tetikliyor mu?"; (2) **devi
 (`expected=QUARANTINED`) — "karantina gerçekten UYGULANDI mı?" (desired≠effective). Arka-plan
 worker'ı pencere dolunca her ikisini de tür'e göre yeniden değerlendirip çözer; cihaz
 pencere sonunda hâlâ `QUARANTINE_PENDING` ise durum check'i REGRESSED işaretler. Pencere:
-`KUT_VERIFY_WINDOW` (varsayılan 15dk).
+`KUT_VERIFY_WINDOW` (varsayılan 15dk). Otomatik çözümler denetim izine `system` aktörüyle
+`VERIFY_AUTO_<SONUÇ>` olarak yazılır. **VERIFIED** olan otomatik check, cihazın AÇIK SOC
+vakasına (Assets'inde cihazı taşıyan en yeni kapanmamış vaka) otomatik bağlanır — böylece
+kapanış-gate otomatik akışta da doğrulanmış kanıta erişir (eşleşen açık vaka yoksa atlanır).
 
 ## Metrikler
 
