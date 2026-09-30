@@ -33,7 +33,8 @@ const (
 const (
 	KindDetection    = "detection"     // bir detect.Rule'un artık tetiklememesi
 	KindDeviceStatus = "device_status" // bir cihazın beklenen duruma (ör. ACTIVE) dönmesi
-	// (rezerve: "vuln", "compliance" — sonraki dilimler)
+	KindVuln         = "vuln"          // bir CVE'nin cihazın güncel envanterinde artık eşleşmemesi
+	// (rezerve: "compliance" — sonraki dilim)
 )
 
 // Hatalar.

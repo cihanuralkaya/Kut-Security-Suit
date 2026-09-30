@@ -109,3 +109,26 @@ func EvaluateDeviceStatus(c Check, current string) (Outcome, int) {
 	}
 	return OutcomeRegressed, baseline
 }
+
+// EvaluateVulnCleared, Kind=vuln için doğrulayıcıdır: bir CVE'nin (c.Expected) cihazın
+// GÜNCEL yazılım envanterinde ARTIK eşleşmediğini ölçer. Çağıran katman cihazın güncel
+// eşleşen CVE listesini (currentCVEs) ve envanter verisinin mevcut olup olmadığını
+// (dataAvailable) hesaplar; bu saf fonksiyon karar verir. Fail-closed: envanter yoksa
+// veya beklenen CVE boşsa INCONCLUSIVE (yamalandı DENMEZ). CVE hâlâ eşleşiyor → REGRESSED;
+// eşleşmiyor → VERIFIED. Karşılaştırma büyük/küçük harf duyarsız.
+func EvaluateVulnCleared(c Check, dataAvailable bool, currentCVEs []string) (Outcome, int) {
+	baseline := c.Baseline
+	if baseline == 0 {
+		baseline = risk.Score(c.Factors)
+	}
+	exp := strings.ToUpper(strings.TrimSpace(c.Expected))
+	if !dataAvailable || exp == "" {
+		return OutcomeInconclusive, baseline
+	}
+	for _, cve := range currentCVEs {
+		if strings.ToUpper(strings.TrimSpace(cve)) == exp {
+			return OutcomeRegressed, baseline // CVE hâlâ var → yamalanmadı
+		}
+	}
+	return OutcomeVerified, verifiedResidual(c, baseline)
+}

@@ -12,6 +12,7 @@ import (
 	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/model"
 	"kut.corp/suite/server/internal/verify"
+	"kut.corp/suite/server/internal/vuln"
 )
 
 // fakeRuleRunner, verify.RuleRunner'ı test için gerçekler: mesajı "still" olan olaylar
@@ -135,5 +136,52 @@ func TestVerifyDeviceStatusRun(t *testing.T) {
 	id2, _ := b2["id"].(string)
 	if rc, rb := postAny(t, ts.URL+"/api/verify/"+id2+"/run", tok, map[string]any{}); rc != http.StatusOK || rb["outcome"] != "REGRESSED" {
 		t.Fatalf("cihaz beklenen durumda değil → REGRESSED olmalı: %d %v", rc, rb)
+	}
+}
+
+// TestVerifyVulnRun, Kind=vuln (CVE re-scan) yolunu uçtan uca sınar: beklenen CVE cihazın
+// güncel envanterinde artık eşleşmiyorsa VERIFIED (yamalandı), hâlâ eşleşiyorsa REGRESSED.
+func TestVerifyVulnRun(t *testing.T) {
+	srv, store := newServer(t)
+	srv.SetVerifyStore(verify.NewMemStore())
+	srv.SetVerifier(verify.NewDetectionVerifier(fakeRuleRunner{fireRuleID: "rule-A"})) // nil-guard
+	set, err := vuln.Load(bytes.NewReader([]byte(`[{"product":"log4j","cve":"CVE-2021-44228","severity":"CRITICAL"}]`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetVulnSet(set)
+	// dev-vuln hâlâ log4j taşır (CVE eşleşir); dev-clean yamalı (eşleşmez).
+	store.softwareByDev = map[string][]string{
+		"dev-vuln":  {"log4j 2.14.1", "openssl 3.0"},
+		"dev-clean": {"log4j 2.17.1-patched-note", "openssl 3.0"}, // "log4j" alt-dizesi eşleşir → bilerek REGRESSED
+		"dev-gone":  {"openssl 3.0"},                              // log4j yok → temizlenmiş
+	}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+	_, ob := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	tok := ob["token"]
+
+	openRun := func(dev string) string {
+		_, b := postAny(t, ts.URL+"/api/verify/open", tok, map[string]any{
+			"device_id": dev, "kind": "vuln", "expected": "CVE-2021-44228",
+		})
+		id, _ := b["id"].(string)
+		if id == "" {
+			t.Fatalf("vuln open id dönmeliydi (%s): %v", dev, b)
+		}
+		rc, rb := postAny(t, ts.URL+"/api/verify/"+id+"/run", tok, map[string]any{})
+		if rc != http.StatusOK {
+			t.Fatalf("vuln run 200 dönmeliydi (%s): %d %v", dev, rc, rb)
+		}
+		o, _ := rb["outcome"].(string)
+		return o
+	}
+	if o := openRun("dev-gone"); o != "VERIFIED" {
+		t.Fatalf("CVE temizlenmiş cihaz VERIFIED olmalı, %s", o)
+	}
+	if o := openRun("dev-vuln"); o != "REGRESSED" {
+		t.Fatalf("CVE hâlâ eşleşen cihaz REGRESSED olmalı, %s", o)
 	}
 }

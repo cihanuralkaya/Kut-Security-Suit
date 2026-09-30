@@ -23,34 +23,35 @@ import (
 
 // memStore, hem admin.Store hem adminapi.AuthStore'u karşılar.
 type memStore struct {
-	custody      map[string][]evidence.CustodyEntry
-	roles        map[string]admin.Role
-	emails       map[string]adminRec // email -> (id, hash)
-	commands     []string            // "deviceID:type"
-	cipher       *security.FieldCipher
-	devRows      []adminread.DeviceRow
-	evtRows      []adminread.EventRow
-	auditRows    []adminread.AuditRow
-	certRows     []adminread.CertRow
-	cmdRows      []adminread.CmdRow
-	tokenRows    []adminread.EnrollmentTokenRow
-	tokenSeq     int
-	polID        string
-	polVer       string
-	rules        map[string][]admin.RuleInput // policyID -> kurallar
-	assigned     map[string]string            // deviceID -> policyID
-	statuses     map[string]string            // deviceID -> son ayarlanan durum
-	adminInfos   map[string]*admin.AdminInfo  // id -> yönetici görünümü
-	adminTen     map[string]string            // id -> kiracı ("" = platform)
-	deviceTenant map[string]string            // deviceID -> kiracı (çok-tenant aksiyon kapısı)
-	eventTenant  map[string]string            // eventID -> kiracı (çok-tenant triyaj kapısı)
-	lastEvtF     adminread.EventFilter        // QueryEvents'e geçen son filtre (kapsam testi)
-	nextAdmID    int
-	mfa          map[string]*mfaRec // adminID -> MFA durumu
-	eventAcks    map[string]adminread.EventAck
-	artifacts    map[string]adminread.ArtifactContent
-	artMeta      []adminread.ArtifactRow
-	pendWipes    map[string]string // deviceID -> requestedBy (çift-kontrol WIPE)
+	custody       map[string][]evidence.CustodyEntry
+	roles         map[string]admin.Role
+	emails        map[string]adminRec // email -> (id, hash)
+	commands      []string            // "deviceID:type"
+	cipher        *security.FieldCipher
+	devRows       []adminread.DeviceRow
+	evtRows       []adminread.EventRow
+	auditRows     []adminread.AuditRow
+	certRows      []adminread.CertRow
+	cmdRows       []adminread.CmdRow
+	tokenRows     []adminread.EnrollmentTokenRow
+	tokenSeq      int
+	polID         string
+	polVer        string
+	rules         map[string][]admin.RuleInput // policyID -> kurallar
+	assigned      map[string]string            // deviceID -> policyID
+	statuses      map[string]string            // deviceID -> son ayarlanan durum
+	adminInfos    map[string]*admin.AdminInfo  // id -> yönetici görünümü
+	adminTen      map[string]string            // id -> kiracı ("" = platform)
+	deviceTenant  map[string]string            // deviceID -> kiracı (çok-tenant aksiyon kapısı)
+	eventTenant   map[string]string            // eventID -> kiracı (çok-tenant triyaj kapısı)
+	lastEvtF      adminread.EventFilter        // QueryEvents'e geçen son filtre (kapsam testi)
+	nextAdmID     int
+	mfa           map[string]*mfaRec // adminID -> MFA durumu
+	eventAcks     map[string]adminread.EventAck
+	artifacts     map[string]adminread.ArtifactContent
+	artMeta       []adminread.ArtifactRow
+	pendWipes     map[string]string   // deviceID -> requestedBy (çift-kontrol WIPE)
+	softwareByDev map[string][]string // deviceID -> yüklü yazılım (vuln re-scan testi)
 }
 
 type adminRec struct{ id, hash string }
@@ -450,7 +451,7 @@ func (m *memStore) QueryEvents(_ context.Context, f adminread.EventFilter) ([]ad
 	return out, nil
 }
 func (m *memStore) LatestSoftwareByDevice(_ context.Context, _ string) (map[string][]string, error) {
-	return nil, nil
+	return m.softwareByDev, nil
 }
 func (m *memStore) EnqueueCommandParams(_ context.Context, deviceID, cmdType, _ string, params map[string]string) error {
 	m.commands = append(m.commands, deviceID+":"+cmdType)

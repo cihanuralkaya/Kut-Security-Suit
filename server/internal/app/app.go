@@ -1624,6 +1624,9 @@ func runVerifyWorker(ctx context.Context, store verify.Store, v verify.Verifier,
 					outcome  verify.Outcome
 					residual int
 				)
+				if c.Kind == verify.KindVuln {
+					continue // CVE re-scan yalnız API ile koşar (worker'da vuln veri kümesi yok)
+				}
 				if c.Kind == verify.KindDeviceStatus {
 					// Cihazın güncel efektif durumu beklenen duruma karşı (desired≠effective).
 					dd, ok, derr := rd.DeviceDetail(ctx, c.DeviceID, c.TenantID)
