@@ -36,6 +36,16 @@ var (
 	tCreateAccount = Technique{ID: "T1136", Name: "Create Account", Tactic: "Persistence"}
 	tBruteForce    = Technique{ID: "T1110", Name: "Brute Force", Tactic: "Credential Access"}
 	tAccountManip  = Technique{ID: "T1098", Name: "Account Manipulation", Tactic: "Persistence"}
+	// Kritik impact + credential-access (ransomware/recovery/cred-dump) kapsamı:
+	tDataEncrypted = Technique{ID: "T1486", Name: "Data Encrypted for Impact", Tactic: "Impact"}
+	tInhibitRecov  = Technique{ID: "T1490", Name: "Inhibit System Recovery", Tactic: "Impact"}
+	tCredDumping   = Technique{ID: "T1003", Name: "OS Credential Dumping", Tactic: "Credential Access"}
+	// Defense-evasion / lateral / privilege-escalation kapsamı:
+	tProxyExec    = Technique{ID: "T1218", Name: "System Binary Proxy Execution", Tactic: "Defense Evasion"}
+	tRemoteSvc    = Technique{ID: "T1021", Name: "Remote Services", Tactic: "Lateral Movement"}
+	tModifyReg    = Technique{ID: "T1112", Name: "Modify Registry", Tactic: "Defense Evasion"}
+	tAbuseElev    = Technique{ID: "T1548", Name: "Abuse Elevation Control Mechanism", Tactic: "Privilege Escalation"}
+	tMasquerading = Technique{ID: "T1036", Name: "Masquerading", Tactic: "Defense Evasion"}
 )
 
 // Catalog, sistemin eşleyebildiği tekniklerin tam listesini (kapsama matrisi)
@@ -58,6 +68,14 @@ func Catalog() []Technique {
 		tCreateAccount,   // T1136
 		tBruteForce,      // T1110
 		tAccountManip,    // T1098
+		tDataEncrypted,   // T1486
+		tInhibitRecov,    // T1490
+		tCredDumping,     // T1003
+		tProxyExec,       // T1218
+		tRemoteSvc,       // T1021
+		tModifyReg,       // T1112
+		tAbuseElev,       // T1548
+		tMasquerading,    // T1036
 	}
 }
 
