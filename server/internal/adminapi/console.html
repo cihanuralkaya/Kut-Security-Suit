@@ -228,6 +228,15 @@
     background:linear-gradient(90deg, transparent, var(--line2), transparent); animation:skelsheen 1.2s infinite; }
   @media (prefers-reduced-motion:reduce){ .skel::after { animation:none; } }
   @keyframes skelsheen { 100% { transform:translateX(100%); } }
+  /* Cihaz eylemleri drawer (cihaz seçilince sağdan kayar; liste tam genişlik alır). */
+  .card.drawer { position:fixed; top:0; right:0; z-index:150; height:100vh; width:min(560px,94vw);
+    border-radius:0; border-top:0; border-bottom:0; overflow:auto; box-shadow:var(--shadow-3);
+    transform:translateX(100%); visibility:hidden; transition:transform .22s ease, visibility .22s ease; }
+  .card.drawer.open { transform:none; visibility:visible; }
+  .card.drawer > .head { position:sticky; top:0; z-index:1; background:var(--panel); }
+  .drawer-backdrop { position:fixed; inset:0; z-index:140; background:rgba(3,7,12,.5); }
+  .drawer-backdrop[hidden] { display:none; }
+  @media (prefers-reduced-motion:reduce){ .card.drawer { transition:none; } }
   /* Kompakt yoğunluk: daha sık satırlar (güç-kullanıcı; ekranda daha çok veri). */
   :root[data-density="compact"] tbody td { padding:5px 10px; }
   :root[data-density="compact"] thead th { padding:5px 10px; }
@@ -471,6 +480,9 @@
     <symbol id="i-cases" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
     </symbol>
+    <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 6l12 12M18 6L6 18"/>
+    </symbol>
   </defs>
 </svg>
 
@@ -712,10 +724,12 @@
         </div>
       </div>
 
-      <!-- ACTIONS -->
+      <!-- ACTIONS (cihaz seçilince sağdan kayan panel / drawer) -->
       <div class="col">
-        <div class="card" data-view="devices">
-          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bolt"/></svg>Cihaz Eylemleri</h2></div>
+        <div class="card drawer" id="dev-aside" data-view="devices" role="dialog" aria-modal="true" aria-label="Cihaz eylemleri" aria-hidden="true">
+          <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bolt"/></svg>Cihaz Eylemleri</h2>
+            <span class="sp"></span>
+            <button id="dev-drawer-close" class="icon-btn" type="button" aria-label="Paneli kapat" title="Kapat (Esc)"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button></div>
           <div class="body">
             <div id="sel-head" class="sel-head sel-none">Bir cihaz seçmek için tablodan satıra tıklayın.</div>
             <div class="actions">
@@ -1117,6 +1131,7 @@
   </main>
 </div>
 
+<div id="dev-backdrop" class="drawer-backdrop" hidden></div>
 <div id="toasts" role="region" aria-live="polite" aria-label="Bildirimler"></div>
 
 <!-- Komut paleti (Ctrl/Cmd-K): hızlı gezinme + eylemler. Vanilla; CSP-güvenli. -->
@@ -1958,6 +1973,13 @@
     renderTags(d);
     var det=$("dev-detail");
     if(state.sel){ loadDetail(state.sel); } else { det.className="detail"; det.innerHTML=""; }
+    // Drawer'ı aç/kapat (cihaz seçili → sağdan kayan panel + backdrop).
+    var aside=$("dev-aside"), bd=$("dev-backdrop");
+    if(aside){
+      if(state.sel){ aside.classList.add("open"); aside.setAttribute("aria-hidden","false"); if(bd) bd.hidden=false;
+        var cb=$("dev-drawer-close"); if(cb) cb.focus(); }
+      else { aside.classList.remove("open"); aside.setAttribute("aria-hidden","true"); if(bd) bd.hidden=true; }
+    }
     renderDevices();
   }
 
@@ -3275,6 +3297,18 @@
     var init="comfortable"; try{ if(localStorage.getItem("xdr_density")==="compact") init="compact"; }catch(e){}
     segBtns.forEach(function(b){ b.onclick=function(){ apply(b.getAttribute("data-density")); }; });
     apply(init);
+  })();
+
+  // ---------- Cihaz drawer kapatma (× / backdrop / Esc → seçimi kaldır) ----------
+  (function(){
+    var cb=$("dev-drawer-close"), bd=$("dev-backdrop");
+    function closeDrawer(){ if(state.sel) selectDevice(state.sel); } // aynı id → toggle off
+    if(cb) cb.onclick=closeDrawer;
+    if(bd) bd.onclick=closeDrawer;
+    document.addEventListener("keydown", function(ev){
+      var a=$("dev-aside");
+      if(ev.key==="Escape" && state.sel && a && a.classList.contains("open")){ ev.preventDefault(); closeDrawer(); }
+    });
   })();
 
   // ---------- Komut paleti (Ctrl/Cmd-K): hızlı gezinme + eylemler ----------
