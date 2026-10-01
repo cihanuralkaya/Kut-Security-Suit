@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"kut.corp/suite/server/internal/mitre"
 	"kut.corp/suite/server/internal/model"
 )
 
@@ -289,6 +290,29 @@ func TestDefaultRulesNoFalsePositiveOnBenign(t *testing.T) {
 			if d.Technique.ID == c.unwantedTech {
 				t.Errorf("%q/%q: %s YANLIŞ-POZİTİF (benign olay tetiklememeli), gelen %+v", c.cat, c.msg, c.unwantedTech, dets)
 			}
+		}
+	}
+}
+
+// TestAllRuleTechniquesInCatalog, her yerleşik kuralın tekniğinin mitre.Catalog()
+// içinde yer aldığını doğrular. Kapsam paneli (/api/mitre/coverage) YALNIZCA
+// katalogdaki teknikleri gösterdiğinden, kurala sahip olup katalogda olmayan bir
+// teknik operatöre GÖRÜNMEZ (sessiz kapsam boşluğu). Bu test iki kaynağı (detect
+// kural kataloğu ↔ mitre kapsam matrisi) kalıcı olarak hizalar: ileride katalog
+// güncellenmeden kural eklenirse CI kırılır.
+func TestAllRuleTechniquesInCatalog(t *testing.T) {
+	inCatalog := map[string]bool{}
+	for _, tech := range mitre.Catalog() {
+		inCatalog[tech.ID] = true
+	}
+	for _, r := range DefaultRules() {
+		id := r.Technique.ID
+		if id == "" {
+			continue // teknik atanmamış kural (varsa) kapsam dışı
+		}
+		if !inCatalog[id] {
+			t.Errorf("kural %s tekniği %q (%s) mitre.Catalog()'ta YOK — kapsam panelinde görünmez; kataloğa ekle",
+				r.ID, id, r.Technique.Name)
 		}
 	}
 }
