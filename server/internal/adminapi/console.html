@@ -517,6 +517,12 @@
     <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M20 14.5A8 8 0 1 1 9.5 4 6.5 6.5 0 0 0 20 14.5z"/>
     </symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 5l12 7-12 7z"/>
+    </symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>
+    </symbol>
   </defs>
 </svg>
 
@@ -615,9 +621,9 @@
     <div class="card" data-view="overview">
       <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-activity"/></svg>Tehdit Etkinliği <span class="count" id="act-uptime">—</span></h2>
         <span class="sp"></span>
-        <button class="btn ghost sm" data-act="reportHTML" title="Güvenlik duruş raporunu HTML olarak aç">📄 Rapor</button>
-        <button class="btn ghost sm" data-act="reportCSV" title="KPI'ları CSV olarak indir">⬇ CSV</button>
-        <button class="btn ghost sm" data-act="reportExecMD" title="Yönetici özetini Markdown olarak indir">⬇ Yönetici (MD)</button></div>
+        <button class="btn ghost sm" data-act="reportHTML" title="Güvenlik duruş raporunu HTML olarak aç"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-file"/></svg>Rapor</button>
+        <button class="btn ghost sm" data-act="reportCSV" title="KPI'ları CSV olarak indir"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-download"/></svg>CSV</button>
+        <button class="btn ghost sm" data-act="reportExecMD" title="Yönetici özetini Markdown olarak indir"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-download"/></svg>Yönetici (MD)</button></div>
       <div class="body">
         <div id="act-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px"></div>
         <div class="lbl" style="margin:14px 0 6px">Olay hızı (canlı · alım/aralık)</div>
@@ -747,7 +753,7 @@
           <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-file"/></svg>Denetim İzi <span id="aud-count" class="count">0</span></h2>
             <span class="sp"></span>
             <input id="aud-search" placeholder="🔍 yönetici / eylem / hedef" style="width:auto;padding:5px 10px;font-size:12px">
-            <button class="btn ghost sm" id="aud-verify" title="Denetim izi hash-zincirinin bütünlüğünü doğrula">🔐 Zinciri Doğrula</button>
+            <button class="btn ghost sm" id="aud-verify" title="Denetim izi hash-zincirinin bütünlüğünü doğrula"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-verify"/></svg>Zinciri Doğrula</button>
             <button class="btn ghost sm" id="aud-csv" title="Görünen kayıtları CSV indir">↓ CSV</button>
             <button class="btn ghost sm" id="aud-refresh">↻</button></div>
           <div class="tbl-wrap">
@@ -864,13 +870,13 @@
             <p class="hint" style="margin:0 0 10px">Bir <b>etikete</b> sahip TÜM cihazlara tek seferde eylem uygular (filo yönetimi).</p>
             <div class="field"><input id="bulk-tag" type="text" placeholder="etiket (ör. prod)"></div>
             <div class="field"><select id="bulk-action">
-              <option value="collect-diagnostics">🩺 Tanılama Topla</option>
-              <option value="quarantine">🔒 Karantina</option>
-              <option value="release">🔓 Serbest Bırak</option>
-              <option value="assign-policy">📋 Politika Ata</option>
+              <option value="collect-diagnostics">Tanılama Topla</option>
+              <option value="quarantine">Karantina</option>
+              <option value="release">Serbest Bırak</option>
+              <option value="assign-policy">Politika Ata</option>
             </select></div>
             <div class="field" id="bulk-pol-wrap" style="display:none"><select id="bulk-pol"><option value="">— politika seç —</option></select></div>
-            <button class="btn ghost sm" data-act="bulkPreview">👁 Önizle (dry-run)</button>
+            <button class="btn ghost sm" data-act="bulkPreview"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-eye"/></svg>Önizle (dry-run)</button>
             <button class="btn sm" data-act="bulkApply">Uygula</button>
             <div id="o-bulk" class="out"></div>
           </div>
@@ -1019,7 +1025,7 @@
               <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint)">Önem
                 <input id="hunt-sev" placeholder="hepsi" style="width:110px;padding:6px 9px;font-size:12px">
               </label>
-              <button class="btn sm" id="hunt-run" type="button">🔎 Tara</button>
+              <button class="btn sm" id="hunt-run" type="button"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"/></svg>Tara</button>
             </div>
             <div id="hunt-result"></div>
           </div>
@@ -1030,7 +1036,7 @@
             <span class="sp"></span><span id="ag-count" class="count">0</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">AI-agent nedensellik grafından exfiltration zincirleri (untrusted bağlam → credential okuma → dış yazma). Salt-okunur; telemetri <code>/api/agentsec/events</code> ile beslenir.</p>
-            <button class="btn sm" id="ag-refresh" type="button">🔄 Yenile</button>
+            <button class="btn sm" id="ag-refresh" type="button"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-restart"/></svg>Yenile</button>
             <div id="ag-result" style="margin-top:10px"></div>
           </div>
         </div>
@@ -1040,7 +1046,7 @@
             <span class="sp"></span><span id="case-count" class="count">0</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Tespit → incident → otomatik SOC vakası yaşam döngüsü. Salt-okunur liste.</p>
-            <button class="btn sm" id="case-refresh" type="button">🔄 Yenile</button>
+            <button class="btn sm" id="case-refresh" type="button"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-restart"/></svg>Yenile</button>
             <div id="case-result" style="margin-top:10px"></div>
           </div>
         </div>
@@ -1060,7 +1066,7 @@
               <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);flex:1;min-width:180px">Kimlik
                 <input id="ga-id" placeholder="ör. pc-01 / 203.0.113.9" style="width:100%;padding:6px 9px;font-size:12px">
               </label>
-              <button class="btn sm" id="ga-run" type="button">🔎 Skorla</button>
+              <button class="btn sm" id="ga-run" type="button"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"/></svg>Skorla</button>
             </div>
             <div id="ga-result"></div>
           </div>
@@ -1089,7 +1095,7 @@
                   <option value="sources">kaynaklar</option><option value="targets">hedefler</option>
                 </select>
               </label>
-              <button class="btn sm" id="gp-run" type="button">🔎 Pivot</button>
+              <button class="btn sm" id="gp-run" type="button"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"/></svg>Pivot</button>
             </div>
             <div id="gp-result"></div>
           </div>
@@ -1104,7 +1110,7 @@
               <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);flex:1;min-width:180px">Incident ID
                 <input id="ait-id" placeholder="ör. inc-123" style="width:100%;padding:6px 9px;font-size:12px">
               </label>
-              <button class="btn sm" id="ait-run" type="button">🤖 Öneri Al</button>
+              <button class="btn sm" id="ait-run" type="button"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cpu"/></svg>Öneri Al</button>
             </div>
             <div id="ait-result"></div>
           </div>
@@ -1122,7 +1128,7 @@
               <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);flex:1;min-width:180px">Süreç dizisi (opsiyonel, virgülle)
                 <input id="air-seq" placeholder="ör. explorer.exe,powershell.exe,curl.exe" style="width:100%;padding:6px 9px;font-size:12px">
               </label>
-              <button class="btn sm" id="air-run" type="button">🧮 Füzyonla</button>
+              <button class="btn sm" id="air-run" type="button"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sliders"/></svg>Füzyonla</button>
             </div>
             <div id="air-result"></div>
           </div>
@@ -1132,9 +1138,9 @@
           <div class="head"><h2><svg class="hi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-verify"/></svg>Remediation Doğrulama <span class="count" id="vf-count">0</span></h2>
             <span class="sp"></span>
             <span class="mono" style="color:var(--faint);font-size:11px">resolved ≠ fixed · fail-closed</span>
-            <button class="btn ghost sm" id="vf-refresh" type="button" style="margin-left:8px">🔄 Yenile</button></div>
+            <button class="btn ghost sm" id="vf-refresh" type="button" style="margin-left:8px"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-restart"/></svg>Yenile</button></div>
           <div class="body">
-            <p class="hint" style="margin:0 0 10px">Bir bulgu "çözüldü" kapatılmadan önce kaynak tespit kuralı taze (aksiyon-sonrası) pencerede yeniden ölçülür: 0 eşleşme → DOĞRULANDI, hâlâ tetikliyor → REGRESYON, telemetri yok → KARARSIZ (fail-closed). Bekleyen bir check'i "▶ Çalıştır" ile şimdi değerlendirin. Ölçülen (gerçekleşen) risk azalması gösterilir.</p>
+            <p class="hint" style="margin:0 0 10px">Bir bulgu "çözüldü" kapatılmadan önce kaynak tespit kuralı taze (aksiyon-sonrası) pencerede yeniden ölçülür: 0 eşleşme → DOĞRULANDI, hâlâ tetikliyor → REGRESYON, telemetri yok → KARARSIZ (fail-closed). Bekleyen bir check'i "Çalıştır" ile şimdi değerlendirin. Ölçülen (gerçekleşen) risk azalması gösterilir.</p>
             <div class="tbl-wrap"><table><thead><tr><th scope="col">Sonuç</th><th scope="col">Cihaz</th><th scope="col">Kural / Beklenen</th><th scope="col">Tür</th><th scope="col">Baseline</th><th scope="col">Kalan</th><th scope="col">Azalma</th><th scope="col"></th></tr></thead>
               <tbody id="vf-body"></tbody></table></div>
             <div id="vf-empty" class="empty" style="padding:12px">Henüz doğrulama check'i yok. (Motor kapalıysa uç 404 döner.)</div>
@@ -1208,7 +1214,7 @@
     "login.pass": "Password",
     "login.mfa": "Verification code (2FA)",
     "login.btn": "Sign in",
-    "login.notice": "🔒 Privacy Notice (GDPR)",
+    "login.notice": "Privacy Notice (GDPR)",
     "nav.overview": "Overview",
     "nav.devices": "Devices",
     "nav.policies": "Policy & Enrollment",
@@ -1749,7 +1755,7 @@
         "<div style='font-size:11px;color:var(--faint);margin-bottom:4px'>"+label+"</div>"+
         "<div style='display:flex;gap:14px;font-size:14px'>"+seg(t.on,"var(--ok,#10b981)","açık")+seg(t.off,"var(--bad,#f43f5e)","kapalı")+seg(t.unk,"var(--muted)","bilinmiyor")+"</div></div>";
     }
-    box.innerHTML=row("🔒 Disk şifreleme",e)+row("🧱 Güvenlik duvarı",f);
+    box.innerHTML=row("Disk şifreleme",e)+row("Güvenlik duvarı",f);
     // Uyumsuz cihazlar: herhangi bir boyutta "off". Hangi boyutların ihlal olduğunu belirt.
     var problems={};
     e.offDevs.forEach(function(id){ (problems[id]=problems[id]||[]).push("şifreleme"); });
@@ -1898,8 +1904,8 @@
         }
         if(e.ack_assignee||e.ack_note){
           var cs=document.createElement("div"); cs.style.cssText="font-size:11.5px;color:var(--muted);margin-bottom:6px";
-          cs.innerHTML="Vaka:"+(e.ack_assignee?(" 👤 <b>"+esc(e.ack_assignee)+"</b>"):"")+
-            (e.ack_note?(" · 📝 "+esc(e.ack_note)):"");
+          cs.innerHTML="Vaka:"+(e.ack_assignee?(" <svg class='bi' viewBox='0 0 24 24' aria-hidden='true'><use href='#i-user'/></svg><b>"+esc(e.ack_assignee)+"</b>"):"")+
+            (e.ack_note?(" · not: "+esc(e.ack_note)):"");
           dtd.appendChild(cs);
         }
         if(hasDet){
@@ -1918,10 +1924,10 @@
         // İçine satır-içi vaka editörünün açılacağı kapsayıcı (aşağıya eklenir).
         var caseHolder=document.createElement("div");
         caseHolder.style.cssText="margin-top:8px;display:none";
-        acts.appendChild(mkEvtBtn("👤 Vaka ata / not",
+        acts.appendChild(mkEvtBtn("Vaka ata / not",
           "Bu olaya sorumlu (assignee) ve serbest-metin not ata", function(){ toggleCaseForm(e, caseHolder); }));
         if(hasDet){
-          acts.appendChild(mkEvtBtn("🧪 Kurallara karşı test et",
+          acts.appendChild(mkEvtBtn("Kurallara karşı test et",
             "Güvenlik → Kural Test Aracı'na bu olayı taşır", function(){ testEventAgainstRules(e); }));
         }
         dtd.appendChild(acts);
@@ -2389,7 +2395,7 @@
         return "<tr><td><b>"+esc(x.rule_id)+"</b></td><td>"+esc(x.rule_name)+"</td>"+
           "<td><span class='sev "+esc(x.severity)+"'>"+esc(x.severity)+"</span></td><td class='mono'>"+esc(tech)+"</td></tr>";
       }).join("");
-      out.innerHTML='<p class="hint" style="margin:0 0 8px">⚡ '+m.length+' kural tetiklenir:</p>'+
+      out.innerHTML='<p class="hint" style="margin:0 0 8px">'+m.length+' kural tetiklenir:</p>'+
         '<div class="tbl-wrap"><table><thead><tr><th scope="col">ID</th><th scope="col">Ad</th><th scope="col">Önem</th><th scope="col">Teknik</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Test başarısız: '+esc(e.message)+'</p>'; });
   }
@@ -2540,7 +2546,7 @@
           (mode==="rules"?("<td class='mono' style='color:var(--accent)'>"+esc(m)+"</td>"):"")+"</tr>";
       }).join("");
       var techHdr = mode==="rules" ? "<th scope=\"col\">Eşleşen kural</th>" : "";
-      out.innerHTML='<p class="hint" style="margin:0 0 8px">⚡ '+hits.length+' isabet / '+scanned+' olay tarandı'+
+      out.innerHTML='<p class="hint" style="margin:0 0 8px">'+hits.length+' isabet / '+scanned+' olay tarandı'+
         (mode==="rules"?" (geçmiş olaylara mevcut kurallar uygulandı)":"")+':</p>'+
         '<div class="tbl-wrap"><table><thead><tr><th scope="col">Zaman</th><th scope="col">Cihaz</th><th scope="col">Önem</th><th scope="col">Mesaj</th>'+techHdr+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
     }).catch(function(e){ out.innerHTML='<p class="hint" style="margin:0;color:var(--bad,#f43f5e)">Tarama başarısız: '+esc(e.message)+'</p>'; });
@@ -2655,7 +2661,7 @@
   }
   // loadVerify: remediation-doğrulama check'lerini listeler (GET /api/verify) ve her
   // birinin sonucunu + ölçülen (gerçekleşen) risk azalmasını gösterir. Bekleyen (PENDING)
-  // check'ler "▶ Çalıştır" ile değerlendirilebilir (OPERATOR; POST /api/verify/{id}/run).
+  // check'ler "Çalıştır" ile değerlendirilebilir (OPERATOR; POST /api/verify/{id}/run).
   // Sonuç kullanıcı-görünür HTML → tüm alanlar esc()'ten geçer (XSS). CSP: satır butonları
   // render SONRASI querySelectorAll ile bağlanır (inline on* handler yok).
   function loadVerify(){
@@ -2670,7 +2676,7 @@
         var oc=c.outcome||"PENDING", base=Number(c.baseline)||0, res=Number(c.residual_risk)||0;
         var pending=(oc==="PENDING"); // henüz değerlendirilmedi → kalan/azalma ölçülmemiş
         var red=base-res; if(red<0) red=0;
-        var run=pending?("<button class='btn ghost sm' data-vfrun='"+esc(c.id)+"' type='button'>▶ Çalıştır</button>"):"";
+        var run=pending?("<button class='btn ghost sm' data-vfrun='"+esc(c.id)+"' type='button'><svg class='bi' viewBox='0 0 24 24' aria-hidden='true'><use href='#i-play'/></svg>Çalıştır</button>"):"";
         var kalan=pending?"<span style='color:var(--faint)'>—</span>":esc(String(res));
         var azalma=pending?"<span style='color:var(--faint)'>—</span>":
           ("<span style='color:"+(red>0?"var(--good,#22c55e)":"var(--faint)")+"'>"+(red>0?("−"+esc(String(red))):"0")+"</span>");
@@ -2690,7 +2696,7 @@
             var o=(rv&&rv.outcome)||"?";
             toast("Doğrulama çalıştı","Sonuç: "+o,(o==="VERIFIED")?"ok":"err");
             loadVerify();
-          }).catch(function(e){ toast("Doğrulama başarısız",e.message,"err"); btn.disabled=false; btn.textContent="▶ Çalıştır"; });
+          }).catch(function(e){ toast("Doğrulama başarısız",e.message,"err"); btn.disabled=false; btn.innerHTML='<svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-play"/></svg>Çalıştır'; });
         };
       });
     }).catch(function(e){ empty.style.display="block"; empty.textContent="Yüklenemedi: "+e.message; });
@@ -2716,7 +2722,7 @@
       var m=(r&&r.matches)||[];
       $("sw-count").textContent=m.length;
       if(!m.length){ out.innerHTML='<p class="hint" style="margin:0;color:var(--faint)">"'+esc(q)+'" hiçbir cihazda bulunamadı.</p>'; return; }
-      out.innerHTML='<p class="hint" style="margin:0 0 8px">⚡ '+m.length+' cihazda bulundu:</p>'+
+      out.innerHTML='<p class="hint" style="margin:0 0 8px">'+m.length+' cihazda bulundu:</p>'+
         '<div class="tbl-wrap"><table><thead><tr><th scope="col">Cihaz</th><th scope="col">Eşleşen paket(ler)</th></tr></thead><tbody>'+
         m.map(function(d){
           var pkgs=(d.matches||[]).map(esc).join(", ");
@@ -2805,7 +2811,7 @@
       if(state.sel!==id) return; // seçim değiştiyse eski yanıtı yazma
       var d=res[0].device_detail; if(!d) return;
       var el=$("dev-detail"); el.className="detail show";
-      var certs=(d.certs||[]).map(function(c){ return "<div class='mini'>#"+esc(c.serial)+" · "+(c.revoked?"⛔ İPTAL":"✓ geçerli")+"</div>"; }).join("")||"<div class='mini'>—</div>";
+      var certs=(d.certs||[]).map(function(c){ return "<div class='mini'>#"+esc(c.serial)+" · "+(c.revoked?"İPTAL":"✓ geçerli")+"</div>"; }).join("")||"<div class='mini'>—</div>";
       var cmds=(d.commands||[]).map(function(c){ return "<div class='mini'>"+esc(c.type)+" · "+(c.delivered_at?"teslim":"bekliyor")+"</div>"; }).join("")||"<div class='mini'>—</div>";
       var evs=(res[1]&&res[1].events)||[];
       var evHtml=evs.length ? evs.map(function(e){
@@ -2892,7 +2898,7 @@
       if(arts.length){
         artHtml=arts.map(function(a){
           return "<div class='mini' style='display:flex;gap:8px;align-items:baseline;padding:3px 0'>"+
-            "<span class='click' style='cursor:pointer;color:var(--accent)' data-artdl='"+esc(a.id)+"' data-artname='"+esc(a.path)+"'>⬇</span>"+
+            "<span class='click' style='cursor:pointer;color:var(--accent)' data-artdl='"+esc(a.id)+"' data-artname='"+esc(a.path)+"' title='İndir'><svg class='bi' viewBox='0 0 24 24' aria-hidden='true'><use href='#i-download'/></svg></span>"+
             "<span style='flex:1;word-break:break-all'>"+esc(a.path)+"</span>"+
             "<span class='mono' style='color:var(--faint)'>"+fmtBytes(a.size)+"</span></div>";
         }).join("");
@@ -3105,12 +3111,12 @@
       body.dry_run=true;
       return api("/api/devices/bulk","POST",body).then(function(d){
         var devs=(d.devices||[]).map(function(x){ return esc(x.hostname||x.id); }).join(", ");
-        showOut("o-bulk","👁 Önizleme: "+(d.matched||0)+" cihaz etkilenecek"+(devs?(" — "+devs):"")+". (Uygulanmadı.)","ok");
+        showOut("o-bulk","Önizleme: "+(d.matched||0)+" cihaz etkilenecek"+(devs?(" — "+devs):"")+". (Uygulanmadı.)","ok");
       }).catch(function(e){ showOut("o-bulk","Önizleme başarısız: "+esc(e.message),"err"); }); },
     bulkApply: function(){
       var body=actions.bulkBody(); if(!body) return Promise.resolve();
       var labels={"collect-diagnostics":"tanılama toplama","quarantine":"karantina","release":"serbest bırakma","assign-policy":"politika atama"};
-      if(!confirm("“"+body.tag+"” etiketli TÜM cihazlara "+(labels[body.action]||body.action)+" uygulanacak. Önce 👁 Önizle önerilir. Onaylıyor musunuz?")) return Promise.resolve();
+      if(!confirm("“"+body.tag+"” etiketli TÜM cihazlara "+(labels[body.action]||body.action)+" uygulanacak. Önce Önizle önerilir. Onaylıyor musunuz?")) return Promise.resolve();
       return api("/api/devices/bulk","POST",body).then(function(d){
         showOut("o-bulk",(d.matched||0)+" cihaz eşleşti, "+(d.applied||0)+" uygulandı.","ok");
         toast("Toplu işlem uygulandı",body.tag+" → "+(d.applied||0)+"/"+(d.matched||0)+" cihaz","ok"); refresh();
