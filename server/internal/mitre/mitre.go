@@ -101,6 +101,43 @@ func Classify(category, message string) (Technique, bool) {
 		return tUserExecution, true
 	case "SECURITY":
 		switch {
+		// Kritik impact / credential-access / defense-evasion desenleri önce
+		// değerlendirilir (yüksek özgüllük) — aksi halde genel "kurcalama" ya da
+		// default dalı bunları yanlışlıkla T1562'ye etiketlerdi.
+		case strings.Contains(m, "ransom") || strings.Contains(m, "fidye") ||
+			strings.Contains(m, ".encrypted") || strings.Contains(m, ".locked") ||
+			strings.Contains(m, "kitlesel şifreleme") || strings.Contains(m, "dosyalar şifrelendi"):
+			return tDataEncrypted, true // T1486 fidye / etki için şifreleme
+		case strings.Contains(m, "vssadmin") || strings.Contains(m, "shadowcopy") ||
+			strings.Contains(m, "shadow copy") || strings.Contains(m, "gölge kopya") ||
+			strings.Contains(m, "wbadmin") || strings.Contains(m, "bcdedit") ||
+			strings.Contains(m, "kurtarma engel") || strings.Contains(m, "yedek sil"):
+			return tInhibitRecov, true // T1490 sistem kurtarmayı engelleme
+		case strings.Contains(m, "lsass") || strings.Contains(m, "mimikatz") ||
+			strings.Contains(m, "sekurlsa") || strings.Contains(m, "lsadump") ||
+			strings.Contains(m, "procdump") || strings.Contains(m, "credential dump") ||
+			strings.Contains(m, "kimlik-bilgisi boşalt") || strings.Contains(m, "sam hive"):
+			return tCredDumping, true // T1003 kimlik-bilgisi boşaltma
+		case strings.Contains(m, "mshta") || strings.Contains(m, "installutil") ||
+			strings.Contains(m, "cmstp") || strings.Contains(m, "odbcconf") ||
+			strings.Contains(m, "mavinject") || strings.Contains(m, "lolbin") ||
+			strings.Contains(m, "proxy execution"):
+			return tProxyExec, true // T1218 imzalı-ikiliyle vekil yürütme
+		case strings.Contains(m, "psexec") || strings.Contains(m, "wmiexec") ||
+			strings.Contains(m, "smbexec") || strings.Contains(m, "winrm") ||
+			strings.Contains(m, "winrs") || strings.Contains(m, "remote service"):
+			return tRemoteSvc, true // T1021 uzak hizmetlerle yanal yürütme
+		case strings.Contains(m, "fodhelper") || strings.Contains(m, "uac bypass") ||
+			strings.Contains(m, "uac atlat") || strings.Contains(m, "eventvwr") ||
+			strings.Contains(m, "computerdefaults") || strings.Contains(m, "elevation control"):
+			return tAbuseElev, true // T1548 yetki yükseltme kötüye kullanımı (UAC bypass)
+		case strings.Contains(m, "masquerad") || strings.Contains(m, "kılık değiştir") ||
+			strings.Contains(m, "double extension") || strings.Contains(m, "çift uzantı") ||
+			strings.Contains(m, "sahte sistem süreci"):
+			return tMasquerading, true // T1036 kılık değiştirme
+		case strings.Contains(m, "reg add") || strings.Contains(m, "modify registry") ||
+			strings.Contains(m, "kayıt defteri değiş") || strings.Contains(m, "registry modif"):
+			return tModifyReg, true // T1112 kayıt defteri değişikliği
 		case strings.Contains(m, "dlp") || strings.Contains(m, "hassas veri") ||
 			strings.Contains(m, "veri sızıntısı") || strings.Contains(m, "exfil"):
 			return tExfilAltProto, true // veri sızdırma (DLP)
