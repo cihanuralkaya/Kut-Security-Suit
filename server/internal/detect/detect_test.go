@@ -262,3 +262,33 @@ func TestDefaultRulesCoverNewEventTypes(t *testing.T) {
 		}
 	}
 }
+
+// TestDefaultRulesNoFalsePositiveOnBenign, iyi-huylu (benign) süreç/komut
+// olaylarının yeni regex kurallarını YANLIŞLIKLA tetiklemediğini doğrular.
+// Yanlış-pozitif oranı SOC'ta gerçek bir maliyet olduğundan, precision'ı
+// pozitif kapsamla birlikte regresyona karşı kilitleriz.
+func TestDefaultRulesNoFalsePositiveOnBenign(t *testing.T) {
+	e := NewEngine(nil)
+	cases := []struct {
+		cat, msg, unwantedTech string
+	}{
+		// reg query salt-okuma → registry mutasyonu (T1112) DEĞİL.
+		{"PROCESS", "reg query HKLM\\Software\\Microsoft\\Windows", "T1112"},
+		// Yerel MSI kurulumu (uzak/DLL değil) → LOLBin (T1218) DEĞİL.
+		{"PROCESS", "msiexec /i C:\\pkg\\app.msi /quiet", "T1218"},
+		// RDP istemcisini hedefsiz açmak (/v: yok) → yanal hareket (T1021) DEĞİL.
+		{"PROCESS", "mstsc.exe", "T1021"},
+		// Sistem yolundaki gerçek svchost → kılık değiştirme (T1036) DEĞİL.
+		{"PROCESS", "C:\\Windows\\System32\\svchost.exe -k netsvcs", "T1036"},
+		// Düz PDF (çift-uzantı yok) → kılık değiştirme (T1036) DEĞİL.
+		{"PROCESS", "quarterly_report.pdf opened by user", "T1036"},
+	}
+	for _, c := range cases {
+		dets := e.Evaluate(model.Event{Category: c.cat, Severity: "HIGH", Message: c.msg})
+		for _, d := range dets {
+			if d.Technique.ID == c.unwantedTech {
+				t.Errorf("%q/%q: %s YANLIŞ-POZİTİF (benign olay tetiklememeli), gelen %+v", c.cat, c.msg, c.unwantedTech, dets)
+			}
+		}
+	}
+}

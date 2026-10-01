@@ -536,7 +536,8 @@ func DefaultRules() []Rule {
 			Severity:     "CRITICAL", Technique: mitre.Technique{ID: "T1003", Name: "OS Credential Dumping", Tactic: "Credential Access"}},
 		// v4: panelde hâlâ boş kalan yüksek-değerli taktik hücreleri (defense-evasion/lateral/injection).
 		{ID: "KUT-0023", Name: "İmzalı ikiliyle vekil yürütme (LOLBin)", Category: "PROCESS",
-			MessageRegex: `\bmshta\b|\binstallutil\b|\bcmstp\b|\bodbcconf\b|\bmavinject\b|\bforfiles\b.*\/c|msiexec.*(\/i\b|https?:)`,
+			// msiexec yalnız uzak (http) veya DLL self-register (/y,/z) biçiminde — yerel `/i app.msi` kurulumu FP olmasın.
+			MessageRegex: `\bmshta\b|\binstallutil\b|\bcmstp\b|\bodbcconf\b|\bmavinject\b|\bforfiles\b.*\/c|msiexec.*(https?://|\/y\b|\/z\b)`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1218", Name: "System Binary Proxy Execution", Tactic: "Defense Evasion"}},
 		{ID: "KUT-0024", Name: "Uzak hizmetlerle yanal yürütme", Category: "SECURITY",
 			MessageRegex: `\bpsexec\b|\bpaexec\b|wmic\s+\/node:|Invoke-Command\s+-ComputerName|Enter-PSSession|New-PSSession|\bwinrm\b|\bwinrs\b|\bwmiexec\b|\bsmbexec\b|\bdcomexec\b|mstsc\s+\/v:`,
