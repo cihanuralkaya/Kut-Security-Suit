@@ -561,6 +561,7 @@
       <button id="rf-on" class="on" data-i18n="app.live">Canlı</button>
       <button id="rf-off" data-i18n="app.stop">Durdur</button>
     </div>
+    <button id="refresh-now" class="icon-btn" type="button" aria-label="Şimdi yenile" title="Şimdi yenile (otomatik durumu değişmez)"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-restart"/></svg></button>
     <button id="lang-toggle" class="icon-btn" type="button" aria-label="Language / Dil">EN</button>
     <button id="theme-toggle" class="icon-btn" type="button" aria-label="Temayı değiştir"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-moon"/></svg></button>
     <div class="settings-wrap">
@@ -2040,8 +2041,13 @@
   // ---------- refresh loop ----------
   function setLive(ok){
     var el=$("live"); el.className="live"+(ok?"":" off");
+    if(!ok){ $("live-txt").textContent="bağlantı yok"; return; }
+    var ts=new Date().toLocaleTimeString();
+    // state.auto=false iken (duraklatıldı) manuel "şimdi yenile" de buradan geçer;
+    // gösterge duraklı durumu yansıtsın ama taze zaman damgasını da versin.
+    if(state.auto===false){ $("live-txt").textContent="duraklatıldı · "+ts; return; }
     var mode = state.streamOn ? "akış" : "yenileme";
-    $("live-txt").textContent = ok ? ("canlı ("+mode+") · "+new Date().toLocaleTimeString()) : "bağlantı yok";
+    $("live-txt").textContent = "canlı ("+mode+") · "+ts;
   }
   function soft(p){ return p.catch(function(){ return {}; }); }
   // loadPendingWipes: çift-kontrol bekleyen WIPE taleplerini listeler; her biri için
@@ -3264,7 +3270,10 @@
   $("sw-q").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); searchSoftware(); } });
   $("rt-msg").addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); testRule(); } });
   $("rf-on").onclick=function(){ state.auto=true; $("rf-on").className="on"; $("rf-off").className=""; startAuto(); startStream(); refresh(); };
-  $("rf-off").onclick=function(){ state.auto=false; $("rf-on").className=""; $("rf-off").className="on"; stopAuto(); stopStream(); setLive(true); $("live-txt").textContent="duraklatıldı"; };
+  $("rf-off").onclick=function(){ state.auto=false; $("rf-on").className=""; $("rf-off").className="on"; stopAuto(); stopStream(); setLive(true); };
+  // Şimdi yenile: otomatik/duraklatma durumunu DEĞİŞTİRMEDEN tek seferlik taze veri çeker
+  // (analist auto-refresh'i durdurup incelerken manuel tazeleme ihtiyacı).
+  $("refresh-now").onclick=function(){ refresh(); };
   document.querySelectorAll("#sevfilter button").forEach(function(b){
     b.onclick=function(){ document.querySelectorAll("#sevfilter button").forEach(function(x){x.className="";}); b.className="on";
       state.sevFilter=b.dataset.sev; renderEvents(); };
