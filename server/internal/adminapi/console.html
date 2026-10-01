@@ -237,6 +237,8 @@
   .drawer-backdrop { position:fixed; inset:0; z-index:140; background:rgba(3,7,12,.5); }
   .drawer-backdrop[hidden] { display:none; }
   @media (prefers-reduced-motion:reduce){ .card.drawer { transition:none; } }
+  /* Buton içi inline SVG ikon (aksiyon butonları; metin rengini devralır). */
+  .btn svg.bi { width:13px; height:13px; vertical-align:-2px; margin-right:5px; flex:none; }
   /* Kompakt yoğunluk: daha sık satırlar (güç-kullanıcı; ekranda daha çok veri). */
   :root[data-density="compact"] tbody td { padding:5px 10px; }
   :root[data-density="compact"] thead th { padding:5px 10px; }
@@ -482,6 +484,24 @@
     </symbol>
     <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M6 6l12 12M18 6L6 18"/>
+    </symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4.5" y="10" width="15" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 7.5-2"/>
+    </symbol>
+    <symbol id="i-ban" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>
+    </symbol>
+    <symbol id="i-restart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/>
+    </symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>
+    </symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3v12M7 11l5 5 5-5M4 20h16"/>
+    </symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 20V8M7 12l5-5 5 5M4 4h16"/>
     </symbol>
   </defs>
 </svg>
@@ -733,16 +753,16 @@
           <div class="body">
             <div id="sel-head" class="sel-head sel-none">Bir cihaz seçmek için tablodan satıra tıklayın.</div>
             <div class="actions">
-              <button class="btn warn sm" data-act="quarantine" disabled>🔒 Karantina</button>
-              <button class="btn ghost sm" data-act="release" disabled>🔓 Serbest</button>
-              <button class="btn ghost sm" data-act="diagnostics" disabled>🩺 Tanılama Topla</button>
-              <button class="btn danger sm" data-act="revoke" disabled>⛔ Sertifika İptal</button>
+              <button class="btn warn sm" data-act="quarantine" disabled><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-lock"/></svg>Karantina</button>
+              <button class="btn ghost sm" data-act="release" disabled><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-unlock"/></svg>Serbest</button>
+              <button class="btn ghost sm" data-act="diagnostics" disabled><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-activity"/></svg>Tanılama Topla</button>
+              <button class="btn danger sm" data-act="revoke" disabled><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-ban"/></svg>Sertifika İptal</button>
             </div>
             <div class="lbl" style="margin-top:14px">MDM — Uzak Eylemler</div>
             <div class="actions" style="margin-top:8px">
-              <button class="btn ghost sm" data-act="lock" disabled>🔒 Ekranı Kilitle</button>
-              <button class="btn warn sm" data-act="restart" disabled>🔄 Yeniden Başlat</button>
-              <button class="btn danger sm" data-act="wipe" disabled>💥 Veriyi Sil (ADMIN)</button>
+              <button class="btn ghost sm" data-act="lock" disabled><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-lock"/></svg>Ekranı Kilitle</button>
+              <button class="btn warn sm" data-act="restart" disabled><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-restart"/></svg>Yeniden Başlat</button>
+              <button class="btn danger sm" data-act="wipe" disabled><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-trash"/></svg>Veriyi Sil (ADMIN)</button>
             </div>
             <!-- Çift-kontrol (dört-göz) bekleyen WIPE talepleri; boşsa gizli. -->
             <div id="pending-wipes" style="margin-top:10px;display:none">
@@ -752,12 +772,12 @@
             <div class="lbl" style="margin-top:14px">Adli — Dosya Toplama (IR)</div>
             <div style="display:flex;gap:6px;margin-top:6px">
               <input id="cf-path" placeholder="ör. C:\Windows\Temp\suspicious.log" style="flex:1;padding:6px 9px;font-size:12px" disabled>
-              <button class="btn sm" data-act="collectFile" disabled>📥 Topla</button>
+              <button class="btn sm" data-act="collectFile" disabled><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-download"/></svg>Topla</button>
             </div>
             <div class="lbl" style="margin-top:14px">KVKK — Veri Sahibi Hakları</div>
             <div class="actions" style="margin-top:8px">
-              <button class="btn ghost sm" data-act="exportData" disabled>📤 Veri Dışa Aktar</button>
-              <button class="btn danger sm" data-act="eraseData" disabled>🗑 Veriyi Sil</button>
+              <button class="btn ghost sm" data-act="exportData" disabled><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-upload"/></svg>Veri Dışa Aktar</button>
+              <button class="btn danger sm" data-act="eraseData" disabled><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-trash"/></svg>Veriyi Sil</button>
             </div>
             <div class="divider"></div>
             <div class="lbl">Etiketler (filo gruplama)</div>
