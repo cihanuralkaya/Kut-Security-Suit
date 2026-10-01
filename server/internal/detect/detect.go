@@ -524,5 +524,15 @@ func DefaultRules() []Rule {
 			MessageRegex: `(başarısız|failed)\s+(oturum|logon|login)|authentication failure|event\s*4625|kaba-kuvvet|brute`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1110", Name: "Brute Force", Tactic: "Credential Access"},
 			Threshold: &ThresholdSpec{Count: 5, Seconds: 300, Track: "device"}},
+		// v3: katalogda hiç bulunmayan kritik TTP'ler (ransomware/impact + credential-access).
+		{ID: "KUT-0020", Name: "Fidye yazılımı — kitlesel şifreleme göstergesi", Category: "SECURITY",
+			MessageRegex: `ransom|fidye|\.encrypted\b|\.locked\b|readme.*decrypt|decrypt.*instructions|how.*to.*decrypt|kitlesel şifreleme`,
+			Severity:     "CRITICAL", Technique: mitre.Technique{ID: "T1486", Name: "Data Encrypted for Impact", Tactic: "Impact"}},
+		{ID: "KUT-0021", Name: "Sistem kurtarmayı engelleme (gölge kopya/yedek silme)", Category: "SECURITY",
+			MessageRegex: `vssadmin\s+delete\s+shadows|wmic\s+shadowcopy\s+delete|wbadmin\s+delete|bcdedit.*recoveryenabled\s+no|bcdedit.*bootstatuspolicy\s+ignoreallfailures`,
+			Severity:     "CRITICAL", Technique: mitre.Technique{ID: "T1490", Name: "Inhibit System Recovery", Tactic: "Impact"}},
+		{ID: "KUT-0022", Name: "Kimlik-bilgisi boşaltma (LSASS/SAM)", Category: "SECURITY",
+			MessageRegex: `lsass.*dump|procdump.*lsass|comsvcs.*minidump|reg\s+save.*\b(sam|security|system)\b|sekurlsa|lsadump`,
+			Severity:     "CRITICAL", Technique: mitre.Technique{ID: "T1003", Name: "OS Credential Dumping", Tactic: "Credential Access"}},
 	}
 }

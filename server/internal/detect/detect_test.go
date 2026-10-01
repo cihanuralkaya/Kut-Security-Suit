@@ -236,6 +236,10 @@ func TestDefaultRulesCoverNewEventTypes(t *testing.T) {
 		{"SECURITY", "net user hacker P@ssw0rd /add", "T1136"},
 		{"SECURITY", "net localgroup administrators hacker /add", "T1098"},
 		{"SECURITY", "5 başarısız oturum (failed logon) event 4625", "T1110"},
+		// v3: katalogda yeni kritik TTP'ler (ransomware/impact + credential-access).
+		{"SECURITY", "fidye notu bulundu: README_DECRYPT.txt — dosyalar .encrypted", "T1486"},
+		{"SECURITY", "vssadmin delete shadows /all /quiet çalıştırıldı", "T1490"},
+		{"SECURITY", "procdump -ma lsass.exe lsass.dmp (credential dump)", "T1003"},
 	}
 	for _, c := range cases {
 		dets := e.Evaluate(model.Event{Category: c.cat, Severity: "HIGH", Message: c.msg})
