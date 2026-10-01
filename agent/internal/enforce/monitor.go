@@ -21,10 +21,11 @@ import (
 
 // Process, çalışan bir süreçtir.
 type Process struct {
-	PID  uint32
-	PPID uint32 // ebeveyn süreç kimliği (süreç soyağacı zenginleştirmesi)
-	Name string
-	Path string
+	PID     uint32
+	PPID    uint32 // ebeveyn süreç kimliği (süreç soyağacı zenginleştirmesi)
+	Name    string
+	Cmdline string // tam komut-satırı (argümanlar dahil); boş olabilir (OS/izin)
+	Path    string
 }
 
 // ProcessController, OS'e özgü süreç listeleme ve sonlandırma sağlar.
@@ -94,9 +95,17 @@ func (m *Monitor) emitProcessTelemetry(procs []Process, now time.Time) {
 		if p.Path != "" {
 			det["path"] = p.Path
 		}
+		// Komut-satırı (argümanlar) — sunucu-taraflı tespit kuralları (reg add,
+		// systemctl, crontab, nc -e, vssadmin …) buna ihtiyaç duyar; yalnız süreç
+		// adı yeterli değildir. Mesaja da ekleriz ki MessageRegex kuralları native
+		// telemetride de eşleşsin (yalnız Windows Event Log alımına bağlı kalmasın).
+		msg := fmt.Sprintf("süreç başlatıldı: %s (pid=%d, ppid=%d)", p.Name, p.PID, p.PPID)
+		if p.Cmdline != "" {
+			det["cmdline"] = p.Cmdline
+			msg += " cmdline: " + p.Cmdline
+		}
 		addParentChain(det, procs, p.PID)
-		m.emitCatDetails("PROCESS", "INFO", now,
-			fmt.Sprintf("süreç başlatıldı: %s (pid=%d, ppid=%d)", p.Name, p.PID, p.PPID), det)
+		m.emitCatDetails("PROCESS", "INFO", now, msg, det)
 	}
 	m.procSeen = live
 }
@@ -214,6 +223,32 @@ func parsePPIDStat(s string) uint32 {
 		return 0
 	}
 	return uint32(ppid)
+}
+
+// maxCmdlineBytes, telemetriye alınacak komut-satırı uzunluğu üst sınırıdır
+// (ağ-yüzeyli/şişkin argümanlara karşı; render mesajı makul kalsın).
+const maxCmdlineBytes = 512
+
+// parseCmdline, /proc/<pid>/cmdline içeriğini (argümanlar NUL '\0' ile ayrılmış,
+// genelde sonda tek NUL) tek-satırlık okunabilir komut-satırına çevirir. Platform-
+// bağımsız ve test edilebilir. Boş girdi → "". Çok uzunsa güvenle kırpılır.
+func parseCmdline(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	// NUL ayraçları boşluğa çevir; baştaki/sondaki NUL'lardan kaynaklı boşlukları kırp.
+	parts := strings.Split(string(b), "\x00")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	cmd := strings.Join(out, " ")
+	if len(cmd) > maxCmdlineBytes {
+		cmd = cmd[:maxCmdlineBytes] + "…"
+	}
+	return cmd
 }
 
 // maxChainDepth, ebeveyn zinciri yürüyüşünün üst sınırıdır (döngü/aşırı derinlik
