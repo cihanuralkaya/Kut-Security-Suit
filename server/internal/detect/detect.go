@@ -544,5 +544,15 @@ func DefaultRules() []Rule {
 		{ID: "KUT-0025", Name: "Süreç enjeksiyonu (bellek/thread manipülasyonu)", Category: "PROCESS",
 			MessageRegex: `CreateRemoteThread|VirtualAllocEx|WriteProcessMemory|QueueUserAPC|SetWindowsHookEx|NtMapViewOfSection|RtlMoveMemory|VirtualProtectEx|reflective.*(load|inject)|process\s+hollow`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1055", Name: "Process Injection", Tactic: "Defense Evasion"}},
+		// v5: yaygın defense-evasion/privilege-escalation hücrelerini tamamla.
+		{ID: "KUT-0026", Name: "Kayıt defteri değişikliği (registry mutasyonu)", Category: "PROCESS",
+			MessageRegex: `reg(\.exe)?\s+(add|delete|import)\b|New-ItemProperty\s+.*\bHK(LM|CU|CR|U)\b|Set-ItemProperty\s+.*\bHK(LM|CU|CR|U)\b|reg(\.exe)?\s+.*\bHKLM\\.*\\Run\b`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1112", Name: "Modify Registry", Tactic: "Defense Evasion"}},
+		{ID: "KUT-0027", Name: "Yetki yükseltme kötüye kullanımı (UAC bypass)", Category: "PROCESS",
+			MessageRegex: `\bfodhelper\b|\beventvwr\b|\bsdclt\b|computerdefaults|bypassuac|\bUACME\b|ICMLuaUtil|CMSTPLUA|slui.*exe`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1548", Name: "Abuse Elevation Control Mechanism", Tactic: "Privilege Escalation"}},
+		{ID: "KUT-0028", Name: "Kılık değiştirme (masquerading)", Category: "PROCESS",
+			MessageRegex: `(svchost|lsass|services|csrss|winlogon|explorer|smss|conhost)\.exe.*\\(temp|appdata|downloads|users\\public|programdata)\\|\.(pdf|docx?|xlsx?|jpg|png|txt)\.exe\b|\bdouble.?extension\b`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1036", Name: "Masquerading", Tactic: "Defense Evasion"}},
 	}
 }
