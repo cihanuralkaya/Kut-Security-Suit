@@ -486,9 +486,16 @@ func DefaultRules() []Rule {
 			Severity: "HIGH", Technique: tUserExecution},
 		{ID: "KUT-0006", Name: "Ağ hizmet keşfi", Category: "NETWORK_DISCOVERY",
 			Severity: "LOW", Technique: tNetworkDiscov},
-		// v2: PROCESS telemetrisi üzerinde regex-tabanlı şüpheli-araç tespiti
-		// (saldırgan araçları / yaşam-alanı-dışı ikili kullanımı).
-		{ID: "KUT-0007", Name: "Şüpheli süreç/araç yürütmesi", Category: "PROCESS",
+		// NOT (kategori-bağımsızlık): Aşağıdaki MessageRegex (IOC-desen) kuralları
+		// Category ALMAZ (""), çünkü aynı saldırgan deseni farklı telemetri
+		// kaynaklarından FARKLI kategorilerle gelir — ör. komut-satırı Windows 4688
+		// (PROCESS) veya Sysmon-1'den (PROCESS) gelirken, CreateRemoteThread Sysmon-8
+		// (SECURITY), registry Sysmon-12/13 (SECURITY), hizmet/hesap olayları 4697/4720
+		// (SECURITY). Spesifiklik regex'in kendisindedir; kategoriye kilitlemek deseni
+		// "yanlış kapıdan" gelince kaçırırdı (yanlış-negatif). Contains-tabanlı kurallar
+		// ise kategori-semantiğini taşıdığından kategorilerini korur.
+		// regex-tabanlı şüpheli-araç tespiti (saldırgan araçları / LOLBin kullanımı).
+		{ID: "KUT-0007", Name: "Şüpheli süreç/araç yürütmesi", Category: "",
 			MessageRegex: `mimikatz|psexec|\bnc\.exe|\bncat|powershell.*(-enc|-encodedcommand)|certutil.*-urlcache|rundll32.*javascript|regsvr32.*scrobj`,
 			Severity:     "HIGH", Technique: tScripting},
 		// v2: yeni telemetri türleri için adlandırılmış kurallar (kapsam genişletme).
@@ -508,51 +515,51 @@ func DefaultRules() []Rule {
 			Contains: []string{"dns tünelleme"}, Severity: "HIGH", Technique: tAppLayerC2},
 		// v3: ATT&CK kapsam-boşluklarını kapatan kurallar (persistence/execution/credential-access).
 		// Süreç/komut telemetrisinde tipik saldırgan tekniklerini yakalayan regex'ler (küçük/büyük harf duyarsız).
-		{ID: "KUT-0015", Name: "Sistem servisi oluşturma/değiştirme", Category: "PROCESS",
+		{ID: "KUT-0015", Name: "Sistem servisi oluşturma/değiştirme", Category: "",
 			MessageRegex: `sc(\.exe)?\s+.*\bcreate\b|New-Service|Set-Service|systemctl\s+(enable|start)|/etc/systemd/system`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1543", Name: "Create or Modify System Process", Tactic: "Persistence"}},
-		{ID: "KUT-0016", Name: "Zamanlanmış görev/iş oluşturma", Category: "PROCESS",
+		{ID: "KUT-0016", Name: "Zamanlanmış görev/iş oluşturma", Category: "",
 			MessageRegex: `schtasks.*\/create|New-ScheduledTask|Register-ScheduledTask|crontab\s+-|/etc/cron`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1053", Name: "Scheduled Task/Job", Tactic: "Execution"}},
-		{ID: "KUT-0017", Name: "Yeni hesap oluşturma", Category: "SECURITY",
+		{ID: "KUT-0017", Name: "Yeni hesap oluşturma", Category: "",
 			MessageRegex: `net\s+user\s+\S+\s+.*\/add|New-LocalUser|\buseradd\b|\badduser\b`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1136", Name: "Create Account", Tactic: "Persistence"}},
-		{ID: "KUT-0018", Name: "Hesap manipülasyonu (yetki/grup değişikliği)", Category: "SECURITY",
+		{ID: "KUT-0018", Name: "Hesap manipülasyonu (yetki/grup değişikliği)", Category: "",
 			MessageRegex: `net\s+localgroup\s+administrators\s+.*\/add|Add-ADGroupMember|net\s+user\s+\S+\s+\/active:yes|usermod\s+-a?G`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1098", Name: "Account Manipulation", Tactic: "Persistence"}},
-		{ID: "KUT-0019", Name: "Kaba-kuvvet / parola püskürtme (eşik)", Category: "SECURITY",
+		{ID: "KUT-0019", Name: "Kaba-kuvvet / parola püskürtme (eşik)", Category: "",
 			MessageRegex: `(başarısız|failed)\s+(oturum|logon|login)|authentication failure|event\s*4625|kaba-kuvvet|brute`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1110", Name: "Brute Force", Tactic: "Credential Access"},
 			Threshold: &ThresholdSpec{Count: 5, Seconds: 300, Track: "device"}},
 		// v3: katalogda hiç bulunmayan kritik TTP'ler (ransomware/impact + credential-access).
-		{ID: "KUT-0020", Name: "Fidye yazılımı — kitlesel şifreleme göstergesi", Category: "SECURITY",
+		{ID: "KUT-0020", Name: "Fidye yazılımı — kitlesel şifreleme göstergesi", Category: "",
 			MessageRegex: `ransom|fidye|\.encrypted\b|\.locked\b|readme.*decrypt|decrypt.*instructions|how.*to.*decrypt|kitlesel şifreleme`,
 			Severity:     "CRITICAL", Technique: mitre.Technique{ID: "T1486", Name: "Data Encrypted for Impact", Tactic: "Impact"}},
-		{ID: "KUT-0021", Name: "Sistem kurtarmayı engelleme (gölge kopya/yedek silme)", Category: "SECURITY",
+		{ID: "KUT-0021", Name: "Sistem kurtarmayı engelleme (gölge kopya/yedek silme)", Category: "",
 			MessageRegex: `vssadmin\s+delete\s+shadows|wmic\s+shadowcopy\s+delete|wbadmin\s+delete|bcdedit.*recoveryenabled\s+no|bcdedit.*bootstatuspolicy\s+ignoreallfailures`,
 			Severity:     "CRITICAL", Technique: mitre.Technique{ID: "T1490", Name: "Inhibit System Recovery", Tactic: "Impact"}},
-		{ID: "KUT-0022", Name: "Kimlik-bilgisi boşaltma (LSASS/SAM)", Category: "SECURITY",
+		{ID: "KUT-0022", Name: "Kimlik-bilgisi boşaltma (LSASS/SAM)", Category: "",
 			MessageRegex: `lsass.*dump|procdump.*lsass|comsvcs.*minidump|reg\s+save.*\b(sam|security|system)\b|sekurlsa|lsadump`,
 			Severity:     "CRITICAL", Technique: mitre.Technique{ID: "T1003", Name: "OS Credential Dumping", Tactic: "Credential Access"}},
 		// v4: panelde hâlâ boş kalan yüksek-değerli taktik hücreleri (defense-evasion/lateral/injection).
-		{ID: "KUT-0023", Name: "İmzalı ikiliyle vekil yürütme (LOLBin)", Category: "PROCESS",
+		{ID: "KUT-0023", Name: "İmzalı ikiliyle vekil yürütme (LOLBin)", Category: "",
 			// msiexec yalnız uzak (http) veya DLL self-register (/y,/z) biçiminde — yerel `/i app.msi` kurulumu FP olmasın.
 			MessageRegex: `\bmshta\b|\binstallutil\b|\bcmstp\b|\bodbcconf\b|\bmavinject\b|\bforfiles\b.*\/c|msiexec.*(https?://|\/y\b|\/z\b)`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1218", Name: "System Binary Proxy Execution", Tactic: "Defense Evasion"}},
-		{ID: "KUT-0024", Name: "Uzak hizmetlerle yanal yürütme", Category: "SECURITY",
+		{ID: "KUT-0024", Name: "Uzak hizmetlerle yanal yürütme", Category: "",
 			MessageRegex: `\bpsexec\b|\bpaexec\b|wmic\s+\/node:|Invoke-Command\s+-ComputerName|Enter-PSSession|New-PSSession|\bwinrm\b|\bwinrs\b|\bwmiexec\b|\bsmbexec\b|\bdcomexec\b|mstsc\s+\/v:`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1021", Name: "Remote Services", Tactic: "Lateral Movement"}},
-		{ID: "KUT-0025", Name: "Süreç enjeksiyonu (bellek/thread manipülasyonu)", Category: "PROCESS",
+		{ID: "KUT-0025", Name: "Süreç enjeksiyonu (bellek/thread manipülasyonu)", Category: "",
 			MessageRegex: `CreateRemoteThread|VirtualAllocEx|WriteProcessMemory|QueueUserAPC|SetWindowsHookEx|NtMapViewOfSection|RtlMoveMemory|VirtualProtectEx|reflective.*(load|inject)|process\s+hollow`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1055", Name: "Process Injection", Tactic: "Defense Evasion"}},
 		// v5: yaygın defense-evasion/privilege-escalation hücrelerini tamamla.
-		{ID: "KUT-0026", Name: "Kayıt defteri değişikliği (registry mutasyonu)", Category: "PROCESS",
+		{ID: "KUT-0026", Name: "Kayıt defteri değişikliği (registry mutasyonu)", Category: "",
 			MessageRegex: `reg(\.exe)?\s+(add|delete|import)\b|New-ItemProperty\s+.*\bHK(LM|CU|CR|U)\b|Set-ItemProperty\s+.*\bHK(LM|CU|CR|U)\b|reg(\.exe)?\s+.*\bHKLM\\.*\\Run\b`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1112", Name: "Modify Registry", Tactic: "Defense Evasion"}},
-		{ID: "KUT-0027", Name: "Yetki yükseltme kötüye kullanımı (UAC bypass)", Category: "PROCESS",
+		{ID: "KUT-0027", Name: "Yetki yükseltme kötüye kullanımı (UAC bypass)", Category: "",
 			MessageRegex: `\bfodhelper\b|\beventvwr\b|\bsdclt\b|computerdefaults|bypassuac|\bUACME\b|ICMLuaUtil|CMSTPLUA|slui.*exe`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1548", Name: "Abuse Elevation Control Mechanism", Tactic: "Privilege Escalation"}},
-		{ID: "KUT-0028", Name: "Kılık değiştirme (masquerading)", Category: "PROCESS",
+		{ID: "KUT-0028", Name: "Kılık değiştirme (masquerading)", Category: "",
 			MessageRegex: `(svchost|lsass|services|csrss|winlogon|explorer|smss|conhost)\.exe.*\\(temp|appdata|downloads|users\\public|programdata)\\|\.(pdf|docx?|xlsx?|jpg|png|txt)\.exe\b|\bdouble.?extension\b`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1036", Name: "Masquerading", Tactic: "Defense Evasion"}},
 	}

