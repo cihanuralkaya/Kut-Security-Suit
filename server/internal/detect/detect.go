@@ -534,5 +534,15 @@ func DefaultRules() []Rule {
 		{ID: "KUT-0022", Name: "Kimlik-bilgisi boşaltma (LSASS/SAM)", Category: "SECURITY",
 			MessageRegex: `lsass.*dump|procdump.*lsass|comsvcs.*minidump|reg\s+save.*\b(sam|security|system)\b|sekurlsa|lsadump`,
 			Severity:     "CRITICAL", Technique: mitre.Technique{ID: "T1003", Name: "OS Credential Dumping", Tactic: "Credential Access"}},
+		// v4: panelde hâlâ boş kalan yüksek-değerli taktik hücreleri (defense-evasion/lateral/injection).
+		{ID: "KUT-0023", Name: "İmzalı ikiliyle vekil yürütme (LOLBin)", Category: "PROCESS",
+			MessageRegex: `\bmshta\b|\binstallutil\b|\bcmstp\b|\bodbcconf\b|\bmavinject\b|\bforfiles\b.*\/c|msiexec.*(\/i\b|https?:)`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1218", Name: "System Binary Proxy Execution", Tactic: "Defense Evasion"}},
+		{ID: "KUT-0024", Name: "Uzak hizmetlerle yanal yürütme", Category: "SECURITY",
+			MessageRegex: `\bpsexec\b|\bpaexec\b|wmic\s+\/node:|Invoke-Command\s+-ComputerName|Enter-PSSession|New-PSSession|\bwinrm\b|\bwinrs\b|\bwmiexec\b|\bsmbexec\b|\bdcomexec\b|mstsc\s+\/v:`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1021", Name: "Remote Services", Tactic: "Lateral Movement"}},
+		{ID: "KUT-0025", Name: "Süreç enjeksiyonu (bellek/thread manipülasyonu)", Category: "PROCESS",
+			MessageRegex: `CreateRemoteThread|VirtualAllocEx|WriteProcessMemory|QueueUserAPC|SetWindowsHookEx|NtMapViewOfSection|RtlMoveMemory|VirtualProtectEx|reflective.*(load|inject)|process\s+hollow`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1055", Name: "Process Injection", Tactic: "Defense Evasion"}},
 	}
 }
