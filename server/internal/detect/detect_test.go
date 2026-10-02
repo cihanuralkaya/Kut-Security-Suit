@@ -249,6 +249,10 @@ func TestDefaultRulesCoverNewEventTypes(t *testing.T) {
 		{"PROCESS", "reg add HKLM\\Software\\X /v Y /t REG_SZ /d z /f", "T1112"},
 		{"PROCESS", "fodhelper.exe UAC bypass launched cmd", "T1548"},
 		{"PROCESS", "svchost.exe running from C:\\Users\\bob\\AppData\\Local\\Temp\\svchost.exe", "T1036"},
+		// v6: güvenlik-devre-dışı / iz-temizleme / WMI derinliği.
+		{"PROCESS", "netsh advfirewall set allprofiles state off", "T1562"},
+		{"PROCESS", "wevtutil cl Security", "T1070"},
+		{"PROCESS", "wmic process call create calc.exe", "T1047"},
 	}
 	for _, c := range cases {
 		dets := e.Evaluate(model.Event{Category: c.cat, Severity: "HIGH", Message: c.msg})
@@ -283,6 +287,10 @@ func TestDefaultRulesNoFalsePositiveOnBenign(t *testing.T) {
 		{"PROCESS", "C:\\Windows\\System32\\svchost.exe -k netsvcs", "T1036"},
 		// Düz PDF (çift-uzantı yok) → kılık değiştirme (T1036) DEĞİL.
 		{"PROCESS", "quarterly_report.pdf opened by user", "T1036"},
+		// Hizmet DURUM sorgusu (stop/config değil) → güvenlik-devre-dışı (T1562) DEĞİL.
+		{"PROCESS", "sc query windefend state", "T1562"},
+		// WMI salt-listeleme (process call create değil) → WMI yürütme (T1047) DEĞİL.
+		{"PROCESS", "wmic process list brief", "T1047"},
 	}
 	for _, c := range cases {
 		dets := e.Evaluate(model.Event{Category: c.cat, Severity: "HIGH", Message: c.msg})

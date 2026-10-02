@@ -48,7 +48,7 @@ Aynı saldırganın davranışı kaynağa göre farklı kategori/içerikle geleb
 Kategori-bağımsızlık sayesinde bir IOC-desen kuralı, deseni **hangi kaynak taşırsa
 taşısın** tetiklenir (ör. KUT-0025 hem Sysmon-8 SECURITY hem başka bir süreç olayından).
 
-## Yerleşik kural kataloğu (KUT-0001 … KUT-0028)
+## Yerleşik kural kataloğu (KUT-0001 … KUT-0031)
 
 | ID | Ad | ATT&CK | Taktik | Önem | Eşleşme / gösterge |
 |---|---|---|---|---|---|
@@ -80,8 +80,16 @@ taşısın** tetiklenir (ör. KUT-0025 hem Sysmon-8 SECURITY hem başka bir sür
 | KUT-0026 | Kayıt defteri değişikliği | T1112 | Defense Evasion | HIGH | `reg add/delete/import`, New/Set-ItemProperty HK*, Run anahtarı yazımı |
 | KUT-0027 | Yetki yükseltme kötüye kullanımı (UAC bypass) | T1548 | Privilege Escalation | HIGH | fodhelper, eventvwr, sdclt, computerdefaults, bypassuac/UACME, CMSTPLUA/ICMLuaUtil |
 | KUT-0028 | Kılık değiştirme (masquerading) | T1036 | Defense Evasion | HIGH | sistem-süreç adı (svchost/lsass/…) temp/appdata/… yolunda; çift uzantı (`*.pdf.exe`) |
+| KUT-0029 | Güvenlik aracı/güvenlik duvarı devre dışı | T1562 | Defense Evasion | HIGH | Set/Add-MpPreference -Disable…, `netsh advfirewall … state off`, `sc stop/config windefend`, `Stop-Service windefend` |
+| KUT-0030 | İz temizleme — olay günlüğü/dosya silme | T1070 | Defense Evasion | HIGH | `wevtutil cl`, Clear-EventLog, `fsutil usn deletejournal`, sdelete, `Remove-Item *.evtx` |
+| KUT-0031 | WMI ile yürütme | T1047 | Execution | HIGH | `wmic … process call create`, Invoke-WmiMethod Win32_Process, Get-WmiObject Win32_Process … Create, Invoke-CimMethod Win32_Process |
 
-**Özet kapsam:** 28 kural, 24 ayrı ATT&CK tekniği (`mitre.Catalog()` ile birebir); taktikler: Initial Access,
+> **Not (derinlik vs kapsam):** KUT-0029 (T1562) ve KUT-0030 (T1070), zaten kataloğda
+> olan tekniklere **komut-tabanlı tespit derinliği** ekler (KUT-0001 yalnız "kurcalama",
+> KUT-0009 yalnız FIM yakalıyordu); aynı teknik hücresini paylaşırlar. KUT-0031 (T1047)
+> yeni bir teknik hücresidir.
+
+**Özet kapsam:** 31 kural, 25 ayrı ATT&CK tekniği (`mitre.Catalog()` ile birebir); taktikler: Initial Access,
 Execution, Persistence, Privilege Escalation, Defense Evasion, Credential Access,
 Discovery, Lateral Movement, Command and Control, Exfiltration, Impact.
 
