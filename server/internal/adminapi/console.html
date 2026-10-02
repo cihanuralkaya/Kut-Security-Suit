@@ -243,10 +243,14 @@
   :root[data-density="compact"] tbody td { padding:5px 10px; }
   :root[data-density="compact"] thead th { padding:5px 10px; }
   :root[data-density="compact"] .stat { padding:11px 14px; }
-  /* Olaylar tablosu sütun görünürlüğü (ayarlar popover'ından; localStorage) */
-  #evt-table.hide-c1 th:nth-child(1), #evt-table.hide-c1 td:nth-child(1),
-  #evt-table.hide-c2 th:nth-child(2), #evt-table.hide-c2 td:nth-child(2),
-  #evt-table.hide-c3 th:nth-child(3), #evt-table.hide-c3 td:nth-child(3) { display:none; }
+  /* Tablo sütun görünürlüğü (ayarlar popover'ından; localStorage). Paylaşımlı
+     .coltbl sınıfı + nth-child; satır render'ına dokunmaz (dinamik td'ler dahil). */
+  .coltbl.hide-c1 th:nth-child(1), .coltbl.hide-c1 td:nth-child(1),
+  .coltbl.hide-c2 th:nth-child(2), .coltbl.hide-c2 td:nth-child(2),
+  .coltbl.hide-c3 th:nth-child(3), .coltbl.hide-c3 td:nth-child(3),
+  .coltbl.hide-c4 th:nth-child(4), .coltbl.hide-c4 td:nth-child(4),
+  .coltbl.hide-c5 th:nth-child(5), .coltbl.hide-c5 td:nth-child(5),
+  .coltbl.hide-c6 th:nth-child(6), .coltbl.hide-c6 td:nth-child(6) { display:none; }
   .colvis-row { display:flex; align-items:center; gap:7px; font-size:12.5px; padding:3px 0; cursor:pointer; }
   /* Güvenlik görünümü alt-navigasyonu (14 kartı 3 odaklı gruba böler) */
   .secsub { grid-column:1/-1; display:flex; gap:6px; flex-wrap:wrap; margin:0 0 2px; }
@@ -599,9 +603,20 @@
         </div>
         <div class="grp">
           <h3>Olay sütunları</h3>
-          <label class="colvis-row"><input type="checkbox" class="colvis" data-col="1" checked> Zaman</label>
-          <label class="colvis-row"><input type="checkbox" class="colvis" data-col="2" checked> Kategori</label>
-          <label class="colvis-row"><input type="checkbox" class="colvis" data-col="3" checked> Önem</label>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-table="evt" data-col="1" checked> Zaman</label>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-table="evt" data-col="2" checked> Kategori</label>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-table="evt" data-col="3" checked> Önem</label>
+        </div>
+        <div class="grp">
+          <h3>Cihaz sütunları</h3>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-table="dev" data-col="3" checked> MAC</label>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-table="dev" data-col="4" checked> OS</label>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-table="dev" data-col="5" checked> Sürüm</label>
+        </div>
+        <div class="grp">
+          <h3>Denetim sütunları</h3>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-table="aud" data-col="2" checked> Yönetici</label>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-table="aud" data-col="4" checked> Hedef</label>
         </div>
       </div>
     </div>
@@ -715,7 +730,7 @@
             <button class="btn ghost sm" id="dev-refresh">↻ Yenile</button>
           </div>
           <div class="tbl-wrap">
-            <table>
+            <table id="dev-table" class="coltbl">
               <thead><tr id="dev-thead"><th scope="col" class="sortable" data-sortkey="status">Durum</th><th scope="col" class="sortable" data-sortkey="hostname">Hostname</th><th scope="col" class="sortable" data-sortkey="mac">MAC</th><th scope="col" class="sortable" data-sortkey="os_version">OS</th><th scope="col" class="sortable" data-sortkey="agent_version">Sürüm</th><th scope="col" class="sortable" data-sortkey="last_seen" aria-sort="descending">Son görülme</th></tr></thead>
               <tbody id="dev-body"></tbody>
             </table>
@@ -752,7 +767,7 @@
             <button class="btn ghost sm" id="evt-refresh">↻</button>
           </div>
           <div class="tbl-wrap">
-            <table id="evt-table">
+            <table id="evt-table" class="coltbl">
               <thead><tr id="evt-thead"><th scope="col" class="sortable" data-sortkey="created_at" aria-sort="descending">Zaman</th><th scope="col" class="sortable" data-sortkey="category">Kategori</th><th scope="col" class="sortable" data-sortkey="severity">Önem</th><th scope="col">Mesaj</th></tr></thead>
               <tbody id="evt-body"></tbody>
             </table>
@@ -769,7 +784,7 @@
             <button class="btn ghost sm" id="aud-csv" title="Görünen kayıtları CSV indir">↓ CSV</button>
             <button class="btn ghost sm" id="aud-refresh">↻</button></div>
           <div class="tbl-wrap">
-            <table><thead><tr id="aud-thead"><th scope="col" class="sortable" data-sortkey="created_at" aria-sort="descending">Zaman</th><th scope="col" class="sortable" data-sortkey="admin_email">Yönetici</th><th scope="col" class="sortable" data-sortkey="action">Eylem</th><th scope="col" class="sortable" data-sortkey="target_type">Hedef</th></tr></thead>
+            <table id="aud-table" class="coltbl"><thead><tr id="aud-thead"><th scope="col" class="sortable" data-sortkey="created_at" aria-sort="descending">Zaman</th><th scope="col" class="sortable" data-sortkey="admin_email">Yönetici</th><th scope="col" class="sortable" data-sortkey="action">Eylem</th><th scope="col" class="sortable" data-sortkey="target_type">Hedef</th></tr></thead>
               <tbody id="aud-body"></tbody></table>
           </div>
           <div id="aud-empty" class="empty">Kayıt yok.</div>
@@ -3359,22 +3374,26 @@
     apply(init);
   })();
 
-  // ---------- Olaylar tablosu sütun görünürlüğü (ayarlar popover'ı); localStorage ----------
+  // ---------- Tablo sütun görünürlüğü (ayarlar popover'ı); tablo-başına localStorage ----------
   (function(){
-    var boxes=document.querySelectorAll("input.colvis"); var tbl=$("evt-table");
-    if(!boxes.length || !tbl) return;
-    var hidden={};
-    try{ (localStorage.getItem("kut_evtcols")||"").split(",").forEach(function(c){ if(c) hidden[c]=true; }); }catch(e){}
-    function apply(){
-      ["1","2","3"].forEach(function(c){ tbl.classList.toggle("hide-c"+c, !!hidden[c]); });
-      try{ localStorage.setItem("kut_evtcols", Object.keys(hidden).filter(function(c){return hidden[c];}).join(",")); }catch(e){}
+    var boxes=document.querySelectorAll("input.colvis"); if(!boxes.length) return;
+    var tables={ evt:$("evt-table"), dev:$("dev-table"), aud:$("aud-table") };
+    var hidden={ evt:{}, dev:{}, aud:{} };
+    Object.keys(tables).forEach(function(tk){
+      try{ (localStorage.getItem("kut_cols_"+tk)||"").split(",").forEach(function(c){ if(c) hidden[tk][c]=true; }); }catch(e){}
+    });
+    function apply(tk){
+      var tbl=tables[tk]; if(!tbl) return;
+      ["1","2","3","4","5","6"].forEach(function(c){ tbl.classList.toggle("hide-c"+c, !!hidden[tk][c]); });
+      try{ localStorage.setItem("kut_cols_"+tk, Object.keys(hidden[tk]).filter(function(c){return hidden[tk][c];}).join(",")); }catch(e){}
     }
     boxes.forEach(function(b){
-      var c=b.getAttribute("data-col");
-      b.checked = !hidden[c];
-      b.onchange=function(){ if(b.checked){ delete hidden[c]; } else { hidden[c]=true; } apply(); };
+      var tk=b.getAttribute("data-table"), c=b.getAttribute("data-col");
+      if(!hidden[tk]) return;
+      b.checked = !hidden[tk][c];
+      b.onchange=function(){ if(b.checked){ delete hidden[tk][c]; } else { hidden[tk][c]=true; } apply(tk); };
     });
-    apply();
+    Object.keys(tables).forEach(apply);
   })();
 
   // ---------- Cihaz drawer kapatma (× / backdrop / Esc → seçimi kaldır) ----------
