@@ -562,5 +562,16 @@ func DefaultRules() []Rule {
 		{ID: "KUT-0028", Name: "Kılık değiştirme (masquerading)", Category: "",
 			MessageRegex: `(svchost|lsass|services|csrss|winlogon|explorer|smss|conhost)\.exe.*\\(temp|appdata|downloads|users\\public|programdata)\\|\.(pdf|docx?|xlsx?|jpg|png|txt)\.exe\b|\bdouble.?extension\b`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1036", Name: "Masquerading", Tactic: "Defense Evasion"}},
+		// v6: zaten "kapsanan" ama komut-tabanlı saldırıyı yakalamayan tekniklerde DERİNLİK
+		// (T1562/T1070) + yeni T1047 (WMI). Ransomware/APT oyun kitaplarında yaygın.
+		{ID: "KUT-0029", Name: "Güvenlik aracı/güvenlik duvarı devre dışı bırakma", Category: "",
+			MessageRegex: `Set-MpPreference\s+.*-Disable(RealtimeMonitoring|BehaviorMonitoring|IOAVProtection|ScriptScanning)|Add-MpPreference\s+.*-ExclusionPath|netsh\s+advfirewall\s+set\s+allprofiles\s+state\s+off|netsh\s+firewall\s+set\s+opmode.*disable|\bsc\b\s+(stop|config)\b.*\b(windefend|sense|wscsvc|mpssvc)\b|Stop-Service\s+.*\b(windefend|sense|mpssvc)\b`,
+			Severity:     "HIGH", Technique: tImpairDefenses},
+		{ID: "KUT-0030", Name: "İz temizleme — olay günlüğü/dosya silme", Category: "",
+			MessageRegex: `wevtutil\s+(cl|clear-log)\b|Clear-EventLog|fsutil\s+usn\s+deletejournal|\bsdelete\b|Remove-Item\s+.*\.evtx`,
+			Severity:     "HIGH", Technique: tIndicatorRem},
+		{ID: "KUT-0031", Name: "WMI ile yürütme", Category: "",
+			MessageRegex: `wmic\s+.*process\s+call\s+create|Invoke-WmiMethod\s+.*Win32_Process|Get-WmiObject\s+.*Win32_Process.*Create|Invoke-CimMethod\s+.*Win32_Process`,
+			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1047", Name: "Windows Management Instrumentation", Tactic: "Execution"}},
 	}
 }

@@ -81,6 +81,9 @@ func TestClassifyCriticalTechniques(t *testing.T) {
 		{"fodhelper.exe ile uac bypass", "T1548"},
 		{"svchost.exe masquerading in temp path", "T1036"},
 		{"reg add HKLM\\...\\Run ile modify registry", "T1112"},
+		{"netsh advfirewall set allprofiles state off", "T1562"},
+		{"wevtutil cl Security ile iz temizleme", "T1070"},
+		{"wmic process call create calc.exe", "T1047"},
 	}
 	for _, c := range cases {
 		got, ok := Classify("SECURITY", c.msg)

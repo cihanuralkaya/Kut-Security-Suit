@@ -46,6 +46,7 @@ var (
 	tModifyReg    = Technique{ID: "T1112", Name: "Modify Registry", Tactic: "Defense Evasion"}
 	tAbuseElev    = Technique{ID: "T1548", Name: "Abuse Elevation Control Mechanism", Tactic: "Privilege Escalation"}
 	tMasquerading = Technique{ID: "T1036", Name: "Masquerading", Tactic: "Defense Evasion"}
+	tWMI          = Technique{ID: "T1047", Name: "Windows Management Instrumentation", Tactic: "Execution"}
 )
 
 // Catalog, sistemin eşleyebildiği tekniklerin tam listesini (kapsama matrisi)
@@ -76,6 +77,7 @@ func Catalog() []Technique {
 		tModifyReg,       // T1112
 		tAbuseElev,       // T1548
 		tMasquerading,    // T1036
+		tWMI,             // T1047
 	}
 }
 
@@ -138,6 +140,16 @@ func Classify(category, message string) (Technique, bool) {
 		case strings.Contains(m, "reg add") || strings.Contains(m, "modify registry") ||
 			strings.Contains(m, "kayıt defteri değiş") || strings.Contains(m, "registry modif"):
 			return tModifyReg, true // T1112 kayıt defteri değişikliği
+		case strings.Contains(m, "set-mppreference") || strings.Contains(m, "disablerealtimemonitoring") ||
+			strings.Contains(m, "netsh advfirewall") || strings.Contains(m, "windefend") ||
+			strings.Contains(m, "add-mppreference"):
+			return tImpairDefenses, true // T1562 güvenlik aracı/güvenlik duvarı devre dışı
+		case strings.Contains(m, "wevtutil") || strings.Contains(m, "clear-eventlog") ||
+			strings.Contains(m, "deletejournal") || strings.Contains(m, "sdelete"):
+			return tIndicatorRem, true // T1070 iz temizleme (olay günlüğü/dosya silme)
+		case strings.Contains(m, "process call create") || strings.Contains(m, "invoke-wmimethod") ||
+			strings.Contains(m, "win32_process") || strings.Contains(m, "invoke-cimmethod"):
+			return tWMI, true // T1047 WMI ile yürütme
 		case strings.Contains(m, "dlp") || strings.Contains(m, "hassas veri") ||
 			strings.Contains(m, "veri sızıntısı") || strings.Contains(m, "exfil"):
 			return tExfilAltProto, true // veri sızdırma (DLP)
