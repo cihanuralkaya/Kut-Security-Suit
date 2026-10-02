@@ -40,6 +40,8 @@ Aynı saldırganın davranışı kaynağa göre farklı kategori/içerikle geleb
 | Sysmon EID 12/13 (registry) | `SECURITY` | Kayıt defteri işlemi | KUT-0026 |
 | Windows Security 4697/4720/4728 (hizmet/hesap) | `SECURITY` | Kalıcılık/yetki olayı | KUT-0015/0017/0018 |
 | Windows Security 4625 (başarısız oturum) | `SECURITY` | Kaba-kuvvet | KUT-0019 |
+| Microsoft Defender 1116/1117 (kötü amaçlı yazılım) | `SECURITY` | Defender tespiti (ad+önem) | — (doğrudan alarm) |
+| Microsoft Defender 5001/5010/5012 (koruma/tarama devre dışı) | `SECURITY` | Savunma etkisizleştirme | Classify → T1562 |
 
 > **Not (Windows komut-satırı):** 4688 komut-satırı alanı yalnızca "Process Creation
 > command line auditing" GPO'su etkinken doldurulur. Alım: `POST /api/ingest?format=winlog`

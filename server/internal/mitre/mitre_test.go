@@ -84,6 +84,8 @@ func TestClassifyCriticalTechniques(t *testing.T) {
 		{"netsh advfirewall set allprofiles state off", "T1562"},
 		{"wevtutil cl Security ile iz temizleme", "T1070"},
 		{"wmic process call create calc.exe", "T1047"},
+		{"[WS-01] EventID 5001 realtime protection disabled", "T1562"},
+		{"gerçek-zamanlı koruma devre dışı bırakıldı", "T1562"},
 	}
 	for _, c := range cases {
 		got, ok := Classify("SECURITY", c.msg)
