@@ -142,8 +142,10 @@ func Classify(category, message string) (Technique, bool) {
 			return tModifyReg, true // T1112 kayıt defteri değişikliği
 		case strings.Contains(m, "set-mppreference") || strings.Contains(m, "disablerealtimemonitoring") ||
 			strings.Contains(m, "netsh advfirewall") || strings.Contains(m, "windefend") ||
-			strings.Contains(m, "add-mppreference"):
-			return tImpairDefenses, true // T1562 güvenlik aracı/güvenlik duvarı devre dışı
+			strings.Contains(m, "add-mppreference") || strings.Contains(m, "protection disabled") ||
+			strings.Contains(m, "scanning disabled") || strings.Contains(m, "koruma devre dışı") ||
+			strings.Contains(m, "taraması devre dışı"):
+			return tImpairDefenses, true // T1562 güvenlik aracı/Defender/güvenlik duvarı devre dışı
 		case strings.Contains(m, "wevtutil") || strings.Contains(m, "clear-eventlog") ||
 			strings.Contains(m, "deletejournal") || strings.Contains(m, "sdelete"):
 			return tIndicatorRem, true // T1070 iz temizleme (olay günlüğü/dosya silme)

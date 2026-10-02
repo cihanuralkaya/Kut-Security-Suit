@@ -520,6 +520,22 @@ var winPowerShell = map[int]winClass{
 	4104: {"PROCESS", "MEDIUM", "PowerShell betik bloğu günlüğü (script block logging)"},
 }
 
+// winDefender, Microsoft Defender operasyonel kanalı olay kimlikleri. Defender'ın
+// KENDİ telemetrisi birincil bir EDR kaynağıdır: kötü amaçlı yazılım tespitleri ve
+// (kritik) korumanın devre dışı bırakılması. ID'ler Security kanalıyla çakışabildiği
+// için kanal Defender ise bu harita kullanılır.
+var winDefender = map[int]winClass{
+	1006: {"SECURITY", "HIGH", "kötü amaçlı yazılım tespit edildi (Defender malware detected)"},
+	1015: {"SECURITY", "MEDIUM", "şüpheli davranış tespit edildi (Defender suspicious behavior)"},
+	1116: {"SECURITY", "HIGH", "kötü amaçlı yazılım tespit edildi (Defender malware detected)"},
+	1117: {"SECURITY", "MEDIUM", "tehdide karşı eylem alındı (Defender action taken)"},
+	5001: {"SECURITY", "HIGH", "gerçek-zamanlı koruma devre dışı (Defender realtime protection disabled)"},
+	5004: {"SECURITY", "MEDIUM", "gerçek-zamanlı koruma yapılandırması değişti (Defender realtime config changed)"},
+	5007: {"SECURITY", "MEDIUM", "Defender yapılandırması değişti (config changed)"},
+	5010: {"SECURITY", "HIGH", "kötü amaçlı yazılım taraması devre dışı (Defender antimalware scanning disabled)"},
+	5012: {"SECURITY", "HIGH", "virüs taraması devre dışı (Defender antivirus scanning disabled)"},
+}
+
 // WinEventClass, bir Windows olay kimliği + kanaldan KUT kategori, önem ve
 // insan-okur ad döner. Bilinmeyen kimlikler kanala göre güvenli varsayılana düşer
 // (known=false). SAF fonksiyon (test edilebilir).
@@ -534,6 +550,10 @@ func WinEventClass(eventID int, channel string) (cat, sev, name string, known bo
 		if c, ok := winPowerShell[eventID]; ok {
 			return c.cat, c.sev, c.name, true
 		}
+	case strings.Contains(ch, "defender"):
+		if c, ok := winDefender[eventID]; ok {
+			return c.cat, c.sev, c.name, true
+		}
 	}
 	if c, ok := winCatalog[eventID]; ok {
 		return c.cat, c.sev, c.name, true
@@ -546,6 +566,8 @@ func WinEventClass(eventID int, channel string) (cat, sev, name string, known bo
 		return "SECURITY", "INFO", "", false
 	case strings.Contains(ch, "powershell"):
 		return "PROCESS", "INFO", "", false
+	case strings.Contains(ch, "defender"):
+		return "SECURITY", "MEDIUM", "", false // Defender kanalı güvenlik-ilgili
 	default:
 		return "SYSTEM", "INFO", "", false
 	}

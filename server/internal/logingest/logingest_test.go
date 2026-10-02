@@ -268,6 +268,34 @@ func TestNormalizeWinEventWinlogbeat(t *testing.T) {
 	}
 }
 
+func TestNormalizeWinEventDefender(t *testing.T) {
+	// Defender kanalı: kötü amaçlı yazılım tespiti + korumanın devre dışı bırakılması.
+	// ID'ler Security ile çakışabildiği için kanal-bazlı winDefender haritası kullanılır.
+	cases := []struct {
+		json    string
+		wantSev string
+		wantSub string // mesajda geçmesi beklenen alt-dize
+	}{
+		{`{"winlog":{"event_id":1116,"channel":"Microsoft-Windows-Windows Defender/Operational","computer_name":"WS-01"},"message":"x"}`, "HIGH", "malware detected"},
+		{`{"winlog":{"event_id":5001,"channel":"Microsoft-Windows-Windows Defender/Operational","computer_name":"WS-01"},"message":"x"}`, "HIGH", "realtime protection disabled"},
+		{`{"winlog":{"event_id":5012,"channel":"Microsoft-Windows-Windows Defender/Operational","computer_name":"WS-01"},"message":"x"}`, "HIGH", "antivirus scanning disabled"},
+		{`{"winlog":{"event_id":1117,"channel":"Microsoft-Windows-Windows Defender/Operational","computer_name":"WS-01"},"message":"x"}`, "MEDIUM", "action taken"},
+	}
+	for _, c := range cases {
+		recs, err := NormalizeWinEvent([]byte(c.json), now)
+		if err != nil || len(recs) != 1 {
+			t.Fatalf("defender normalize: %v %d", err, len(recs))
+		}
+		ev := recs[0].Event
+		if ev.Category != "SECURITY" || ev.Severity != c.wantSev {
+			t.Errorf("defender SECURITY/%s beklenirdi, gelen %s/%s (%q)", c.wantSev, ev.Category, ev.Severity, ev.Message)
+		}
+		if !strings.Contains(ev.Message, c.wantSub) {
+			t.Errorf("defender mesaj %q içermeliydi, %q", c.wantSub, ev.Message)
+		}
+	}
+}
+
 func TestNormalizeWinEventNxlogArray(t *testing.T) {
 	// nxlog düz şekil, dizi; ikinci kayıt Sysmon.
 	data := []byte(`[
