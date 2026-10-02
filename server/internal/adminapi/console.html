@@ -243,6 +243,11 @@
   :root[data-density="compact"] tbody td { padding:5px 10px; }
   :root[data-density="compact"] thead th { padding:5px 10px; }
   :root[data-density="compact"] .stat { padding:11px 14px; }
+  /* Olaylar tablosu sütun görünürlüğü (ayarlar popover'ından; localStorage) */
+  #evt-table.hide-c1 th:nth-child(1), #evt-table.hide-c1 td:nth-child(1),
+  #evt-table.hide-c2 th:nth-child(2), #evt-table.hide-c2 td:nth-child(2),
+  #evt-table.hide-c3 th:nth-child(3), #evt-table.hide-c3 td:nth-child(3) { display:none; }
+  .colvis-row { display:flex; align-items:center; gap:7px; font-size:12.5px; padding:3px 0; cursor:pointer; }
   /* Güvenlik görünümü alt-navigasyonu (14 kartı 3 odaklı gruba böler) */
   .secsub { grid-column:1/-1; display:flex; gap:6px; flex-wrap:wrap; margin:0 0 2px; }
   .secsub-btn { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:9px;
@@ -592,6 +597,12 @@
             <button id="density-compact" type="button" data-density="compact" aria-pressed="false">Kompakt</button>
           </div>
         </div>
+        <div class="grp">
+          <h3>Olay sütunları</h3>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-col="1" checked> Zaman</label>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-col="2" checked> Kategori</label>
+          <label class="colvis-row"><input type="checkbox" class="colvis" data-col="3" checked> Önem</label>
+        </div>
       </div>
     </div>
     <span class="whoami"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-user"/></svg><b id="who"></b></span>
@@ -741,7 +752,7 @@
             <button class="btn ghost sm" id="evt-refresh">↻</button>
           </div>
           <div class="tbl-wrap">
-            <table>
+            <table id="evt-table">
               <thead><tr id="evt-thead"><th scope="col" class="sortable" data-sortkey="created_at" aria-sort="descending">Zaman</th><th scope="col" class="sortable" data-sortkey="category">Kategori</th><th scope="col" class="sortable" data-sortkey="severity">Önem</th><th scope="col">Mesaj</th></tr></thead>
               <tbody id="evt-body"></tbody>
             </table>
@@ -3346,6 +3357,24 @@
     var init="comfortable"; try{ if(localStorage.getItem("xdr_density")==="compact") init="compact"; }catch(e){}
     segBtns.forEach(function(b){ b.onclick=function(){ apply(b.getAttribute("data-density")); }; });
     apply(init);
+  })();
+
+  // ---------- Olaylar tablosu sütun görünürlüğü (ayarlar popover'ı); localStorage ----------
+  (function(){
+    var boxes=document.querySelectorAll("input.colvis"); var tbl=$("evt-table");
+    if(!boxes.length || !tbl) return;
+    var hidden={};
+    try{ (localStorage.getItem("kut_evtcols")||"").split(",").forEach(function(c){ if(c) hidden[c]=true; }); }catch(e){}
+    function apply(){
+      ["1","2","3"].forEach(function(c){ tbl.classList.toggle("hide-c"+c, !!hidden[c]); });
+      try{ localStorage.setItem("kut_evtcols", Object.keys(hidden).filter(function(c){return hidden[c];}).join(",")); }catch(e){}
+    }
+    boxes.forEach(function(b){
+      var c=b.getAttribute("data-col");
+      b.checked = !hidden[c];
+      b.onchange=function(){ if(b.checked){ delete hidden[c]; } else { hidden[c]=true; } apply(); };
+    });
+    apply();
   })();
 
   // ---------- Cihaz drawer kapatma (× / backdrop / Esc → seçimi kaldır) ----------
