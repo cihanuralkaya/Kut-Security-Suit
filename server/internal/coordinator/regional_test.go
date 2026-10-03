@@ -26,7 +26,7 @@ func TestRegisterAndHeartbeat(t *testing.T) {
 	router.mu.RLock()
 	n := router.nodes["node-1"]
 	router.mu.RUnlock()
-	
+
 	if n.LatencyMs != 15 {
 		t.Errorf("expected latency 15, got %d", n.LatencyMs)
 	}
@@ -46,7 +46,7 @@ func TestRouteTelemetry(t *testing.T) {
 		LatencyMs: 100,
 		Status:    "healthy",
 	})
-	
+
 	// Add node in primary region (low latency)
 	router.RegisterEdgeNode(EdgeNode{
 		ID:        "node-eu-2",
@@ -110,7 +110,7 @@ func TestPruneStaleNodes(t *testing.T) {
 		ID:     "node-1",
 		Region: "eu-central-1",
 	})
-	
+
 	router.RegisterEdgeNode(EdgeNode{
 		ID:     "node-2",
 		Region: "eu-central-1",

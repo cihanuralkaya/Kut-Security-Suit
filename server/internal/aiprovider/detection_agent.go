@@ -88,7 +88,7 @@ func (a *DetectionAgent) ValidateProposal(proposal *DetectionProposal) (bool, []
 	if !validSeverities[strings.ToLower(proposal.Severity)] {
 		issues = append(issues, "invalid severity")
 	}
-	
+
 	if proposal.Confidence < 0.0 || proposal.Confidence > 1.0 {
 		issues = append(issues, "confidence must be between 0 and 1")
 	}

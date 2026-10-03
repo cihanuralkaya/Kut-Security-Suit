@@ -41,7 +41,7 @@ func (r *ModelRouter) RouteComplete(ctx context.Context, req CompletionRequest) 
 			return resp, nil
 		}
 	}
-	
+
 	if r.localProvider != nil {
 		resp, err := r.localProvider.Complete(ctx, req)
 		if err == nil {

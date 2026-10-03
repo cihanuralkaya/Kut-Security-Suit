@@ -93,7 +93,7 @@ func (tf *ToolFirewall) AuthorizeToolCall(call ToolCall) (bool, string) {
 			}
 		}
 	}
-	
+
 	if matchedRule.RequiresDualAuth {
 		return true, "Authorized (Pending Dual Auth Approval)"
 	}

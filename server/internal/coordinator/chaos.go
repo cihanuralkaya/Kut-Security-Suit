@@ -24,8 +24,6 @@ type ChaosExperiment struct {
 	StartedAt time.Time
 }
 
-
-
 type ChaosEngine struct {
 	mu          sync.RWMutex
 	experiments map[string]*ChaosExperiment

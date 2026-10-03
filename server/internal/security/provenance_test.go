@@ -50,7 +50,7 @@ func TestProvenance(t *testing.T) {
 	if reason != "artifact not found in provenance" {
 		t.Errorf("Expected 'artifact not found in provenance', got '%s'", reason)
 	}
-	
+
 	// Test nil provenance handling
 	valid, reason = pv.VerifyArtifact(nil, "binary.exe", []byte("fake executable content"))
 	if valid {

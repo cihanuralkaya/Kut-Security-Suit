@@ -11,7 +11,7 @@ import (
 // TestHuntingAgent_GenerateHypotheses tests hypothesis generation.
 func TestHuntingAgent_GenerateHypotheses(t *testing.T) {
 	agent := &HuntingAgent{}
-	
+
 	hypotheses, err := agent.GenerateHypotheses(context.Background(), "Execution")
 	if err != nil {
 		t.Fatalf("beklenmeyen hata: %v", err)
@@ -27,16 +27,16 @@ func TestHuntingAgent_GenerateHypotheses(t *testing.T) {
 // TestHuntingAgent_ExecuteHunt tests graph hunt traversal and finding generation.
 func TestHuntingAgent_ExecuteHunt(t *testing.T) {
 	graph := entitygraph.New()
-	
+
 	agent := &HuntingAgent{
 		Graph: graph,
 	}
-	
+
 	hyp := HuntHypothesis{
 		ID:         "hyp-1",
 		TargetKind: entitygraph.Process,
 	}
-	
+
 	// 1. Boş graf üzerinde bulgu olmamalıdır
 	findings, err := agent.ExecuteHunt(context.Background(), hyp)
 	if err != nil {

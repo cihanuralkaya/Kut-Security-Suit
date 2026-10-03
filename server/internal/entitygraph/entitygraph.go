@@ -348,4 +348,3 @@ func (g *Graph) OutEdges(n Node) []Edge {
 	}
 	return out
 }
-

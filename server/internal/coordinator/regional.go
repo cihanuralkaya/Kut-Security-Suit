@@ -81,12 +81,12 @@ func (r *RegionalRouter) RegisterEdgeNode(node EdgeNode) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	node.LastHeartbeat = time.Now()
 	if node.Status == "" {
 		node.Status = "healthy"
 	}
-	
+
 	// Copy node to store pointer
 	n := node
 	r.nodes[node.ID] = &n
@@ -97,12 +97,12 @@ func (r *RegionalRouter) RegisterEdgeNode(node EdgeNode) error {
 func (r *RegionalRouter) Heartbeat(nodeID string, latencyMs int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	node, exists := r.nodes[nodeID]
 	if !exists {
 		return errors.New("node not found")
 	}
-	
+
 	node.LastHeartbeat = time.Now()
 	node.LatencyMs = latencyMs
 	node.Status = "healthy"
@@ -125,7 +125,7 @@ func (r *RegionalRouter) RouteTelemetry(tenantID string) (*EdgeNode, error) {
 		if node.Status != "healthy" {
 			continue
 		}
-		
+
 		// Check if it's the primary region
 		if hasPrimary && node.Region == primaryRegion {
 			if bestNode == nil || node.LatencyMs < bestNode.LatencyMs {
@@ -142,7 +142,7 @@ func (r *RegionalRouter) RouteTelemetry(tenantID string) (*EdgeNode, error) {
 	if bestNode != nil {
 		return bestNode, nil
 	}
-	
+
 	if bestFallback != nil {
 		return bestFallback, nil
 	}

@@ -91,7 +91,7 @@ func TestDecisionEngine_AttestationHash(t *testing.T) {
 	}
 
 	decision := engine.Evaluate("dec-1", ctx)
-	
+
 	// Re-compute hash manually to verify logic
 	expectedCanonical := fmt.Sprintf("%s|%d|%s|%s|%s|%s|%s|%s|%.4f|%.4f|%s|%s|%t",
 		decision.ID, decision.EvaluatedAt.UnixNano(),
@@ -99,10 +99,10 @@ func TestDecisionEngine_AttestationHash(t *testing.T) {
 		decision.Context.TargetDeviceID, decision.Context.ActionName, decision.Context.ActionImpact,
 		decision.Context.RiskScore, decision.Context.Confidence,
 		decision.Outcome, decision.PolicyReason, decision.RequiresDualAuth)
-	
+
 	hash := sha256.Sum256([]byte(expectedCanonical))
 	expectedHash := hex.EncodeToString(hash[:])
-	
+
 	if decision.AttestationHash != expectedHash {
 		t.Errorf("hash mismatch: expected %s, got %s", expectedHash, decision.AttestationHash)
 	}

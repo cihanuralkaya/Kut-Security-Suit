@@ -60,7 +60,7 @@ func (r *CommandRequest) Validate() error {
 	if r.IssuedBy == "" {
 		return errors.New("missing issued by")
 	}
-	
+
 	// WIPE komutu vb. komutlarin dogrulanmasi.
 	switch r.Type {
 	case TypeQuarantine, TypeUnquarantine, TypeLock, TypeRestart, TypeWipe, TypeRunSignedScript, TypeCollectFile:
