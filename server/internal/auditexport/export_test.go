@@ -11,9 +11,9 @@ import (
 func sampleEntries() []Entry {
 	base := time.Unix(1_700_000_000, 0)
 	return []Entry{
-		{Admin: "a@corp", Action: "LOGIN", TargetType: "session", TargetID: "s1", CreatedAt: base},
-		{Admin: "a@corp", Action: "QUARANTINE", TargetType: "device", TargetID: "d1", CreatedAt: base.Add(time.Minute)},
-		{Admin: "b@corp", Action: "WIPE", TargetType: "device", TargetID: "d2", CreatedAt: base.Add(2 * time.Minute)},
+		{TenantID: "tenant-1", Admin: "a@corp", Action: "LOGIN", TargetType: "session", TargetID: "s1", CreatedAt: base},
+		{TenantID: "tenant-1", Admin: "a@corp", Action: "QUARANTINE", TargetType: "device", TargetID: "d1", CreatedAt: base.Add(time.Minute)},
+		{TenantID: "tenant-1", Admin: "b@corp", Action: "WIPE", TargetType: "device", TargetID: "d2", CreatedAt: base.Add(2 * time.Minute)},
 	}
 }
 
