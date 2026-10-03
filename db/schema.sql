@@ -405,6 +405,7 @@ ALTER TABLE device_commands
 CREATE TABLE audit_log (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     admin_id    UUID REFERENCES admins(id) ON DELETE SET NULL,
+    tenant_id   VARCHAR(63) NOT NULL DEFAULT '',
     action      VARCHAR(100) NOT NULL,       -- "ISSUE_UNINSTALL_OTP", "QUARANTINE", ...
     target_type VARCHAR(50),                 -- "device" | "policy" | ...
     target_id   UUID,
@@ -462,3 +463,142 @@ CREATE TABLE saved_searches (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_saved_searches_created ON saved_searches (created_at DESC);
+
+-- =============================================================================
+-- TENANT İZOLASYONU (ROW-LEVEL SECURITY)
+-- =============================================================================
+-- Bu bölüm, "SEC-003: Row-Level Security (RLS) politikaları" implementasyonunu
+-- içerir. Tüm tenant (kiracı) farkındalığı olan tablolarda RLS etkinleştirilerek
+-- uygulama katmanındaki "WHERE tenant_id = ?" atlama hatalarına karşı derinlemesine
+-- savunma (defense-in-depth) sağlanır.
+-- 
+-- Uygulama her transaction başlangıcında SET LOCAL app.tenant_id = '<tenant>';
+-- çağırmak zorundadır.
+
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(63) NOT NULL DEFAULT '';
+
+-- event_logs
+ALTER TABLE event_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_logs FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_event_logs ON event_logs
+    USING (tenant_id = current_setting('app.tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+CREATE POLICY superuser_bypass_event_logs ON event_logs
+    TO kut_admin
+    USING (true);
+
+-- event_ack
+ALTER TABLE event_ack ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_ack FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_event_ack ON event_ack
+    USING (tenant_id = current_setting('app.tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+CREATE POLICY superuser_bypass_event_ack ON event_ack
+    TO kut_admin
+    USING (true);
+
+-- scim_users
+ALTER TABLE scim_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scim_users FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_scim_users ON scim_users
+    USING (tenant_id = current_setting('app.tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+CREATE POLICY superuser_bypass_scim_users ON scim_users
+    TO kut_admin
+    USING (true);
+
+-- cases
+ALTER TABLE cases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cases FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_cases ON cases
+    USING (tenant_id = current_setting('app.tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+CREATE POLICY superuser_bypass_cases ON cases
+    TO kut_admin
+    USING (true);
+
+-- verify_checks
+ALTER TABLE verify_checks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE verify_checks FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_verify_checks ON verify_checks
+    USING (tenant_id = current_setting('app.tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+CREATE POLICY superuser_bypass_verify_checks ON verify_checks
+    TO kut_admin
+    USING (true);
+
+-- msp_customers
+ALTER TABLE msp_customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE msp_customers FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_msp_customers ON msp_customers
+    USING (tenant_id = current_setting('app.tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+CREATE POLICY superuser_bypass_msp_customers ON msp_customers
+    TO kut_admin
+    USING (true);
+
+-- devices
+ALTER TABLE devices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE devices FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_devices ON devices
+    USING (tenant_id = current_setting('app.tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+CREATE POLICY superuser_bypass_devices ON devices
+    TO kut_admin
+    USING (true);
+
+-- incidents
+ALTER TABLE incidents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE incidents FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_incidents ON incidents
+    USING (tenant_id = current_setting('app.tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+CREATE POLICY superuser_bypass_incidents ON incidents
+    TO kut_admin
+    USING (true);
+
+-- Güvenlik (SEC-012): evidence_custody tablosu için değiştirilemezlik (immutability) kuralları.
+-- Adli bilişim delillerinin bütünlüğünü korumak için, kayıtların silinmesi veya güncellenmesi 
+-- veritabanı seviyesinde engellenmiştir (append-only).
+-- Bakım gerektiğinde geçici olarak tetikleyiciler devre dışı bırakılabilir:
+-- Bakım: ALTER TABLE evidence_custody DISABLE TRIGGER ALL;
+-- ... bakım işlemleri ...
+-- ALTER TABLE evidence_custody ENABLE TRIGGER ALL;
+
+CREATE OR REPLACE FUNCTION prevent_custody_mutation() RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'evidence_custody tablosu değiştirilemez (append-only). Kayıt seq=%, evidence_id=%',
+        COALESCE(OLD.seq::text, 'NULL'), COALESCE(OLD.evidence_id::text, 'NULL');
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_custody_no_update
+    BEFORE UPDATE ON evidence_custody
+    FOR EACH ROW EXECUTE FUNCTION prevent_custody_mutation();
+
+CREATE TRIGGER trg_custody_no_delete
+    BEFORE DELETE ON evidence_custody
+    FOR EACH ROW EXECUTE FUNCTION prevent_custody_mutation();
+
+-- Güvenlik (SEC-012): audit_log tablosu için değiştirilemezlik (immutability) kuralları.
+-- Denetim izlerinin güvenilirliği için, bu tabloya sadece ekleme yapılabilir (append-only).
+-- Bakım: ALTER TABLE audit_log DISABLE TRIGGER ALL;
+-- ...
+-- ALTER TABLE audit_log ENABLE TRIGGER ALL;
+
+CREATE OR REPLACE FUNCTION prevent_audit_log_mutation() RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_log tablosu değiştirilemez (append-only). Kayıt id=%',
+        COALESCE(OLD.id::text, 'NULL');
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_audit_log_no_update
+    BEFORE UPDATE ON audit_log
+    FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_mutation();
+
+CREATE TRIGGER trg_audit_log_no_delete
+    BEFORE DELETE ON audit_log
+    FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_mutation();

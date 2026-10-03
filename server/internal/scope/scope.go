@@ -20,6 +20,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Action, korunması gereken bir operasyon türüdür.
@@ -131,17 +132,55 @@ type Decision struct {
 	Reason  string
 }
 
+// rateLimiter basit bir token-bucket algoritması gerçeklemesidir.
+type rateLimiter struct {
+	mu         sync.Mutex
+	tokens     float64
+	lastUpdate time.Time
+}
+
+func (r *rateLimiter) allow(rate float64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := time.Now()
+	if r.lastUpdate.IsZero() {
+		r.lastUpdate = now
+		r.tokens = rate
+	} else {
+		elapsed := now.Sub(r.lastUpdate).Seconds()
+		r.tokens += elapsed * rate
+		if r.tokens > rate {
+			r.tokens = rate
+		}
+		r.lastUpdate = now
+	}
+
+	if r.tokens >= 1 {
+		r.tokens -= 1
+		return true
+	}
+	return false
+}
+
 // Engine, kiracı-bazlı Policy'leri tutar ve yetkilendirme kararı verir.
 // Eşzamanlı erişime güvenlidir.
 type Engine struct {
 	mu        sync.RWMutex
 	global    *Policy
 	perTenant map[string]*Policy
+
+	rlMu         sync.Mutex
+	rateLimiters map[string]*rateLimiter
 }
 
 // New, isteğe bağlı bir global (tüm kiracılara uygulanan taban) policy ile motor kurar.
 func New(global *Policy) *Engine {
-	return &Engine{global: global, perTenant: map[string]*Policy{}}
+	return &Engine{
+		global:       global,
+		perTenant:    map[string]*Policy{},
+		rateLimiters: map[string]*rateLimiter{},
+	}
 }
 
 // SetTenantPolicy, bir kiracıya özel policy atar (nil = kaldır).
@@ -205,6 +244,22 @@ func (e *Engine) Authorize(t Target, a Action) Decision {
 	} else if imp == Destructive {
 		return Decision{Allowed: false, Impact: imp,
 			Reason: fmt.Sprintf("ROE: yıkıcı aksiyon %q açıkça etkinleştirilmemiş", a)}
+	}
+
+	// 4) Rate limit kontrolü
+	if p.RateLimitRPS > 0 {
+		key := fmt.Sprintf("%s:%s", t.Tenant, a)
+		e.rlMu.Lock()
+		rl, ok := e.rateLimiters[key]
+		if !ok {
+			rl = &rateLimiter{}
+			e.rateLimiters[key] = rl
+		}
+		e.rlMu.Unlock()
+
+		if !rl.allow(p.RateLimitRPS) {
+			return Decision{Allowed: false, Impact: imp, Reason: "rate limit aşıldı"}
+		}
 	}
 
 	return Decision{Allowed: true, Impact: imp, Reason: "scope+ROE onayladı"}

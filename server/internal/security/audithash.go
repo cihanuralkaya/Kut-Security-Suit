@@ -14,9 +14,11 @@ const unitSep = 0x1f
 // kurcalama-kanıtı bir denetim izi sağlar (SEC C-1). İlk kayıt için prev nil'dir.
 // Not: id hash'e dahil DEĞİLDİR (DB'de id insert'te atanır); sıra/bütünlük
 // prev-hash bağı + alanlar + zaman damgasıyla korunur.
-func AuditChainHash(prev []byte, adminRef, action, targetType, targetID string, atUnixNano int64) []byte {
+// Çapraz-kiracı log naklini (transplant) önlemek için tenant_id de zincire dahil edilir.
+func AuditChainHash(prev []byte, tenantID, adminRef, action, targetType, targetID string, atUnixNano int64) []byte {
 	h := sha256.New()
 	h.Write(prev)
+	writeField(h, tenantID)
 	writeField(h, adminRef)
 	writeField(h, action)
 	writeField(h, targetType)

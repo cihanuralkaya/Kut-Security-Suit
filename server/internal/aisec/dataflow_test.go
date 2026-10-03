@@ -60,3 +60,46 @@ func TestExfiltrationChainScenario(t *testing.T) {
 		t.Fatalf("tainted zincir + credential + external → DENY bekleniyordu: %s", got)
 	}
 }
+
+type mockSanitizer struct {
+	ok  bool
+	out string
+}
+
+func (m *mockSanitizer) Sanitize(input string) (string, bool) {
+	return m.out, m.ok
+}
+
+// TestSanitizeContext, SEC-007'yi doğrular: Tainted bağlam yalnızca CapSanitize ve
+// başarılı doğrulayıcı ile Untrusted'a yükseltilebilir. Asla doğrudan Trusted olamaz.
+func TestSanitizeContext(t *testing.T) {
+	sanitizer := &mockSanitizer{ok: true, out: "cleaned input"}
+	failingSanitizer := &mockSanitizer{ok: false, out: ""}
+	capWithSanitize := CapSet{CapSanitize: true}
+	capWithoutSanitize := CapSet{}
+
+	// 1. CapSanitize olmadan temizleme başarısız olmalı (Tainted kalır)
+	newTrust, _, ok := SanitizeContext(Tainted, capWithoutSanitize, sanitizer, "dirty")
+	if ok || newTrust != Tainted {
+		t.Fatalf("CapSanitize olmadan yükseltme engellenmeli: ok=%v, trust=%v", ok, newTrust)
+	}
+
+	// 2. Başarısız sanitizer ile temizleme başarısız olmalı
+	newTrust, _, ok = SanitizeContext(Tainted, capWithSanitize, failingSanitizer, "dirty")
+	if ok || newTrust != Tainted {
+		t.Fatalf("başarısız doğrulayıcı ile yükseltme engellenmeli: ok=%v, trust=%v", ok, newTrust)
+	}
+
+	// 3. Başarılı sanitizer ve CapSanitize ile Tainted -> Untrusted olmalı
+	newTrust, clean, ok := SanitizeContext(Tainted, capWithSanitize, sanitizer, "dirty")
+	if !ok || newTrust != Untrusted || clean != "cleaned input" {
+		t.Fatalf("başarılı sanitization Untrusted dönmeli: ok=%v, trust=%v, clean=%s", ok, newTrust, clean)
+	}
+
+	// 4. Untrusted veya Trusted bağlam zaten kirli olmadığından korunmalı
+	newTrust, _, ok = SanitizeContext(Untrusted, capWithSanitize, sanitizer, "input")
+	if !ok || newTrust != Untrusted {
+		t.Fatalf("Untrusted bağlam korunmalı: %v", newTrust)
+	}
+}
+
