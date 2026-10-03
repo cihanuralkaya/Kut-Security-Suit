@@ -14,8 +14,8 @@ const (
 
 // Sık kullanılan agent yetenekleri (execution §11'den AYRI; agent-davranış düzlemi).
 const (
-	CapCredentialRead Cap = "credential.read" // hassas sır/kimlik-bilgisi okuma
-	CapExternalWrite  Cap = "external.write"  // dış kanal (HTTP/exfil) yazma
+	CapCredentialRead Cap = "credential.read"  // hassas sır/kimlik-bilgisi okuma
+	CapExternalWrite  Cap = "external.write"   // dış kanal (HTTP/exfil) yazma
 	CapSanitize       Cap = "context.sanitize" // kirli (tainted) bağlamı doğrulayıp temizleme yetkisi (SEC-007)
 )
 
@@ -73,4 +73,3 @@ func SanitizeContext(current TrustLevel, eff CapSet, sanitizer Sanitizer, input 
 	// Tainted -> Untrusted'a kontrollü geçiş (asla Trusted değil)
 	return Untrusted, cleaned, true
 }
-

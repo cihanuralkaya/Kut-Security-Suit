@@ -102,4 +102,3 @@ func TestSanitizeContext(t *testing.T) {
 		t.Fatalf("Untrusted bağlam korunmalı: %v", newTrust)
 	}
 }
-

@@ -9,8 +9,6 @@ import (
 	"kut.corp/suite/server/internal/telemetryschema"
 )
 
-
-
 // Detector defines the interface for evaluating events against detection rules.
 type Detector interface {
 	Evaluate(evt model.Event) []Rule

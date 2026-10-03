@@ -51,17 +51,17 @@ func TestOpenAICompatProvider(t *testing.T) {
 func TestDataDLP(t *testing.T) {
 	dlp := NewDataDLP()
 	rmap := NewRedactionMap()
-	
+
 	original := "Contact me at test@example.com or IP 192.168.1.1."
 	redacted := dlp.MapRedactions(original, rmap)
-	
+
 	if strings.Contains(redacted, "test@example.com") {
 		t.Errorf("email not redacted: %s", redacted)
 	}
 	if strings.Contains(redacted, "192.168.1.1") {
 		t.Errorf("IP not redacted: %s", redacted)
 	}
-	
+
 	rehydrated := dlp.Rehydrate(redacted, rmap)
 	if rehydrated != original {
 		t.Errorf("expected '%s', got '%s'", original, rehydrated)
@@ -71,13 +71,13 @@ func TestDataDLP(t *testing.T) {
 func TestModelRouter(t *testing.T) {
 	mock := NewMockProvider()
 	router := NewModelRouter(nil, nil, mock)
-	
+
 	req := CompletionRequest{Sensitivity: Restricted}
 	_, err := router.RouteComplete(context.Background(), req)
 	if err == nil || err.Error() != "restricted sensitivity requires local provider, but none is configured" {
 		t.Errorf("expected error about local provider, got: %v", err)
 	}
-	
+
 	routerWithLocal := NewModelRouter(mock, nil, nil)
 	resp, err := routerWithLocal.RouteComplete(context.Background(), req)
 	if err != nil {

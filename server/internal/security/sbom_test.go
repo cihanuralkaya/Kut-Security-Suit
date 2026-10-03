@@ -44,7 +44,7 @@ func TestGenerateKutSBOM(t *testing.T) {
 
 func TestVerifyComponentChecksum(t *testing.T) {
 	gen := NewSBOMGenerator()
-	
+
 	content := []byte("this is some test content")
 	hash := sha256.Sum256(content)
 	hexHash := hex.EncodeToString(hash[:])
@@ -70,14 +70,14 @@ func TestExportJSON(t *testing.T) {
 	gen := NewSBOMGenerator()
 	components := []SBOMComponent{
 		{
-			Name:           "json-lib",
-			Version:        "2.0",
-			Type:           ComponentTypeLibrary,
+			Name:    "json-lib",
+			Version: "2.0",
+			Type:    ComponentTypeLibrary,
 		},
 	}
-	
+
 	doc, _ := gen.GenerateKutSBOM("1.0.0", components)
-	
+
 	data, err := gen.ExportJSON(doc)
 	if err != nil {
 		t.Fatalf("Failed to export JSON: %v", err)
@@ -86,7 +86,7 @@ func TestExportJSON(t *testing.T) {
 	if len(data) == 0 {
 		t.Error("Expected JSON data, got empty byte array")
 	}
-	
+
 	jsonString := string(data)
 	if !strings.Contains(jsonString, `"name": "json-lib"`) {
 		t.Error("JSON output missing component name")

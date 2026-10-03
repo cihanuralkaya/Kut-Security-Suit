@@ -156,4 +156,3 @@ func TestOCSFProcessAndNetworkClasses(t *testing.T) {
 		t.Errorf("NETWORK_CONN category 4001/4 olmalı, alındı: %d/%d", netOCSF.ClassUID, netOCSF.CategoryUID)
 	}
 }
-

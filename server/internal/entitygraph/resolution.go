@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-
-
 // lease record for temporal mappings
 type lease struct {
 	ip         string
@@ -24,15 +22,15 @@ type lease struct {
 type EntityResolver struct {
 	mu sync.RWMutex
 	// tenantID -> mapping tables
-	
+
 	// Mac to canonical device ID mapping
 	macToDevice map[string]map[string]Node
 	// Hostname to canonical device ID mapping
 	hostToDevice map[string]map[string]Node
-	
+
 	// IP to latest lease mapping
 	ipLeases map[string]map[string]*lease
-	
+
 	// User normalization cache
 	userToNode map[string]map[string]Node
 }
@@ -101,7 +99,7 @@ func (r *EntityResolver) ResolveDevice(tenant string, ip string, mac string, hos
 		if base == "" {
 			base = fmt.Sprintf("unknown-%d", ts.UnixNano())
 		}
-		
+
 		canonicalID := generateID(tenant, "device", base)
 		canonicalNode = Node{
 			Kind:   Device,
@@ -117,7 +115,7 @@ func (r *EntityResolver) ResolveDevice(tenant string, ip string, mac string, hos
 	if hostname != "" {
 		r.hostToDevice[tenant][hostname] = canonicalNode
 	}
-	
+
 	// Update IP lease
 	if ip != "" {
 		currentLease, ok := r.ipLeases[tenant][ip]

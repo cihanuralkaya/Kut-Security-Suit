@@ -33,7 +33,7 @@ func NewReplayProtector(window, skew time.Duration) *ReplayProtector {
 	}
 }
 
-// CheckAndRecord validates the timestamp and nonce. 
+// CheckAndRecord validates the timestamp and nonce.
 // It returns an error if the timestamp is out of bounds or if the nonce is a duplicate.
 func (rp *ReplayProtector) CheckAndRecord(tenantID, deviceID, nonce string, ts time.Time) error {
 	now := rp.nowFunc()

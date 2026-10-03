@@ -46,10 +46,10 @@ func (a *InvestigationAgent) Investigate(ctx context.Context, incidentID string,
 
 	// 2. Retrieve context from RAG store based on category and message
 	query := fmt.Sprintf("%s %s", category, redactedMessage)
-	
+
 	// We'll use SearchKeyword as a simple search for knowledge
 	topDocs := a.rag.SearchKeyword(query, 3)
-	
+
 	var ragContextStr strings.Builder
 	for i, r := range topDocs {
 		if i > 0 {

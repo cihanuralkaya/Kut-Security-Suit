@@ -130,7 +130,7 @@ func TestTelemetryPlane_ProcessEvent(t *testing.T) {
 			t.Errorf("alertSink beklenen alert sayisi 1, alinan %d", len(alertSink.Alerts))
 		}
 	})
-	
+
 	t.Run("Detector error", func(t *testing.T) {
 		t.Skip("Detector no longer returns error")
 	})

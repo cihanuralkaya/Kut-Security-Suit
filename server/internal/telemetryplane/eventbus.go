@@ -136,5 +136,3 @@ func matchTopic(pattern, topic string) bool {
 	}
 	return pattern == topic
 }
-
-

@@ -6,7 +6,7 @@ import (
 
 func TestToolFirewall(t *testing.T) {
 	tf := NewToolFirewall()
-	
+
 	tf.AddRule(FirewallRule{
 		AllowedRoles:      []string{"investigator"},
 		AllowedTools:      []string{"graph_query", "rag_search"},

@@ -55,7 +55,7 @@ func (c *BackpressureController) Acquire(ctx context.Context, priority string) b
 
 	for {
 		depth := atomic.LoadInt64(&c.currentDepth)
-		
+
 		// Eğer kuyruk tamamen doluysa, tüm eventleri at (100% saturation hard drop)
 		if depth >= int64(c.config.MaxQueueDepth) {
 			atomic.AddUint64(&c.droppedEvents, 1)
@@ -63,7 +63,7 @@ func (c *BackpressureController) Acquire(ctx context.Context, priority string) b
 		}
 
 		usage := float64(depth) / float64(c.config.MaxQueueDepth)
-		
+
 		// High watermark aşıldıysa, düşük öncelikli eventleri at
 		if usage >= c.config.HighWatermark {
 			atomic.StoreUint32(&c.sheddingMode, 1)

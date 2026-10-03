@@ -49,14 +49,14 @@ func (m *mockAuthorizer) Authorize(ctx context.Context, req ActionRequest) (Auth
 
 func TestLifecycle(t *testing.T) {
 	p := NewPlane(newMockStore(), &mockAuthorizer{})
-	
+
 	if err := p.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
 	if err := p.Start(context.Background()); err == nil {
 		t.Fatal("Expected error when starting already running plane")
 	}
-	
+
 	if err := p.Stop(); err != nil {
 		t.Fatalf("Stop failed: %v", err)
 	}
@@ -92,13 +92,13 @@ func TestDispatch_Authorization(t *testing.T) {
 
 func TestDispatch_Validation(t *testing.T) {
 	p := NewPlane(newMockStore(), &mockAuthorizer{allowAll: true})
-	
+
 	req := CommandRequest{
 		Type:     TypeLock,
 		IssuedBy: "admin",
 		// DeviceID eksik
 	}
-	
+
 	_, err := p.Dispatch(context.Background(), req)
 	if err == nil {
 		t.Fatal("Expected validation to fail due to missing DeviceID")
@@ -108,7 +108,7 @@ func TestDispatch_Validation(t *testing.T) {
 func TestHandleCommandResult(t *testing.T) {
 	store := newMockStore()
 	p := NewPlane(store, &mockAuthorizer{})
-	
+
 	err := p.HandleCommandResult(context.Background(), "dev1", "cmd-123", true, "locked")
 	if err != nil {
 		t.Fatalf("HandleCommandResult failed: %v", err)
