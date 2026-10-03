@@ -113,6 +113,7 @@ type adminRec struct {
 type auditRec struct {
 	id         int64
 	adminEmail string
+	tenant     string // eklendi
 	action     string
 	targetType string
 	targetID   string
@@ -603,8 +604,10 @@ func (s *Store) WriteAudit(_ context.Context, adminID, action, targetType, targe
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var email string
+	var tenantID string
 	if a, ok := s.adminsByID[adminID]; ok {
 		email = a.email
+		tenantID = a.tenant
 	}
 	s.auditSeq++
 	at := time.Now()
@@ -612,9 +615,9 @@ func (s *Store) WriteAudit(_ context.Context, adminID, action, targetType, targe
 	if n := len(s.audit); n > 0 {
 		prev = s.audit[n-1].hash
 	}
-	hash := security.AuditChainHash(prev, email, action, targetType, targetID, at.UnixNano())
+	hash := security.AuditChainHash(prev, tenantID, email, action, targetType, targetID, at.UnixNano())
 	s.audit = append(s.audit, auditRec{
-		id: s.auditSeq, adminEmail: email, action: action,
+		id: s.auditSeq, adminEmail: email, tenant: tenantID, action: action,
 		targetType: targetType, targetID: targetID, createdAt: at, hash: hash,
 	})
 	return nil
@@ -628,7 +631,7 @@ func (s *Store) VerifyAuditChain(_ context.Context) error {
 	defer s.mu.Unlock()
 	var prev []byte
 	for _, r := range s.audit {
-		want := security.AuditChainHash(prev, r.adminEmail, r.action, r.targetType, r.targetID, r.createdAt.UnixNano())
+		want := security.AuditChainHash(prev, r.tenant, r.adminEmail, r.action, r.targetType, r.targetID, r.createdAt.UnixNano())
 		if !bytes.Equal(want, r.hash) {
 			return fmt.Errorf("denetim izi zinciri kırık: kayıt id=%d", r.id)
 		}

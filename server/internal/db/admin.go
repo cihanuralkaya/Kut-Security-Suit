@@ -232,18 +232,23 @@ func (s *Store) WriteAudit(ctx context.Context, adminID, action, targetType, tar
 		return fmt.Errorf("db: denetim zinciri kilidi: %w", err)
 	}
 
+	var tenantID string
+	if adminID != "" {
+		_ = tx.QueryRow(ctx, `SELECT tenant_id FROM admins WHERE id = $1`, adminID).Scan(&tenantID)
+	}
+
 	var prev []byte
 	err = tx.QueryRow(ctx, `SELECT entry_hash FROM audit_log ORDER BY id DESC LIMIT 1`).Scan(&prev)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("db: son denetim hash: %w", err)
 	}
 	now := time.Now().Truncate(time.Microsecond)
-	hash := security.AuditChainHash(prev, adminID, action, targetType, targetID, now.UnixNano())
+	hash := security.AuditChainHash(prev, tenantID, adminID, action, targetType, targetID, now.UnixNano())
 
 	const q = `
-		INSERT INTO audit_log (admin_id, action, target_type, target_id, created_at, prev_hash, entry_hash)
-		VALUES (NULLIF($1,'')::uuid, $2, NULLIF($3,''), NULLIF($4,'')::uuid, $5, $6, $7)`
-	if _, err := tx.Exec(ctx, q, adminID, action, targetType, targetID, now, prev, hash); err != nil {
+		INSERT INTO audit_log (admin_id, tenant_id, action, target_type, target_id, created_at, prev_hash, entry_hash)
+		VALUES (NULLIF($1,'')::uuid, $2, $3, NULLIF($4,''), NULLIF($5,'')::uuid, $6, $7, $8)`
+	if _, err := tx.Exec(ctx, q, adminID, tenantID, action, targetType, targetID, now, prev, hash); err != nil {
 		return fmt.Errorf("db: denetim izi: %w", err)
 	}
 	return tx.Commit(ctx)
@@ -253,7 +258,7 @@ func (s *Store) WriteAudit(ctx context.Context, adminID, action, targetType, tar
 // Kayıtları id sırasıyla okur ve her entry_hash'i yeniden hesaplayıp karşılaştırır.
 func (s *Store) VerifyAuditChain(ctx context.Context) error {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, COALESCE(admin_id::text,''), action, COALESCE(target_type,''),
+		`SELECT id, COALESCE(admin_id::text,''), tenant_id, action, COALESCE(target_type,''),
 		        COALESCE(target_id::text,''), created_at, entry_hash
 		   FROM audit_log ORDER BY id`)
 	if err != nil {
@@ -264,13 +269,13 @@ func (s *Store) VerifyAuditChain(ctx context.Context) error {
 	var prev []byte
 	for rows.Next() {
 		var id int64
-		var adminID, action, targetType, targetID string
+		var adminID, tenantID, action, targetType, targetID string
 		var createdAt time.Time
 		var stored []byte
-		if err := rows.Scan(&id, &adminID, &action, &targetType, &targetID, &createdAt, &stored); err != nil {
+		if err := rows.Scan(&id, &adminID, &tenantID, &action, &targetType, &targetID, &createdAt, &stored); err != nil {
 			return fmt.Errorf("db: denetim satırı: %w", err)
 		}
-		want := security.AuditChainHash(prev, adminID, action, targetType, targetID, createdAt.UnixNano())
+		want := security.AuditChainHash(prev, tenantID, adminID, action, targetType, targetID, createdAt.UnixNano())
 		if !bytes.Equal(want, stored) {
 			return fmt.Errorf("db: denetim izi zinciri kırık: kayıt id=%d", id)
 		}

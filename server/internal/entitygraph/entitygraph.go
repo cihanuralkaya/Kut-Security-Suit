@@ -309,3 +309,43 @@ func (g *Graph) Prune(before time.Time) int {
 	}
 	return removed
 }
+
+// NodesByKind, belirtilen türdeki tüm düğümleri döner.
+func (g *Graph) NodesByKind(kind Kind) []Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	seen := map[Node]bool{}
+	var out []Node
+	for n := range g.out {
+		if n.Kind == kind && !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	for n := range g.in {
+		if n.Kind == kind && !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// OutEdges, belirtilen düğümden çıkan tüm kenarları döner.
+func (g *Graph) OutEdges(n Node) []Edge {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	m := g.out[n]
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]Edge, 0, len(m))
+	for _, e := range m {
+		out = append(out, *e)
+	}
+	return out
+}
+

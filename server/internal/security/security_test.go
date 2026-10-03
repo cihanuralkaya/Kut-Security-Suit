@@ -1,6 +1,7 @@
 package security
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -153,4 +154,25 @@ func newTestCA(t *testing.T) *CA {
 		t.Fatal(err)
 	}
 	return ca
+}
+
+func TestAuditChainHashIncludesTenant(t *testing.T) {
+	prev := []byte("prev-hash")
+	adminRef := "admin@test.com"
+	action := "TEST_ACTION"
+	targetType := "device"
+	targetID := "dev-123"
+	at := time.Now().UnixNano()
+
+	hash1 := AuditChainHash(prev, "tenantA", adminRef, action, targetType, targetID, at)
+	hash2 := AuditChainHash(prev, "tenantB", adminRef, action, targetType, targetID, at)
+
+	if bytes.Equal(hash1, hash2) {
+		t.Fatal("tenant_id değiştiğinde hash değişmeli (çapraz-kiracı log nakli koruması başarısız)")
+	}
+
+	hash3 := AuditChainHash(prev, "tenantA", adminRef, action, targetType, targetID, at)
+	if !bytes.Equal(hash1, hash3) {
+		t.Fatal("aynı girdiler aynı hash'i üretmeli")
+	}
 }

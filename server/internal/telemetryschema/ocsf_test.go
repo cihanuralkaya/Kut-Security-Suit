@@ -132,3 +132,28 @@ func TestToOCSFBatch(t *testing.T) {
 		t.Error("farklı olaylar farklı uid vermeli")
 	}
 }
+
+func TestOCSFProcessAndNetworkClasses(t *testing.T) {
+	procEvt := model.Event{
+		Category:   "PROCESS",
+		Severity:   "INFO",
+		Message:    "process started",
+		OccurredAt: time.Now(),
+	}
+	procOCSF := ToOCSF(procEvt, testProduct)
+	if procOCSF.ClassUID != 1007 || procOCSF.CategoryUID != 1 {
+		t.Errorf("PROCESS category 1007/1 olmalı, alındı: %d/%d", procOCSF.ClassUID, procOCSF.CategoryUID)
+	}
+
+	netEvt := model.Event{
+		Category:   "NETWORK_CONN",
+		Severity:   "LOW",
+		Message:    "outbound connection",
+		OccurredAt: time.Now(),
+	}
+	netOCSF := ToOCSF(netEvt, testProduct)
+	if netOCSF.ClassUID != 4001 || netOCSF.CategoryUID != 4 {
+		t.Errorf("NETWORK_CONN category 4001/4 olmalı, alındı: %d/%d", netOCSF.ClassUID, netOCSF.CategoryUID)
+	}
+}
+
