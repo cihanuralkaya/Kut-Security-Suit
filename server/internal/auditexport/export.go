@@ -30,6 +30,7 @@ import (
 
 // Entry, dışa aktarılacak tek bir denetim kaydının ham alanlarıdır (depo-bağımsız).
 type Entry struct {
+	TenantID   string
 	Admin      string
 	Action     string
 	TargetType string
@@ -40,6 +41,7 @@ type Entry struct {
 // Record, dışa aktarım satırıdır: kaydın alanları + zincir hash'leri (hex).
 type Record struct {
 	Seq        int64  `json:"seq"`
+	TenantID   string `json:"tenant_id,omitempty"`
 	Admin      string `json:"admin"`
 	Action     string `json:"action"`
 	TargetType string `json:"target_type"`
@@ -61,7 +63,7 @@ type Manifest struct {
 // hashFor, bir kaydın zincir hash'ini önceki hash'ten hesaplar (dahili zincirle
 // aynı fonksiyon).
 func hashFor(prev []byte, e Entry) []byte {
-	return security.AuditChainHash(prev, e.Admin, e.Action, e.TargetType, e.TargetID, e.CreatedAt.UnixNano())
+	return security.AuditChainHash(prev, e.TenantID, e.Admin, e.Action, e.TargetType, e.TargetID, e.CreatedAt.UnixNano())
 }
 
 // BuildChain, verilen kayıtları (KRONOLOJİK sırada olmalı) bir hash zincirine
@@ -72,7 +74,7 @@ func BuildChain(entries []Entry) []Record {
 	for i, e := range entries {
 		h := hashFor(prev, e)
 		out = append(out, Record{
-			Seq: int64(i), Admin: e.Admin, Action: e.Action,
+			Seq: int64(i), TenantID: e.TenantID, Admin: e.Admin, Action: e.Action,
 			TargetType: e.TargetType, TargetID: e.TargetID,
 			CreatedAt: e.CreatedAt.UnixNano(),
 			PrevHash:  hex.EncodeToString(prev), Hash: hex.EncodeToString(h),
@@ -157,7 +159,7 @@ func Verify(data []byte, pub ed25519.PublicKey) error {
 		if r.PrevHash != hex.EncodeToString(prev) {
 			return ErrChain
 		}
-		want := security.AuditChainHash(prev, r.Admin, r.Action, r.TargetType, r.TargetID, r.CreatedAt)
+		want := security.AuditChainHash(prev, r.TenantID, r.Admin, r.Action, r.TargetType, r.TargetID, r.CreatedAt)
 		if r.Hash != hex.EncodeToString(want) {
 			return ErrChain
 		}
