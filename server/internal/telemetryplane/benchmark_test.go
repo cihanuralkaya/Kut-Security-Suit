@@ -76,7 +76,7 @@ func BenchmarkRuleEngine_Evaluate(b *testing.B) {
 
 func BenchmarkEventBus_Publish(b *testing.B) {
 	eb := NewBenchEventBus(10000)
-	
+
 	// Consumer goroutine to empty the channel
 	go func() {
 		for range eb.ch {

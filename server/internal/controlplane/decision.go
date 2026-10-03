@@ -26,7 +26,7 @@ type SecurityContext struct {
 	SourceDeviceID string
 	TargetDeviceID string
 	ActionName     string
-	ActionImpact   string // "read", "write", "destructive"
+	ActionImpact   string  // "read", "write", "destructive"
 	RiskScore      float64 // 0.0 to 1.0
 	Confidence     float64
 }
@@ -107,7 +107,7 @@ func computeAttestationHash(d SecurityDecision) string {
 		d.Context.TargetDeviceID, d.Context.ActionName, d.Context.ActionImpact,
 		d.Context.RiskScore, d.Context.Confidence,
 		d.Outcome, d.PolicyReason, d.RequiresDualAuth)
-		
+
 	hash := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(hash[:])
 }

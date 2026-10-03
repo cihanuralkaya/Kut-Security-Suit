@@ -17,7 +17,7 @@ func NewDataClassifier() *DataClassifier {
 		restrictedRules: []*regexp.Regexp{
 			regexp.MustCompile(`(?i)(password|secret|credential)\s*[:=]\s*\S+`),
 			regexp.MustCompile(`(?i)BEGIN (RSA|OPENSSH|DSA|EC) PRIVATE KEY`),
-			regexp.MustCompile(`(?i)AKIA[0-9A-Z]{16}`), // AWS Access Key pattern (indicator for secrets)
+			regexp.MustCompile(`(?i)AKIA[0-9A-Z]{16}`),  // AWS Access Key pattern (indicator for secrets)
 			regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`), // SSN
 			regexp.MustCompile(`\b[1-9]\d{10}\b`),       // TCKN
 			// Sovereign internal IPs
@@ -58,13 +58,13 @@ func (c *DataClassifier) ClassifyText(text string) Sensitivity {
 // ClassifyEvent assigns a Sensitivity level based on event properties and details.
 func (c *DataClassifier) ClassifyEvent(category, severity, details string) Sensitivity {
 	baseSensitivity := c.ClassifyText(details)
-	
+
 	// Kritik auth hatalarını Restricted / Confidential seviyesine yükselt
 	if strings.Contains(strings.ToLower(category), "auth") && strings.ToLower(severity) == "critical" {
 		if baseSensitivity == Public || baseSensitivity == Internal {
 			return Restricted
 		}
 	}
-	
+
 	return baseSensitivity
 }

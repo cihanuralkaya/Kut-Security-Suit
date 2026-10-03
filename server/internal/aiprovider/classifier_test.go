@@ -102,8 +102,8 @@ func TestDataClassifier_ClassifyEvent(t *testing.T) {
 			name:     "Normal Auth Failure",
 			category: "auth",
 			severity: "low",
-			details:  "User typed wrong password", 
-			expected: Public, 
+			details:  "User typed wrong password",
+			expected: Public,
 		},
 	}
 

@@ -8,7 +8,7 @@ import (
 func TestReplayProtector(t *testing.T) {
 	window := 5 * time.Minute
 	skew := 1 * time.Minute
-	
+
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	rp := NewReplayProtector(window, skew)
 	rp.nowFunc = func() time.Time { return now }
@@ -42,14 +42,14 @@ func TestReplayProtector(t *testing.T) {
 			t.Errorf("expected ErrMessageFromFuture, got %v", err)
 		}
 	})
-	
+
 	t.Run("tenant and device isolation", func(t *testing.T) {
 		// Same nonce, different device
 		err := rp.CheckAndRecord("tenant1", "device2", "nonce1", now)
 		if err != nil {
 			t.Errorf("expected no error for different device, got %v", err)
 		}
-		
+
 		// Same nonce, different tenant
 		err = rp.CheckAndRecord("tenant2", "device1", "nonce1", now)
 		if err != nil {

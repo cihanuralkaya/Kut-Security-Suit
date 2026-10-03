@@ -47,7 +47,7 @@ func TestEventBus_TopicMatching(t *testing.T) {
 
 	// Wildcard ile eşleşmeli
 	bus.Publish(BusEvent{Topic: "metric.memory", TenantID: "tenant1"})
-	
+
 	select {
 	case <-subWildcard.Channel:
 		// Başarılı, olay alındı
@@ -63,7 +63,7 @@ func TestEventBus_TopicMatching(t *testing.T) {
 	default:
 		t.Fatal("tam eşleşme çalışmadı, olay bekleniyordu")
 	}
-	
+
 	// Eşleşmemesi gereken durum
 	bus.Publish(BusEvent{Topic: "log.info", TenantID: "tenant1"})
 	select {
@@ -112,7 +112,7 @@ func TestEventBus_BufferDropAndBackpressure(t *testing.T) {
 
 	// İlk olayı gönder
 	bus.Publish(BusEvent{Topic: "metric", TenantID: "tenant1", ID: "evt-1"})
-	
+
 	// İkinci olayı gönder (kanal dolu olduğu için bloklanmamalı ve olay düşürülmeli)
 	err := bus.Publish(BusEvent{Topic: "metric", TenantID: "tenant1", ID: "evt-2"})
 	if err != nil {
@@ -136,7 +136,7 @@ func TestEventBus_BufferDropAndBackpressure(t *testing.T) {
 
 func TestEventBus_UnsubscribeAndLifecycle(t *testing.T) {
 	bus := NewEventBus()
-	
+
 	sub, _ := bus.Subscribe("tenant1", "metric", 10)
 	bus.Unsubscribe(sub)
 

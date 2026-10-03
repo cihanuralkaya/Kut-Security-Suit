@@ -168,7 +168,7 @@ func TestLoadStrictKeyPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("KUT_CA_KEY", caPath)
-	
+
 	serverPath := dir + "/server.key"
 	if err := os.WriteFile(serverPath, []byte("key"), 0o600); err != nil {
 		t.Fatal(err)

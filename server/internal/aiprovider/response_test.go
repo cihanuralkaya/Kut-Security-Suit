@@ -14,7 +14,7 @@ func TestProposePlan(t *testing.T) {
 	tenantID := "tenant-1"
 	incidentID := "inc-100"
 	severity := "Critical"
-	
+
 	node := entitygraph.Node{
 		ID:   "node-1",
 		Kind: "Process",
@@ -52,7 +52,7 @@ func TestProposePlan(t *testing.T) {
 		if action.TenantID != tenantID {
 			t.Errorf("aksiyonda beklenen tenantID %s, alınan %s", tenantID, action.TenantID)
 		}
-		
+
 		// Critical senaryoda aksiyonların destructive olması ve onay gerektirmesi beklenir
 		if !action.RequiresApproval {
 			t.Errorf("Critical seviyede aksiyon onay gerektirmeli")
