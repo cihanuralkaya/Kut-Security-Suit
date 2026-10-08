@@ -47,14 +47,15 @@ func TestToolFirewall(t *testing.T) {
 			expectedAllow: false,
 		},
 		{
-			name: "Response agent allowed to invoke quarantine",
+			// Dual-auth gerektiren tool tek çağrıyla yetkilenemez → fail-closed reddi (M3).
+			name: "Dual-auth tool denied pending second approval (fail-closed)",
 			call: ToolCall{
 				AgentRole:  "response",
 				ToolName:   "quarantine_endpoint",
 				TenantID:   "tenant-1",
 				Parameters: map[string]interface{}{"endpoint_id": "ep-123"},
 			},
-			expectedAllow: true,
+			expectedAllow: false,
 		},
 		{
 			name: "Dangerous parameter injection blocked",
