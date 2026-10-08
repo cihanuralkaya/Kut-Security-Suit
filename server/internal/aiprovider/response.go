@@ -27,7 +27,23 @@ type ResponseAction struct {
 	RequiresApproval bool               `json:"requires_approval"`
 	Reason           string             `json:"reason"`
 	Approved         bool               `json:"approved"`
+	ProposedBy       string             `json:"proposed_by"`           // öneren kimlik (dual-control için)
+	ApprovedBy       string             `json:"approved_by,omitempty"` // onaylayan kimlik (denetim)
 	ExecutedAt       time.Time          `json:"executed_at,omitempty"`
+}
+
+// autonomousProposer, ProposePlan tarafından üretilen aksiyonların öneren kimliğidir.
+// ExecuteAction, onaylayanın bundan FARKLI olmasını zorunlu kılar (dual-control):
+// otonom ajanın önerdiği bir aksiyonu yine kendisi "onaylayıp" yürütemez.
+const autonomousProposer = "autonomous-response-agent"
+
+// ActionAuthorizer, bir yanıt aksiyonunun yürütülmesini KANONİK yetki zincirinden
+// (authz / secgateway / privman / GuardedExecutor) doğrular: onaylayan kimliği+rolü,
+// tenant eşleşmesi, blast-radius. PRODUCTION wiring'de bu adaptör ENJEKTE EDİLMELİDİR;
+// nil ise ExecuteAction fail-closed reddeder (yüksek-etkili aksiyon boş-olmayan tek
+// string ile YÜRÜTÜLEMEZ — C1).
+type ActionAuthorizer interface {
+	AuthorizeResponse(ctx context.Context, action ResponseAction, approver string) error
 }
 
 // ResponsePlan groups multiple actions into a single coordinated response plan.
@@ -42,13 +58,17 @@ type ResponsePlan struct {
 type ResponseAgent struct {
 	ModelRouter *ModelRouter
 	RAGStore    *RAGStore
+	authz       ActionAuthorizer // kanonik yetki kapısı (nil => yürütme fail-closed reddedilir)
 }
 
-// NewResponseAgent creates a new autonomous response agent.
-func NewResponseAgent(router *ModelRouter, ragStore *RAGStore) *ResponseAgent {
+// NewResponseAgent creates a new autonomous response agent. authz, aksiyon
+// yürütmesi için KANONİK yetki kapısıdır; nil enjekte edilirse ExecuteAction
+// fail-closed reddeder (ajan öneri üretebilir ama yürütemez).
+func NewResponseAgent(router *ModelRouter, ragStore *RAGStore, authz ActionAuthorizer) *ResponseAgent {
 	return &ResponseAgent{
 		ModelRouter: router,
 		RAGStore:    ragStore,
+		authz:       authz,
 	}
 }
 
@@ -69,7 +89,6 @@ func (a *ResponseAgent) ProposePlan(ctx context.Context, tenantID string, incide
 
 	for i, f := range findings {
 		actionType := ActionBlockHash
-		requiresApproval := false
 
 		// Eğer severity Critical ise, immediate containment action'ları belirle.
 		if severity == "Critical" {
@@ -82,48 +101,60 @@ func (a *ResponseAgent) ProposePlan(ctx context.Context, tenantID string, incide
 			actionType = ActionQuarantineFile
 		}
 
-		// Destructive action'lar onay gerektirir.
-		if actionType == ActionIsolateEndpoint || actionType == ActionKillProcess || actionType == ActionQuarantineFile {
-			requiresApproval = true
-		}
-
 		// Target olarak bulgunun özetini veya varsa ilgili ID'yi alıyoruz.
 		target := fmt.Sprintf("%v", f.TargetNode)
 
 		actionID := fmt.Sprintf("action-%s-%d", incidentID, i)
 		plan.Actions = append(plan.Actions, ResponseAction{
-			ID:               actionID,
-			Type:             actionType,
-			Target:           target,
-			TenantID:         tenantID,
-			RequiresApproval: requiresApproval,
+			ID:       actionID,
+			Type:     actionType,
+			Target:   target,
+			TenantID: tenantID,
+			// TÜM yanıt aksiyonları yüksek-etkilidir (Isolate/Kill/Quarantine/
+			// BlockHash/RevokeSession) → istisnasız insan onayı + kanonik yetki
+			// gerektirir. BlockHash/RevokeSession'ın onaysız auto-yürütülmesi C1'de
+			// kapatıldı.
+			RequiresApproval: true,
 			Reason:           fmt.Sprintf("Auto-generated mitigation for finding (Hypothesis: %s)", f.HypothesisID),
 			Approved:         false,
+			ProposedBy:       autonomousProposer,
 		})
 	}
 
 	return plan, nil
 }
 
-// ExecuteAction executes a specific response action.
-// If RequiresApproval is true and Approved is false, returns error unless valid approver is provided.
-// Marks Approved = true, records execution.
+// ExecuteAction executes a specific response action — FAIL-CLOSED (C1).
+// Yüksek-etkili bir yanıt aksiyonu YALNIZ şu koşullar hep birlikte sağlanırsa
+// yürütülür: (1) tenant kimliği boş değil; (2) boş-olmayan bir onaylayan var;
+// (3) onaylayan, aksiyonu öneren kimlikten FARKLI (dual-control / dört-göz);
+// (4) KANONİK yetki kapısı (authz/secgateway/privman) enjekte edilmiş VE aksiyonu
+// onaylıyor (onaylayan rolü + tenant eşleşmesi + blast-radius orada doğrulanır).
+// Herhangi biri eksikse aksiyon yürütülmez. Eski "boş-olmayan herhangi string onay
+// sayılır" davranışı kaldırıldı.
 func (a *ResponseAgent) ExecuteAction(ctx context.Context, action *ResponseAction, approver string) error {
 	if action == nil {
 		return errors.New("action is nil")
 	}
-
-	if action.RequiresApproval {
-		if !action.Approved && approver == "" {
-			return errors.New("action requires approval")
-		}
-		if approver != "" {
-			action.Approved = true
-		}
+	if action.TenantID == "" {
+		return errors.New("tenant required (fail-closed)")
+	}
+	if approver == "" {
+		return errors.New("action requires an approver (fail-closed)")
+	}
+	if approver == action.ProposedBy {
+		return errors.New("dual-control: approver must differ from the proposing agent")
+	}
+	// Kanonik yetki kapısı ZORUNLU — simülasyon/string-onay yeterli değil.
+	if a.authz == nil {
+		return errors.New("authorization gate not configured (fail-closed)")
+	}
+	if err := a.authz.AuthorizeResponse(ctx, *action, approver); err != nil {
+		return fmt.Errorf("authorization denied: %w", err)
 	}
 
-	// Aksiyon simülasyonu
+	action.Approved = true
+	action.ApprovedBy = approver
 	action.ExecutedAt = time.Now().UTC()
-
 	return nil
 }
