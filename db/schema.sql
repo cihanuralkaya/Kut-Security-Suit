@@ -419,6 +419,12 @@ CREATE TABLE audit_log (
 );
 CREATE INDEX idx_audit_admin  ON audit_log (admin_id, created_at DESC);
 CREATE INDEX idx_audit_target ON audit_log (target_type, target_id);
+-- Mevcut kurulum için migrasyon (H2): tenant_id sütunu tenant-öncesi sürümlerde
+-- YOKTU; eklenmezse WriteAudit/VerifyAuditChain sorguları (SELECT ... tenant_id)
+-- hata verir ve denetim yazımı fail-closed durur. DEFAULT '' ile eklenir;
+-- AuditChainHash boş tenant_id'yi tenant-öncesi biçimle hash'lediğinden (bkz.
+-- security/audithash.go) mevcut zincir re-hash GEREKTİRMEDEN doğrulanır.
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(63) NOT NULL DEFAULT '';
 
 -- ---------------------------------------------------------------------------
 -- ÇİFT-KONTROL (DÖRT-GÖZ) BEKLEYEN WIPE TALEPLERİ
