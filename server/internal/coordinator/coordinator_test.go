@@ -2,7 +2,10 @@ package coordinator
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"testing"
+	"time"
 
 	"kut.corp/suite/server/internal/commandplane"
 	"kut.corp/suite/server/internal/controlplane"
@@ -15,18 +18,20 @@ func (m *mockControlStore) AuthenticateAdmin(ctx context.Context, email, passwor
 	return controlplane.AdminUser{}, nil
 }
 
-type mockCommandStore struct{}
+// mockCommandSink implements commandplane.GuardedCommandSink (the guarded boundary
+// that would, in production, enqueue through privman/GuardedExecutor).
+type mockCommandSink struct{}
 
-func (m *mockCommandStore) EnqueueCommand(ctx context.Context, deviceID string, cmdType commandplane.CommandType, issuedBy string, params map[string]any) (string, error) {
-	return "cmd-1", nil
+func (m *mockCommandSink) DispatchSigned(ctx context.Context, env commandplane.SignedCommandEnvelope) (string, error) {
+	return env.CommandID, nil
 }
 
-func (m *mockCommandStore) GetPendingCommands(ctx context.Context, deviceID string) ([]commandplane.CommandRecord, error) {
-	return nil, nil
-}
-
-func (m *mockCommandStore) AckCommand(ctx context.Context, commandID string, status commandplane.CommandState, detail string) error {
+func (m *mockCommandSink) AckResult(ctx context.Context, commandID string, status commandplane.CommandState, detail string) error {
 	return nil
+}
+
+func (m *mockCommandSink) GetPendingCommands(ctx context.Context, deviceID string) ([]commandplane.CommandRecord, error) {
+	return nil, nil
 }
 
 type mockCommandAuthz struct{}
@@ -43,7 +48,12 @@ func (m *mockDetector) Evaluate(ctx context.Context, evt any) (bool, error) {
 
 func TestFabricCoordinator_Lifecycle(t *testing.T) {
 	control := controlplane.New(nil, nil, &mockControlStore{})
-	cmd := commandplane.NewPlane(&mockCommandStore{}, &mockCommandAuthz{})
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("ed25519 keygen: %v", err)
+	}
+	signer := commandplane.NewCommandSigner(priv, 5*time.Minute)
+	cmd := commandplane.NewPlane(&mockCommandSink{}, &mockCommandAuthz{}, signer)
 	telem := telemetryplane.New(nil, nil, nil)
 
 	coord := New(control, telem, cmd)
