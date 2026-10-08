@@ -166,3 +166,69 @@ func FuzzAuthorize(f *testing.F) {
 		}, Action(action))
 	})
 }
+
+func TestRateLimitEnforcement(t *testing.T) {
+	e := New(&Policy{
+		Allowed:      Selector{Tenants: []string{"t1"}},
+		Actions:      map[Action]bool{ActionWipe: true},
+		RateLimitRPS: 2, // 2 requests per second
+	})
+
+	// First two should pass
+	d1 := dec(t, e, Target{Tenant: "t1"}, ActionWipe)
+	if !d1.Allowed {
+		t.Errorf("İlk istek izinli olmalı: %+v", d1)
+	}
+
+	d2 := dec(t, e, Target{Tenant: "t1"}, ActionWipe)
+	if !d2.Allowed {
+		t.Errorf("İkinci istek izinli olmalı: %+v", d2)
+	}
+
+	// Third should fail due to rate limit
+	d3 := dec(t, e, Target{Tenant: "t1"}, ActionWipe)
+	if d3.Allowed || d3.Reason != "rate limit aşıldı" {
+		t.Errorf("Üçüncü istek rate limit'e takılmalı: %+v", d3)
+	}
+}
+
+func TestNoRateLimit(t *testing.T) {
+	e := New(&Policy{
+		Allowed:      Selector{Tenants: []string{"t1"}},
+		Actions:      map[Action]bool{ActionWipe: true},
+		RateLimitRPS: 0, // Sınırsız
+	})
+
+	for i := 0; i < 5; i++ {
+		d := dec(t, e, Target{Tenant: "t1"}, ActionWipe)
+		if !d.Allowed {
+			t.Errorf("Sınırsız rate limit izin vermeli (iterasyon %d): %+v", i, d)
+		}
+	}
+}
+
+func TestRateLimitPerTenantIsolation(t *testing.T) {
+	e := New(nil)
+	e.SetTenantPolicy("t1", &Policy{
+		Allowed:      Selector{Tenants: []string{"t1"}},
+		RateLimitRPS: 1,
+	})
+	e.SetTenantPolicy("t2", &Policy{
+		Allowed:      Selector{Tenants: []string{"t2"}},
+		RateLimitRPS: 1,
+	})
+
+	// t1 uses its 1 token
+	if d := dec(t, e, Target{Tenant: "t1"}, ActionPassiveScan); !d.Allowed {
+		t.Errorf("t1 ilk istek izinli olmalı")
+	}
+	// t1 second request fails
+	if d := dec(t, e, Target{Tenant: "t1"}, ActionPassiveScan); d.Allowed {
+		t.Errorf("t1 ikinci istek reddedilmeli")
+	}
+
+	// t2 should still have its token (isolation)
+	if d := dec(t, e, Target{Tenant: "t2"}, ActionPassiveScan); !d.Allowed {
+		t.Errorf("t2 ilk istek izolasyon sayesinde izinli olmalı")
+	}
+}

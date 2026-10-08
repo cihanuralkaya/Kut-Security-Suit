@@ -4,7 +4,9 @@ package config
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -130,6 +132,11 @@ func Load() (*Config, error) {
 		}
 	}
 
+	// Hassas değerler başarıyla yüklendikten sonra ortamdan temizlenir.
+	// Bu, çekirdek dökümleri (core dumps), alt süreçlerin (subprocess)
+	// ortamı miras alması veya /proc/environ sızıntılarını önler.
+	clearSecretEnv()
+
 	// Zorunlu TLS materyali yolları — erken, anlaşılır hata (yanlış-yapılandırmayı
 	// başlangıçta yakala; demo modu dahil gRPC sunucuları TLS gerektirir).
 	for _, m := range []struct{ name, val string }{
@@ -138,6 +145,21 @@ func Load() (*Config, error) {
 	} {
 		if m.val == "" {
 			return nil, fmt.Errorf("config: %s zorunlu (TLS materyali yolu)", m.name)
+		}
+	}
+
+	// Anahtar dosyası izinleri VARSAYILAN olarak fail-closed zorunludur (M4): güvensiz
+	// izin (ör. 0644) başlatmayı DURDURUR. Operatör bilerek kabul ediyorsa
+	// KUT_ALLOW_INSECURE_KEY_PERMISSIONS=1 ile gevşetebilir (önerilmez → yalnız uyarı).
+	// Önceki sürüm varsayılan uyarı-only idi (fail-open); projenin fail-closed etiğine
+	// aykırıydı. Windows'ta checkKeyPermissions no-op (ACL kullanılır).
+	allowInsecure := os.Getenv("KUT_ALLOW_INSECURE_KEY_PERMISSIONS") == "1"
+	for _, keyPath := range []string{c.CAKeyPath, c.ServerKeyPath} {
+		if err := checkKeyPermissions(keyPath); err != nil {
+			if !allowInsecure {
+				return nil, fmt.Errorf("config: %w — izinleri 0600/0400 yapın ya da bilerek kabul için KUT_ALLOW_INSECURE_KEY_PERMISSIONS=1", err)
+			}
+			log.Printf("[UYARI] Güvensiz anahtar izinleri (KUT_ALLOW_INSECURE_KEY_PERMISSIONS=1 ile kabul edildi): %v", err)
 		}
 	}
 	// Sayısal alanlar makul olmalı (0/negatif değer sessiz hataya yol açar).
@@ -178,6 +200,18 @@ func secretEnv(key string) (string, error) {
 	return "", nil
 }
 
+// clearSecretEnv, sırları (secret) okuduktan sonra ortam değişkenlerinden (environment)
+// temizler (unset). Bu, sürecin belleğinde /proc/environ veya alt süreçlere aktarım
+// üzerinden sızmasını engeller (fail-closed security).
+func clearSecretEnv() {
+	os.Unsetenv("KUT_MASTER_KEY")
+	os.Unsetenv("KUT_MASTER_KEY_FILE")
+	os.Unsetenv("KUT_MASTER_KEY_OLD")
+	os.Unsetenv("KUT_MASTER_KEY_OLD_FILE")
+	os.Unsetenv("KUT_DATABASE_URL")
+	os.Unsetenv("KUT_DATABASE_URL_FILE")
+}
+
 func getenv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -201,4 +235,21 @@ func getdur(key string, def time.Duration) time.Duration {
 		}
 	}
 	return def
+}
+
+// checkKeyPermissions, özel anahtar dosyalarının güvenli izinlere sahip olup olmadığını kontrol eder.
+func checkKeyPermissions(path string) error {
+	if runtime.GOOS == "windows" {
+		// Windows POSIX izinlerini kullanmaz, ACL kullanır.
+		return nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("anahtar dosyası okunamadı (%s): %w", path, err)
+	}
+	mode := info.Mode().Perm()
+	if mode != 0o600 && mode != 0o400 {
+		return fmt.Errorf("dosya izinleri çok açık: %s (beklenen 0600 veya 0400, mevcut %04o)", path, mode)
+	}
+	return nil
 }

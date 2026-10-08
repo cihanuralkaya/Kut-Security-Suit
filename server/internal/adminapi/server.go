@@ -2948,7 +2948,7 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request, admin
 	for i := len(rows) - 1; i >= 0; i-- {
 		a := rows[i]
 		entries = append(entries, auditexport.Entry{
-			Admin: a.AdminEmail, Action: a.Action,
+			TenantID: tenant, Admin: a.AdminEmail, Action: a.Action,
 			TargetType: a.TargetType, TargetID: a.TargetID, CreatedAt: a.CreatedAt,
 		})
 	}

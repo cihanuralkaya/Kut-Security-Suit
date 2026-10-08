@@ -8,6 +8,7 @@ package telemetryschema
 
 import (
 	"encoding/json"
+	"strings"
 
 	"kut.corp/suite/server/internal/model"
 )
@@ -93,12 +94,25 @@ func severityID(sev string) (int, string) {
 	}
 }
 
-// ToOCSF, tek bir kanonik olayı OCSF Detection Finding'e eşler. e kopya olarak alınır;
+func classifyEvent(category string) (int, string, int, string, int, int, string) {
+	switch strings.ToUpper(category) {
+	case "PROCESS":
+		return 1, "System Activity", 1007, "Process Activity", 100701, 1, "Create"
+	case "NETWORK_CONN", "NETWORK_DISCOVERY":
+		return 4, "Network Activity", 4001, "Network Activity", 400101, 1, "Open"
+	default:
+		return categoryUID, categoryName, classUID, className, typeUID, activityID, activityName
+	}
+}
+
+// ToOCSF, tek bir kanonik olayı OCSF biçimine eşler. e kopya olarak alınır;
 // EventID boşsa içerik-adresli kimlik türetilir (çağıranın kopyası değişmez) ve hem
 // metadata.uid hem finding_info.uid'de kullanılır → OCSF çıktısı yinelenebilir/dedup-dostu.
 func ToOCSF(e model.Event, product Product) Event {
 	id := e.EnsureID() // yerel kopya üzerinde; kararlı içerik-adresli kimlik
 	sevID, sevName := severityID(e.Severity)
+
+	catUID, catName, clsUID, clsName, typUID, actID, actName := classifyEvent(e.Category)
 
 	title := e.EventType
 	if title == "" {
@@ -109,9 +123,9 @@ func ToOCSF(e model.Event, product Product) Event {
 	}
 
 	o := Event{
-		CategoryUID: categoryUID, CategoryName: categoryName,
-		ClassUID: classUID, ClassName: className,
-		TypeUID: typeUID, ActivityID: activityID, ActivityName: activityName,
+		CategoryUID: catUID, CategoryName: catName,
+		ClassUID: clsUID, ClassName: clsName,
+		TypeUID: typUID, ActivityID: actID, ActivityName: actName,
 		Time:       e.OccurredAt.UnixMilli(),
 		SeverityID: sevID, Severity: sevName,
 		Message: e.Message,
