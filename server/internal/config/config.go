@@ -148,13 +148,18 @@ func Load() (*Config, error) {
 		}
 	}
 
-	strictMode := os.Getenv("KUT_STRICT_KEY_PERMISSIONS") == "1"
+	// Anahtar dosyası izinleri VARSAYILAN olarak fail-closed zorunludur (M4): güvensiz
+	// izin (ör. 0644) başlatmayı DURDURUR. Operatör bilerek kabul ediyorsa
+	// KUT_ALLOW_INSECURE_KEY_PERMISSIONS=1 ile gevşetebilir (önerilmez → yalnız uyarı).
+	// Önceki sürüm varsayılan uyarı-only idi (fail-open); projenin fail-closed etiğine
+	// aykırıydı. Windows'ta checkKeyPermissions no-op (ACL kullanılır).
+	allowInsecure := os.Getenv("KUT_ALLOW_INSECURE_KEY_PERMISSIONS") == "1"
 	for _, keyPath := range []string{c.CAKeyPath, c.ServerKeyPath} {
 		if err := checkKeyPermissions(keyPath); err != nil {
-			if strictMode {
-				return nil, fmt.Errorf("config: %w", err)
+			if !allowInsecure {
+				return nil, fmt.Errorf("config: %w — izinleri 0600/0400 yapın ya da bilerek kabul için KUT_ALLOW_INSECURE_KEY_PERMISSIONS=1", err)
 			}
-			log.Printf("[UYARI] Güvensiz anahtar izinleri (KUT_STRICT_KEY_PERMISSIONS=1 ile zorunlu yapılabilir): %v", err)
+			log.Printf("[UYARI] Güvensiz anahtar izinleri (KUT_ALLOW_INSECURE_KEY_PERMISSIONS=1 ile kabul edildi): %v", err)
 		}
 	}
 	// Sayısal alanlar makul olmalı (0/negatif değer sessiz hataya yol açar).

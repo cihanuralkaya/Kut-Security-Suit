@@ -175,15 +175,15 @@ func TestLoadStrictKeyPermissions(t *testing.T) {
 	}
 	t.Setenv("KUT_SERVER_KEY", serverPath)
 
-	// Varsayılan: uyarı verir ama hata dönmez
-	t.Setenv("KUT_STRICT_KEY_PERMISSIONS", "")
-	if _, err := Load(); err != nil {
-		t.Fatalf("strict mod kapalıyken hata dönmemeli: %v", err)
+	// Varsayılan (M4): fail-closed — güvensiz 0644 anahtar başlatmayı DURDURUR.
+	t.Setenv("KUT_ALLOW_INSECURE_KEY_PERMISSIONS", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("varsayılan fail-closed: güvensiz izinle hata dönmeliydi")
 	}
 
-	// Strict mod açık
-	t.Setenv("KUT_STRICT_KEY_PERMISSIONS", "1")
-	if _, err := Load(); err == nil {
-		t.Fatal("strict mod açıkken hata dönmeliydi")
+	// Opt-out: operatör bilerek kabul ederse yalnız uyarı, boot devam.
+	t.Setenv("KUT_ALLOW_INSECURE_KEY_PERMISSIONS", "1")
+	if _, err := Load(); err != nil {
+		t.Fatalf("opt-out açıkken hata dönmemeli (yalnız uyarı): %v", err)
 	}
 }
