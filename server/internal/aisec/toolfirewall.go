@@ -95,7 +95,11 @@ func (tf *ToolFirewall) AuthorizeToolCall(call ToolCall) (bool, string) {
 	}
 
 	if matchedRule.RequiresDualAuth {
-		return true, "Authorized (Pending Dual Auth Approval)"
+		// FAIL-CLOSED (M3): dual-auth gerektiren bir tool, bu TEK çağrıyla
+		// yetkilendirilemez. İkinci-onay ayrı bir katmanda sağlanana dek REDDEDİLİR.
+		// Önceki sürüm bool=true ("pending") döndürüyordu → yalnız bool'a bakan
+		// çağıran ikinci-onay olmadan devam ediyordu (fail-open).
+		return false, "Blocked: tool requires dual-authorization (second approval not satisfied)"
 	}
 
 	return true, "Authorized"

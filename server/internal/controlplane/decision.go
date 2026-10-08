@@ -4,9 +4,34 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
+
+// highImpactActions, SUNUCU-TARAFI yüksek-etkili (yıkıcı) kabul edilen eylem
+// adlarıdır. Çağıranın beyan ettiği ActionImpact etiketine GÜVENİLMEZ: bu adlar her
+// zaman "destructive" muamelesi görür. Aksi halde bir saldırgan yıkıcı bir eylemi
+// ActionImpact="read"+RiskScore=0 ile etiketleyip OutcomePermit alabilirdi (M3).
+var highImpactActions = map[string]bool{
+	"wipe": true, "erase": true, "erasedevice": true,
+	"isolate": true, "isolateendpoint": true,
+	"kill": true, "killprocess": true,
+	"quarantine": true, "quarantinefile": true, "quarantinedevice": true,
+	"revoke": true, "revokesession": true, "revokecerts": true, "revokedevice": true,
+	"blockhash": true, "lock": true, "restart": true, "shutdown": true,
+}
+
+// deriveImpact, eylem adından gerçek etki sınıfını türetir. Bilinen yüksek-etkili
+// ad → "destructive" (beyan ne olursa olsun). Bilinmeyen ad → beyan edilen etiket
+// (kapsam kontrolü ayrıca geçersiz etiketi reddeder).
+func deriveImpact(actionName, claimed string) string {
+	key := strings.ToLower(strings.ReplaceAll(actionName, "_", ""))
+	if highImpactActions[key] {
+		return "destructive"
+	}
+	return claimed
+}
 
 // DecisionOutcome represents the result of a security decision.
 type DecisionOutcome string
@@ -57,6 +82,11 @@ func NewDecisionEngine() *DecisionEngine {
 func (e *DecisionEngine) Evaluate(id string, ctx SecurityContext) SecurityDecision {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	// Çağıranın ActionImpact beyanına güvenme: eylem adından sunucu-tarafı türet
+	// (yıkıcı eylemin "read" etiketlenip Permit almasını önler). Türetilen etki
+	// kayda (attestation) da işlenir.
+	ctx.ActionImpact = deriveImpact(ctx.ActionName, ctx.ActionImpact)
 
 	decision := SecurityDecision{
 		ID:          id,

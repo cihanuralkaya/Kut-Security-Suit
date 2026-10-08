@@ -82,6 +82,29 @@ func TestDecisionEngine_Evaluate_OutOfScopeImpact(t *testing.T) {
 	}
 }
 
+// TestDecisionEngine_Evaluate_MislabeledDestructive, yıkıcı bir eylemin (ör. "wipe")
+// ActionImpact="read"+RiskScore=0 ile etiketlenerek OutcomePermit almasının artık
+// MÜMKÜN OLMADIĞINI doğrular — impact eylem adından sunucu-tarafı türetilir (M3).
+func TestDecisionEngine_Evaluate_MislabeledDestructive(t *testing.T) {
+	engine := NewDecisionEngine()
+	ctx := SecurityContext{
+		TenantID:     "tenant-1",
+		ActorID:      "actor-1",
+		ActionName:   "wipe",   // yıkıcı eylem
+		ActionImpact: "read",   // çağıranın yanlış/düşürülmüş beyanı
+		RiskScore:    0.0,      // sıfır risk beyanı
+	}
+
+	decision := engine.Evaluate("dec-mislabel", ctx)
+
+	if decision.Outcome == OutcomePermit {
+		t.Fatal("yıkıcı eylem 'read' etiketlense bile Permit ALMAMALI (M3 bypass)")
+	}
+	if decision.Context.ActionImpact != "destructive" {
+		t.Errorf("etki sunucu-tarafı 'destructive'e türetilmeli, alınan %s", decision.Context.ActionImpact)
+	}
+}
+
 func TestDecisionEngine_AttestationHash(t *testing.T) {
 	engine := NewDecisionEngine()
 	ctx := SecurityContext{
