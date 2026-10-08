@@ -68,3 +68,28 @@ func TestCommandSigningAndVerification(t *testing.T) {
 		t.Fatal("expected failure on tampered command type, got nil")
 	}
 }
+
+// TestCommandReplayRejected, geçerli bir zarfın TTL penceresi içinde yeniden
+// sunulduğunda (aynı nonce) reddedildiğini doğrular (SEC-005 anti-replay / M2).
+func TestCommandReplayRejected(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	signer := NewCommandSigner(priv, 5*time.Minute)
+	verifier := NewCommandVerifier(pub)
+	now := time.Now()
+	req := CommandRequest{DeviceID: "dev-1", Type: TypeQuarantine, IssuedBy: "op@corp"}
+
+	env, err := signer.Sign("cmd-replay", req, now)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if err := verifier.Verify(env, "dev-1", now.Add(time.Minute)); err != nil {
+		t.Fatalf("ilk doğrulama başarılı olmalı: %v", err)
+	}
+	// Aynı zarf TTL içinde tekrar sunulur → replay reddi.
+	if err := verifier.Verify(env, "dev-1", now.Add(2*time.Minute)); err == nil {
+		t.Fatal("TTL içinde tekrar sunulan zarf (aynı nonce) reddedilmeliydi")
+	}
+}
