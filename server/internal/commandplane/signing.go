@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -128,13 +129,40 @@ func (s *CommandSigner) Sign(cmdID string, req CommandRequest, now time.Time) (S
 }
 
 // CommandVerifier verifies signed command envelopes using an Ed25519 public key.
+// Anti-replay (SEC-005): her başarıyla doğrulanan nonce TÜKETİLİR (kaydedilir);
+// aynı nonce TTL penceresi içinde yeniden sunulursa reddedilir. Böylece yakalanan
+// geçerli bir zarf süresi dolana dek tekrar oynatılamaz (önceki sürüm yalnız
+// nonce'un boş-olmadığını kontrol ediyor, tüketmiyordu).
 type CommandVerifier struct {
 	pubKey ed25519.PublicKey
+	mu     sync.Mutex
+	seen   map[string]time.Time // nonce -> zarf son-geçerlilik; bu ana dek replay reddi
 }
 
 // NewCommandVerifier creates a new CommandVerifier.
 func NewCommandVerifier(pubKey ed25519.PublicKey) *CommandVerifier {
-	return &CommandVerifier{pubKey: pubKey}
+	return &CommandVerifier{pubKey: pubKey, seen: make(map[string]time.Time)}
+}
+
+// consumeNonce, nonce'u anti-replay deposuna işler. Daha önce görülmüş ve henüz
+// süresi dolmamışsa replay'dir (hata). Fırsatçı budama ile süresi geçmiş nonce'lar
+// temizlenir (sınırsız bellek büyümesini önler).
+func (v *CommandVerifier) consumeNonce(nonce string, expiresAt, now time.Time) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.seen == nil {
+		v.seen = make(map[string]time.Time)
+	}
+	if exp, ok := v.seen[nonce]; ok && now.Before(exp) {
+		return errors.New("replay detected: nonce already consumed")
+	}
+	for n, exp := range v.seen { // budama
+		if !now.Before(exp) {
+			delete(v.seen, n)
+		}
+	}
+	v.seen[nonce] = expiresAt
+	return nil
 }
 
 // Verify validates that the envelope signature is authentic, targeting the expected device,
@@ -159,6 +187,12 @@ func (v *CommandVerifier) Verify(env SignedCommandEnvelope, expectedDeviceID str
 	signBytes := CanonicalSigningBytes(env.CommandID, env.DeviceID, env.Type, env.IssuedBy, env.Params, env.Nonce, env.IssuedAt, env.ExpiresAt)
 	if !ed25519.Verify(v.pubKey, signBytes, env.Signature) {
 		return errors.New("cryptographic signature verification failed")
+	}
+
+	// İmza geçerli → nonce'u tüket (anti-replay). Yalnız doğrulanmış zarflar
+	// deposu kirletir; reddedilen imza replay-state'i etkilemez.
+	if err := v.consumeNonce(env.Nonce, env.ExpiresAt, now); err != nil {
+		return err
 	}
 
 	return nil
