@@ -145,7 +145,7 @@ KUT should explicitly study and learn from:
 - Velociraptor
 - osquery
 - Zeek
-- Suricata
+- network IDS engine
 - OpenSearch
 - ClickHouse
 - OCSF
@@ -1305,9 +1305,9 @@ A SOC analyst should not have to know which database contains each piece of evid
 
 Support:
 
-- Sigma,
+- open detection-rule format,
 - YARA,
-- Suricata,
+- network signature rules,
 - custom KUT rules,
 - behavioral rules,
 - statistical detection,
@@ -1762,9 +1762,9 @@ Own:
 
 Own:
 
-- Sigma,
+- open detection-rule format,
 - YARA,
-- Suricata,
+- network signature rules,
 - behavior detection,
 - ATT&CK mappings,
 - detection-as-code,
@@ -2102,7 +2102,7 @@ Implement:
 
 ```
 rule engine, behavior engine, ML detection,
-Sigma, YARA, network rules, identity rules, cloud rules
+open detection rules, YARA, network rules, identity rules, cloud rules
 ```
 
 Build detection-as-code CI.
@@ -2436,7 +2436,7 @@ Expose:
 
 ```
 REST, gRPC, WebSocket, event streaming, webhooks,
-OCSF, STIX/TAXII, OpenTelemetry, Sigma, YARA
+OCSF, STIX/TAXII, OpenTelemetry, open detection rules, YARA
 ```
 
 Avoid unnecessary proprietary lock-in.
