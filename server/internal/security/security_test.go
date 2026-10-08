@@ -5,8 +5,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/binary"
 	"encoding/pem"
 	"math/big"
 	"testing"
@@ -174,5 +176,40 @@ func TestAuditChainHashIncludesTenant(t *testing.T) {
 	hash3 := AuditChainHash(prev, "tenantA", adminRef, action, targetType, targetID, at)
 	if !bytes.Equal(hash1, hash3) {
 		t.Fatal("aynı girdiler aynı hash'i üretmeli")
+	}
+}
+
+// TestAuditChainHashEmptyTenantBackwardCompatible, boş tenant_id'nin tenant-öncesi
+// (tenant alanı hiç yazılmayan) hash biçimiyle BİREBİR aynı baytları ürettiğini
+// doğrular. Böylece audit_log'a tenant_id sütunu eklendikten (ADD COLUMN DEFAULT '')
+// sonra mevcut tek-tenant denetim zincirleri re-hash GEREKMEDEN doğrulanabilir (H2).
+func TestAuditChainHashEmptyTenantBackwardCompatible(t *testing.T) {
+	prev := []byte("prev-hash")
+	adminRef := "admin@test.com"
+	action := "TEST_ACTION"
+	targetType := "device"
+	targetID := "dev-123"
+	at := time.Now().UnixNano()
+
+	got := AuditChainHash(prev, "", adminRef, action, targetType, targetID, at)
+
+	// Eski biçim: tenant alanı HİÇ yok.
+	h := sha256.New()
+	h.Write(prev)
+	writeField(h, adminRef)
+	writeField(h, action)
+	writeField(h, targetType)
+	writeField(h, targetID)
+	var num [8]byte
+	binary.BigEndian.PutUint64(num[:], uint64(at))
+	h.Write(num[:])
+	want := h.Sum(nil)
+
+	if !bytes.Equal(got, want) {
+		t.Fatal("boş tenant_id tenant-öncesi hash biçimiyle eşleşmeli — mevcut zincirler re-hash gerektirmemeli (H2)")
+	}
+	// Dolu tenant farklı hash üretmeli (izolasyon/transplant koruması korunur).
+	if bytes.Equal(got, AuditChainHash(prev, "tenantA", adminRef, action, targetType, targetID, at)) {
+		t.Fatal("dolu tenant_id, boş-tenant hash'inden farklı olmalı")
 	}
 }
