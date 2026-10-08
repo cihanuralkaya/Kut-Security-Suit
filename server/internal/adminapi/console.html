@@ -184,9 +184,14 @@
     overflow-y:auto; width:100%; }
 
   /* ---------- STAT TILES ---------- */
-  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
+  .stats { display:flex; flex-direction:column; gap:16px; }
+  .statgrp-h { font-size:11px; font-weight:650; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--faint); margin:0 0 9px; }
+  .statrow { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
   .stat { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg);
     padding:16px 18px; position:relative; overflow:hidden; box-shadow:var(--shadow-1), var(--hl-top); }
+  .stat > svg.stat-ic { position:absolute; top:13px; right:14px; width:17px; height:17px;
+    color:var(--muted); opacity:.42; }
   .stat::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--accent); }
   .stat.good::before{ background:var(--ok);} .stat.warn::before{ background:var(--warn);} .stat.crit::before{ background:var(--crit);} .stat.info::before{ background:var(--info);}
   .stat .k { font-size:12px; color:var(--muted); letter-spacing:.03em; }
@@ -1628,22 +1633,30 @@
     (state.events||[]).forEach(function(e){
       if((e.severity==="CRITICAL"||e.severity==="HIGH") && e.ack_status!=="RESOLVED") pendingAlerts++;
     });
-    var tiles=[
-      {k:"Toplam cihaz", v:total, cls:""},
-      {k:"Çevrimiçi", v:online+" <small>/ "+total+"</small>", cls:online?"good":""},
-      {k:"Ağ keşfi (olay)", v:disc, cls:disc?"warn":""},
-      {k:"Kritik / yüksek olay", v:crit, cls:crit?"crit":""}
-    ];
-    if(pendingAlerts>0) tiles.push({k:"Bekleyen alarm", v:pendingAlerts, cls:"crit"});
-    if(quar>0) tiles.push({k:"Karantinada", v:quar, cls:"crit"});
     // Uyumsuz cihaz KPI'ı: sunucu-taraflı filo-geneli sayımı (doğru, 200-olay
     // penceresiyle sınırlı değil) tercih et; yoksa istemci-taraflı hesaba düş.
-    // Yalnız >0 ise göster (dikkat çekici).
     var nonComp=(s && typeof s.non_compliant_devices==="number") ? s.non_compliant_devices : nonCompliantCount();
-    if(nonComp>0) tiles.push({k:"Uyumsuz cihaz", v:nonComp, cls:"crit"});
-    $("stats").innerHTML = tiles.map(function(t){
-      return '<div class="stat '+t.cls+'"><div class="k">'+t.k+'</div><div class="v">'+t.v+'</div></div>';
-    }).join("");
+    // İki anlamsal grup (dashboard): Filo durumu · Tehdit & duruş. Koşullu
+    // KPI'lar (karantina/alarm/uyumsuz) yalnız >0 ise dikkat-çekici gösterilir.
+    var fleet=[
+      {k:"Toplam cihaz", v:total, cls:"", ic:"i-devices"},
+      {k:"Çevrimiçi", v:online+" <small>/ "+total+"</small>", cls:online?"good":"", ic:"i-signal"}
+    ];
+    if(quar>0) fleet.push({k:"Karantinada", v:quar, cls:"crit", ic:"i-lock"});
+    var threat=[
+      {k:"Ağ keşfi (olay)", v:disc, cls:disc?"warn":"", ic:"i-radar"},
+      {k:"Kritik / yüksek olay", v:crit, cls:crit?"crit":"", ic:"i-flame"}
+    ];
+    if(pendingAlerts>0) threat.push({k:"Bekleyen alarm", v:pendingAlerts, cls:"crit", ic:"i-shield-alert"});
+    if(nonComp>0) threat.push({k:"Uyumsuz cihaz", v:nonComp, cls:"crit", ic:"i-ban"});
+    function tile(t){
+      return '<div class="stat '+t.cls+'"><svg class="stat-ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#'+t.ic+'"/></svg>'+
+        '<div class="k">'+t.k+'</div><div class="v">'+t.v+'</div></div>';
+    }
+    function grp(label, arr){
+      return '<div class="statgrp"><div class="statgrp-h">'+label+'</div><div class="statrow">'+arr.map(tile).join("")+'</div></div>';
+    }
+    $("stats").innerHTML = grp("Filo durumu", fleet) + grp("Tehdit & duruş", threat);
   }
 
   var SEV_ORDER=["CRITICAL","HIGH","MEDIUM","LOW","INFO"];
