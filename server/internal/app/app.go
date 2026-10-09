@@ -761,6 +761,11 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	if threatIntel != nil {
 		adminAPI.SetThreatIntel(threatIntel) // yüklü IOC'lerden köprülenmiş salt-okunur zenginleştirme
 	}
+	// Otonom maruziyet/ASM ajanı (G1 aktivasyon): deterministik, salt-okunur varlık
+	// taraması (tehlikeli port / cert / bilinen-zafiyetli yazılım). Model gerektirmez →
+	// her zaman güvenle bağlanır. /api/ai/exposure/scan.
+	adminAPI.SetExposureAgent(aiprovider.NewExposureAgent(aiprovider.NewRAGStore(), nil))
+	log.Println("otonom maruziyet/ASM ajanı ETKİN (deterministik, salt-okunur): /api/ai/exposure/scan")
 	// Agent telemetri güven doğrulayıcı (P0-A): KUT_AGENT_KEYS'ten ed25519 anahtarları
 	// kaydet ("agentID:base64pub:tenant,..."). İmzalı telemetri /api/agentsec/telemetry'den
 	// gelir; kayıtsız/geçersiz/replay imza fail-closed reddedilir.

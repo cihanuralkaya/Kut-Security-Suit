@@ -116,6 +116,7 @@ type Server struct {
 	brain          *aibrain.Brain                 // SOC AI brain (fail-open; dış AI yoksa deterministik yola döner)
 	investigator   *aiprovider.InvestigationAgent // otonom soruşturma ajanı (salt-okunur/advisory; nil → uç kapalı)
 	threatIntel    *aiprovider.ThreatIntelAgent   // otonom tehdit-istihbarat ajanı (salt-okunur IOC zenginleştirme; nil → uç kapalı)
+	exposure       *aiprovider.ExposureAgent      // otonom maruziyet/ASM ajanı (salt-okunur varlık tarama; nil → uç kapalı)
 	agentTrust     *aisec.TrustVerifier           // imzalı agent telemetri doğrulayıcı (nil → /api/agentsec/telemetry kapalı)
 	verifyStore    verify.Store                   // remediation-doğrulama check deposu (nil → /api/verify uçları kapalı)
 	verifier       verify.Verifier                // check değerlendirici (nil → run ucu kapalı)
@@ -352,6 +353,10 @@ func (s *Server) SetInvestigator(a *aiprovider.InvestigationAgent) { s.investiga
 // yüklü göstergelerden köprülenir). nil → /api/ai/threatintel/enrich kapalı (available:false).
 func (s *Server) SetThreatIntel(a *aiprovider.ThreatIntelAgent) { s.threatIntel = a }
 
+// SetExposureAgent, otonom maruziyet/ASM ajanını bağlar (salt-okunur: açık port / cert /
+// bilinen-zafiyetli yazılım değerlendirmesi). nil → /api/ai/exposure/scan kapalı.
+func (s *Server) SetExposureAgent(a *aiprovider.ExposureAgent) { s.exposure = a }
+
 // SetAgentTrust, imzalı agent telemetri doğrulayıcısını bağlar (P0-A). nil →
 // /api/agentsec/telemetry kapalı. Bu uç session değil, ed25519 İMZA ile kimlik doğrular.
 func (s *Server) SetAgentTrust(v *aisec.TrustVerifier) { s.agentTrust = v }
@@ -491,6 +496,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/ai/triage", s.authed(s.handleAITriage))
 	mux.HandleFunc("POST /api/ai/investigate", s.authed(s.handleAIInvestigate))
 	mux.HandleFunc("POST /api/ai/threatintel/enrich", s.authed(s.handleAIThreatEnrich))
+	mux.HandleFunc("POST /api/ai/exposure/scan", s.authed(s.handleAIExposureScan))
 	mux.HandleFunc("POST /api/ai/risk", s.authed(s.handleAIRisk))
 	// Session DEĞİL, ed25519 İMZA ile kimlik doğrulanan agent telemetri ucu (P0-A).
 	mux.HandleFunc("POST /api/agentsec/telemetry", s.handleAgentSecTelemetry)
@@ -1807,6 +1813,32 @@ func (s *Server) handleAIThreatEnrich(w http.ResponseWriter, r *http.Request, _ 
 			"matched_families": res.MatchedFamilies,
 		},
 	})
+}
+
+// handleAIExposureScan, bir varlığın maruziyet/ASM taramasını otonom ajanla çalıştırır
+// (SALT-OKUNUR, deterministik: tehlikeli açık port / süresi dolmuş-dolan cert / bilinen-
+// zafiyetli yazılım). FAIL-OPEN: ajan bağlı değilse {available:false}. Varlık bilgileri
+// (port/cert/yazılım) çağırandan gelir (admin-güdümlü tarama).
+func (s *Server) handleAIExposureScan(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		AssetID          string            `json:"asset_id"`
+		OpenPorts        []int             `json:"open_ports"`
+		CertExpiryDays   int               `json:"cert_expiry_days"`
+		SoftwareVersions map[string]string `json:"software_versions"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if s.exposure == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false})
+		return
+	}
+	findings, err := s.exposure.ScanAsset(r.Context(), s.tenantID, req.AssetID, req.OpenPorts, req.CertExpiryDays, req.SoftwareVersions)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"available": true, "findings": findings})
 }
 
 // handleAIRisk, deterministik sinyalleri (ve opsiyonel sekans/graf'ı) AI ile zenginleştirip
