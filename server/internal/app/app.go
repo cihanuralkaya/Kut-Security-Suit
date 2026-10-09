@@ -43,6 +43,7 @@ import (
 	"kut.corp/suite/server/internal/bruteforce"
 	"kut.corp/suite/server/internal/casemgmt"
 	"kut.corp/suite/server/internal/cluster"
+	"kut.corp/suite/server/internal/commandplane"
 	"kut.corp/suite/server/internal/config"
 	"kut.corp/suite/server/internal/connector"
 	"kut.corp/suite/server/internal/connectors"
@@ -55,6 +56,7 @@ import (
 	"kut.corp/suite/server/internal/enroll"
 	"kut.corp/suite/server/internal/entitygraph"
 	"kut.corp/suite/server/internal/eventbus"
+	"kut.corp/suite/server/internal/fabricauthz"
 	"kut.corp/suite/server/internal/iam"
 	"kut.corp/suite/server/internal/incidentcase"
 	"kut.corp/suite/server/internal/ioc"
@@ -616,6 +618,24 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 			mode = "ZORLAMA (enforce)"
 		}
 		log.Printf("Scope/ROE guardrail ETKİN — mod: %s", mode)
+
+		// Komut düzlemi (tam hot-path entegrasyonu): cihaz komutları, mevcut
+		// RBAC/tenant/scope ön-kontrollerinin ÜSTÜNE Ed25519 imza + anti-replay +
+		// kanonik (scope-destekli) authz ekleyen komut düzleminden geçer; gerçek
+		// enqueue kanıtlanmış sınıra delege edilir. Düzlemin authz'si scope motoruna
+		// dayandığından YALNIZ scope ZORLAMA (enforce) modunda bağlanır — denetim
+		// (would-deny) modunda bağlanması advisory redleri sert redde çevirirdi
+		// (davranış değişikliği). KUT_FABRIC_COMMAND_PLANE=0 ile kapatılabilir.
+		if enforce && os.Getenv("KUT_FABRIC_COMMAND_PLANE") != "0" {
+			cmdAuthz := fabricauthz.NewCommandAuthorizer(eng, cfg.TenantID)
+			cmdSigner := commandplane.NewCommandSigner(
+				ed25519.NewKeyFromSeed(security.DeriveKey(cfg.MasterKey, security.LabelCommandSigning)),
+				5*time.Minute, // imzalı zarf geçerlilik/anti-replay penceresi
+			)
+			cmdPlane := commandplane.NewPlane(admin.NewCommandSink(backend), cmdAuthz, cmdSigner)
+			adminSvc.SetCommandPlane(cmdPlane)
+			log.Println("komut düzlemi ETKİN (imza + anti-replay + kanonik authz; hot-path)")
+		}
 	}
 	readSvc := adminread.NewService(backend, cipher)
 	sessions := security.NewSessionSigner(security.DeriveKey(cfg.MasterKey, security.LabelSessionToken))

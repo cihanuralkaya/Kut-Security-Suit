@@ -9,6 +9,9 @@ import (
 const (
 	LabelFieldEncryption = "xdr:field-encryption:v1"
 	LabelBlindIndex      = "xdr:blind-index:v1"
+	// LabelCommandSigning, komut düzlemi Ed25519 imza anahtarının (32 baytlık seed)
+	// türetme etiketidir — ana anahtardan amaç-ayrımlı, diske yazılmaz, rotasyonla döner.
+	LabelCommandSigning = "xdr:command-signing:v1"
 )
 
 // DeriveKey, ana anahtardan (master key) belirli bir amaç için 32 baytlık bir
