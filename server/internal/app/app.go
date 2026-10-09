@@ -252,6 +252,32 @@ func loadIoC(path string) (*ioc.Set, error) {
 	return ioc.LoadFile(path)
 }
 
+// iocConfToScore, IOC güven etiketini (low|medium|high|critical) tehdit-istihbarat
+// itibar skoruna (0..1) çevirir. Boş/bilinmeyen = yüklü feed'de olduğundan known-bad
+// varsayılanı (0.8; EnrichIOC eşiği 0.7 → malicious). low açıkça eşiğin altında (0.4).
+func iocConfToScore(conf string) float64 {
+	switch strings.ToLower(strings.TrimSpace(conf)) {
+	case "low":
+		return 0.4
+	case "medium":
+		return 0.6
+	case "high":
+		return 0.85
+	case "critical":
+		return 0.97
+	default:
+		return 0.8
+	}
+}
+
+// tagsFromSource, IOC kaynağını (feed adı) etikete çevirir (boşsa nil).
+func tagsFromSource(src string) []string {
+	if s := strings.TrimSpace(src); s != "" {
+		return []string{"src:" + s}
+	}
+	return nil
+}
+
 // getdurEnv, süre biçimli bir ortam değişkenini okur (yoksa/geçersizse def).
 func getdurEnv(k string, def time.Duration) time.Duration {
 	if v := os.Getenv(k); v != "" {
@@ -423,6 +449,9 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	// KUT_ALERT_MIN_SEVERITY (varsayılan HIGH).
 	alertingOn, iocCount, autoRespOn, siemOn := false, 0, false, false
 	var notifiers []notify.Notifier
+	// Otonom tehdit-istihbarat ajanı (G1 aktivasyon): yüklü IOC setinden köprülenir,
+	// adminAPI oluşturulduktan SONRA bağlanır (salt-okunur zenginleştirme).
+	var threatIntel *aiprovider.ThreatIntelAgent
 	// socAlerter, sunucu-taraflı arka plan tespitlerinin (beacon, yanal hareket) de
 	// SOC uyarı yoluna (webhook/SIEM) ulaşması için paylaşılan alerter'dır. Yapılandırma
 	// yoksa noop (boş Multi). Nihai (sarılmış) alerter aşağıda atanır.
@@ -529,6 +558,20 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		agentHandler.SetIoCSet(set)
 		iocCount = set.Size()
 		log.Printf("tehdit istihbaratı: %d IoC göstergesi yüklendi", iocCount)
+
+		// Otonom tehdit-istihbarat ajanını yüklü göstergelerden KÖPRÜLE (G1 aktivasyon):
+		// düz IOC eşleşmesinden zengin (itibar skoru + eşleşen aile) salt-okunur zenginleştirme.
+		// Not: başlangıçta tohumlanır; IOC hot-reload'da ajan v1'de güncellenmez (sonraki dilim).
+		threatIntel = aiprovider.NewThreatIntelAgent()
+		set.Each(func(v string, ind ioc.Indicator) {
+			_ = threatIntel.IngestIndicator(aiprovider.ThreatIndicator{
+				Value:           v,
+				MalwareFamily:   ind.Label,
+				ConfidenceScore: iocConfToScore(ind.Confidence),
+				Tags:            tagsFromSource(ind.Source),
+			})
+		})
+		log.Printf("otonom tehdit-istihbarat ajanı ETKİN: %d gösterge köprülendi (/api/ai/threatintel/enrich)", iocCount)
 
 		// Canlı hot-reload: KUT_IOC_RELOAD_INTERVAL ayarlıysa (ör. 5m) IoC dosyası
 		// periyodik yeniden okunur ve göstergeler SUNUCU YENİDEN BAŞLATILMADAN
@@ -715,6 +758,9 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		aiprovider.NewDataDLP(),
 	))
 	log.Println("otonom soruşturma ajanı ETKİN (deterministik yerel, salt-okunur): /api/ai/investigate")
+	if threatIntel != nil {
+		adminAPI.SetThreatIntel(threatIntel) // yüklü IOC'lerden köprülenmiş salt-okunur zenginleştirme
+	}
 	// Agent telemetri güven doğrulayıcı (P0-A): KUT_AGENT_KEYS'ten ed25519 anahtarları
 	// kaydet ("agentID:base64pub:tenant,..."). İmzalı telemetri /api/agentsec/telemetry'den
 	// gelir; kayıtsız/geçersiz/replay imza fail-closed reddedilir.
