@@ -66,10 +66,12 @@ func TestAuthenticator_UnknownAccountConstantTime(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_LookupErrorPropagates(t *testing.T) {
+func TestAuthenticator_LookupErrorTreatedAsInvalid(t *testing.T) {
+	// LookupAdmin hatası (geçici altyapı) sabit-zaman + AuthInvalid ile ele alınır
+	// (hesap-varlığı sızdırılmaz; mevcut login davranışı korunur).
 	auth := NewAuthenticator(fakeCreds{err: errors.New("db down")}, nil, mustHash(t, "dummy"), nil)
-	if _, err := auth.Authenticate(context.Background(), "a@x", "p", ""); err == nil {
-		t.Error("altyapı hatası yukarı taşınmalıydı")
+	if r, err := auth.Authenticate(context.Background(), "a@x", "p", ""); err != nil || r.Status != AuthInvalid {
+		t.Errorf("arama hatası AuthInvalid (err=nil) vermeli: %+v err=%v", r, err)
 	}
 }
 
