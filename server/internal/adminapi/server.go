@@ -118,6 +118,7 @@ type Server struct {
 	threatIntel    *aiprovider.ThreatIntelAgent   // otonom tehdit-istihbarat ajanı (salt-okunur IOC zenginleştirme; nil → uç kapalı)
 	exposure       *aiprovider.ExposureAgent      // otonom maruziyet/ASM ajanı (salt-okunur varlık tarama; nil → uç kapalı)
 	hunting        *aiprovider.HuntingAgent       // otonom tehdit-avı ajanı (salt-okunur graf-tabanlı av; nil → uç kapalı)
+	detection      *aiprovider.DetectionAgent     // otonom tespit-mühendisliği ajanı (ADVISORY taslak kural; motora UYGULANMAZ; nil → uç kapalı)
 	agentTrust     *aisec.TrustVerifier           // imzalı agent telemetri doğrulayıcı (nil → /api/agentsec/telemetry kapalı)
 	verifyStore    verify.Store                   // remediation-doğrulama check deposu (nil → /api/verify uçları kapalı)
 	verifier       verify.Verifier                // check değerlendirici (nil → run ucu kapalı)
@@ -362,6 +363,11 @@ func (s *Server) SetExposureAgent(a *aiprovider.ExposureAgent) { s.exposure = a 
 // nadir/şüpheli kenar taraması). nil → /api/ai/hunt kapalı.
 func (s *Server) SetHuntingAgent(a *aiprovider.HuntingAgent) { s.hunting = a }
 
+// SetDetectionAgent, otonom tespit-mühendisliği ajanını bağlar (ADVISORY: örnek sinyallerden
+// taslak tespit kuralı üretir + doğrular). Taslak motora UYGULANMAZ — analist inceler.
+// nil → /api/ai/detection/draft kapalı.
+func (s *Server) SetDetectionAgent(a *aiprovider.DetectionAgent) { s.detection = a }
+
 // SetAgentTrust, imzalı agent telemetri doğrulayıcısını bağlar (P0-A). nil →
 // /api/agentsec/telemetry kapalı. Bu uç session değil, ed25519 İMZA ile kimlik doğrular.
 func (s *Server) SetAgentTrust(v *aisec.TrustVerifier) { s.agentTrust = v }
@@ -503,6 +509,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/ai/threatintel/enrich", s.authed(s.handleAIThreatEnrich))
 	mux.HandleFunc("POST /api/ai/exposure/scan", s.authed(s.handleAIExposureScan))
 	mux.HandleFunc("POST /api/ai/hunt", s.authed(s.handleAIHunt))
+	mux.HandleFunc("POST /api/ai/detection/draft", s.authed(s.handleAIDetectionDraft))
 	mux.HandleFunc("POST /api/ai/risk", s.authed(s.handleAIRisk))
 	// Session DEĞİL, ed25519 İMZA ile kimlik doğrulanan agent telemetri ucu (P0-A).
 	mux.HandleFunc("POST /api/agentsec/telemetry", s.handleAgentSecTelemetry)
@@ -1874,6 +1881,40 @@ func (s *Server) handleAIHunt(w http.ResponseWriter, r *http.Request, _ string) 
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"available": true, "hypotheses": hyps, "findings": findings})
+}
+
+// handleAIDetectionDraft, örnek sinyallerden bir TASLAK tespit kuralı üretir ve doğrular
+// (ADVISORY — taslak detect motoruna UYGULANMAZ; analist inceleyip ince-ayar yapar).
+// FAIL-OPEN: ajan bağlı değilse {available:false}. hypothesis_id zorunlu.
+func (s *Server) handleAIDetectionDraft(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		HypothesisID   string   `json:"hypothesis_id"`
+		Title          string   `json:"title"`
+		MITRETactic    string   `json:"mitre_tactic"`
+		MITRETechnique string   `json:"mitre_technique"`
+		Description    string   `json:"description"`
+		SampleSignals  []string `json:"sample_signals"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if s.detection == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false})
+		return
+	}
+	h := aiprovider.HuntHypothesis{
+		ID: req.HypothesisID, Title: req.Title, MITRETactic: req.MITRETactic,
+		MITRETechnique: req.MITRETechnique, Description: req.Description,
+	}
+	proposal, err := s.detection.DraftRuleFromHypothesis(r.Context(), h, req.SampleSignals)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "hypothesis_id gerekli")
+		return
+	}
+	valid, issues := s.detection.ValidateProposal(proposal)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"available": true, "valid": valid, "issues": issues, "applied": false, "proposal": proposal,
+	})
 }
 
 // handleAIRisk, deterministik sinyalleri (ve opsiyonel sekans/graf'ı) AI ile zenginleştirip

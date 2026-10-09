@@ -41,21 +41,69 @@ func (a *DetectionAgent) DraftRuleFromHypothesis(ctx context.Context, h HuntHypo
 		return nil, errors.New("hypothesis ID cannot be empty")
 	}
 
-	// Bu kısımda ModelRouter üzerinden kural oluşturma (LLM) mantığı çalıştırılır.
-	// Şimdilik varsayılan/simüle edilmiş bir proposal dönüyoruz.
+	// Deterministik taslak: örnek sinyallerden GERÇEKTEN eşleşen bir regex türetilir
+	// (eski `.*malicious.*` yer-tutucusu örnekleri yok sayıyordu — aktivasyon-bulgusu).
+	// ADVISORY: taslak kurala DÖNÜŞMEZ; analist inceler/ince-ayar yapar (DRAFT).
+	pattern := patternFromSignals(sampleSignals)
+	if pattern == "" {
+		pattern = `(?i)` + regexp.QuoteMeta(strings.TrimSpace(h.MITRETechnique)) // geri-düşüş: teknik imzası
+	}
 	proposal := &DetectionProposal{
 		ID:             fmt.Sprintf("rule-%s", h.ID),
 		RuleName:       fmt.Sprintf("Detect %s", h.Title),
 		MITRETactic:    h.MITRETactic,
 		MITRETechnique: h.MITRETechnique,
-		Category:       "process",
-		Pattern:        `.*malicious.*`,
+		Category:       "", // kategori-bağımsız (detect message-regex deseni)
+		Pattern:        pattern,
 		Severity:       "high",
-		Confidence:     0.85,
-		Rationale:      "Based on hypothesis: " + h.Description,
+		Confidence:     0.6, // deterministik taslak: orta güven (analist doğrulamalı)
+		Rationale:      fmt.Sprintf("%d örnek sinyalden türetildi; hipotez: %s", len(sampleSignals), h.Description),
 	}
 
 	return proposal, nil
+}
+
+// patternFromSignals, örnek sinyallerden deterministik bir regex türetir: TÜM örneklerde
+// ortak, ayırt edici (len>=4) token'ları İLK örnekteki SIRAYLA .* ile bağlar (sıra korunur
+// → üretilen desen örnekleri gerçekten eşler). Örnek yoksa boş döner.
+func patternFromSignals(samples []string) string {
+	if len(samples) == 0 {
+		return ""
+	}
+	common := tokenSet(samples[0])
+	for _, s := range samples[1:] {
+		ts := tokenSet(s)
+		for t := range common {
+			if !ts[t] {
+				delete(common, t)
+			}
+		}
+	}
+	var ordered []string
+	added := map[string]bool{}
+	for _, raw := range strings.Fields(samples[0]) {
+		t := strings.ToLower(raw)
+		if len(t) >= 4 && common[t] && !added[t] {
+			ordered = append(ordered, t)
+			added[t] = true
+		}
+	}
+	if len(ordered) == 0 {
+		return ""
+	}
+	esc := make([]string, len(ordered))
+	for i, t := range ordered {
+		esc[i] = regexp.QuoteMeta(t)
+	}
+	return `(?i)` + strings.Join(esc, ".*")
+}
+
+func tokenSet(s string) map[string]bool {
+	m := map[string]bool{}
+	for _, f := range strings.Fields(strings.ToLower(s)) {
+		m[f] = true
+	}
+	return m
 }
 
 // ValidateProposal checks a proposal for validity and returns issues.
