@@ -34,6 +34,10 @@ const (
 	KindDetection    = "detection"     // bir detect.Rule'un artık tetiklememesi
 	KindDeviceStatus = "device_status" // bir cihazın beklenen duruma (ör. ACTIVE) dönmesi
 	KindVuln         = "vuln"          // bir CVE'nin cihazın güncel envanterinde artık eşleşmemesi
+	// KindGraphContainment, bir remediation'ın BLAST-RADIUS kapsamını ölçer: remediasyona
+	// yol açan kötü-amaçlı göstergeye (IP/domain/hash) entity-graf üzerinden bağlı AKRAN
+	// cihazların da kontrol-altında olup olmadığı (lateral yayılım tam temizlendi mi?).
+	KindGraphContainment = "graph_containment"
 	// (rezerve: "compliance" — sonraki dilim)
 )
 

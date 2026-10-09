@@ -132,3 +132,48 @@ func EvaluateVulnCleared(c Check, dataAvailable bool, currentCVEs []string) (Out
 	}
 	return OutcomeVerified, verifiedResidual(c, baseline)
 }
+
+// EvaluateGraphContainment, Kind=graph_containment için doğrulayıcıdır: bir remediation'ın
+// BLAST-RADIUS kapsamını ölçer. Çağıran katman, remediasyona yol açan kötü-amaçlı göstergeye
+// (IP/domain/hash) entity-graf üzerinden bağlı AKRAN cihazları (remediasyon uygulanan cihaz
+// HARİÇ) ve graf verisinin mevcut olup olmadığını (dataAvailable) hesaplar; `contained`,
+// bir cihazın kontrol-altında (ör. QUARANTINED/ISOLATED) olup olmadığını döndüren oracle'dır.
+// Bu saf fonksiyon karar verir.
+//
+// Fail-closed: graf verisi yoksa veya oracle nil ise INCONCLUSIVE/REGRESSED'e meyleder
+// (kapsam KANITLANMADAN VERIFIED verilmez). Akran yoksa tek-cihaz remediasyonu blast-radius'u
+// kapsar → VERIFIED. Tüm akranlar kontrol-altında → VERIFIED. En az bir akran AÇIKTA →
+// REGRESSED (kapsam eksik; lateral yayılım temizlenmemiş), residual açıkta kalan oranıyla ölçeklenir.
+func EvaluateGraphContainment(c Check, dataAvailable bool, peers []string, contained func(deviceID string) bool) (Outcome, int) {
+	baseline := c.Baseline
+	if baseline == 0 {
+		baseline = risk.Score(c.Factors)
+	}
+	if !dataAvailable {
+		return OutcomeInconclusive, baseline
+	}
+	total := len(peers)
+	if total == 0 {
+		// Göstergeye bağlı başka cihaz yok → tek-cihaz remediasyonu kapsamı tamamlar.
+		return OutcomeVerified, verifiedResidual(c, baseline)
+	}
+	exposed := 0
+	for _, p := range peers {
+		// Oracle yoksa containment KANITLANAMAZ → akran açıkta sayılır (fail-closed).
+		if contained == nil || !contained(p) {
+			exposed++
+		}
+	}
+	if exposed == 0 {
+		return OutcomeVerified, verifiedResidual(c, baseline)
+	}
+	// Kapsam eksik: açıkta kalan akran oranıyla ölçeklenmiş kalan risk (en az 1, baseline tavan).
+	residual := baseline * exposed / total
+	if residual < 1 {
+		residual = 1
+	}
+	if residual > baseline {
+		residual = baseline
+	}
+	return OutcomeRegressed, residual
+}
