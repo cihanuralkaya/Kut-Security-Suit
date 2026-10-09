@@ -22,6 +22,11 @@ func TestHuntingAgent_GenerateHypotheses(t *testing.T) {
 	if hypotheses[0].MITRETactic != "Execution" {
 		t.Errorf("beklenen taktik 'Execution', alınan '%s'", hypotheses[0].MITRETactic)
 	}
+	// TargetKind, grafın küçük-harf kind'iyle (entitygraph.Process) eşleşmeli — aksi halde
+	// ExecuteHunt'ın NodesByKind'ı hiçbir düğüm bulamazdı (aktivasyon-bulgusu regresyon-guard'ı).
+	if hypotheses[0].TargetKind != entitygraph.Process {
+		t.Errorf("TargetKind entitygraph.Process olmalı, alınan %q", hypotheses[0].TargetKind)
+	}
 }
 
 // TestHuntingAgent_ExecuteHunt tests graph hunt traversal and finding generation.
