@@ -5,13 +5,19 @@ import (
 	"errors"
 	"sync"
 
+	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/model"
 	"kut.corp/suite/server/internal/telemetryschema"
 )
 
 // Detector defines the interface for evaluating events against detection rules.
+// CONVERGENCE (Slice 1): re-pointed to the LIVE detection engine's shape —
+// `*detect.Engine` satisfies this verbatim (detect.Engine.Evaluate). The telemetry
+// plane no longer owns a duplicate rule type; it reuses the ONE live engine. This
+// kills the two-detection-stack fork risk (dormant RuleEngine will be removed in a
+// later slice, pending product sign-off).
 type Detector interface {
-	Evaluate(evt model.Event) []Rule
+	Evaluate(evt model.Event) []detect.Detection
 }
 
 // AlertSink is the interface for emitting events that triggered an alert.
@@ -92,9 +98,9 @@ func (p *Plane) ProcessEvent(ctx context.Context, evt model.Event) (telemetrysch
 		return telemetryschema.Event{}, errors.New("telemetry plane is not running")
 	}
 
-	// 1. Evaluate with detector
-	matchedRules := p.detector.Evaluate(evt)
-	isAlert := len(matchedRules) > 0
+	// 1. Evaluate with the LIVE detection engine (via Detector seam)
+	matched := p.detector.Evaluate(evt)
+	isAlert := len(matched) > 0
 
 	// 2. Normalize to OCSF
 	ocsfEvent := telemetryschema.ToOCSF(evt, prod)

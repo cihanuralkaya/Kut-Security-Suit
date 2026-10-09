@@ -4,16 +4,22 @@ import (
 	"context"
 	"testing"
 
+	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/model"
 	"kut.corp/suite/server/internal/telemetryschema"
 )
 
-// MockDetector implements Detector for testing.
+// Compile-time proof that the LIVE detection engine satisfies the plane's Detector seam.
+// This is the core of the convergence: the telemetry plane reuses the ONE live engine
+// (detect.Engine), never a duplicate. If this breaks, the fork has crept back in.
+var _ Detector = (*detect.Engine)(nil)
+
+// MockDetector implements Detector for testing (re-pointed to the live detect.Detection shape).
 type MockDetector struct {
-	EvaluateFunc func(evt model.Event) []Rule
+	EvaluateFunc func(evt model.Event) []detect.Detection
 }
 
-func (m *MockDetector) Evaluate(evt model.Event) []Rule {
+func (m *MockDetector) Evaluate(evt model.Event) []detect.Detection {
 	if m.EvaluateFunc != nil {
 		return m.EvaluateFunc(evt)
 	}
@@ -87,11 +93,11 @@ func TestTelemetryPlane_Lifecycle(t *testing.T) {
 func TestTelemetryPlane_ProcessEvent(t *testing.T) {
 	evalCount := 0
 	detector := &MockDetector{
-		EvaluateFunc: func(evt model.Event) []Rule {
+		EvaluateFunc: func(evt model.Event) []detect.Detection {
 			evalCount++
 			// Sadece 2. event'te alert üret
 			if evalCount == 2 {
-				return []Rule{{}}
+				return []detect.Detection{{}}
 			}
 			return nil
 		},
@@ -139,10 +145,10 @@ func TestTelemetryPlane_ProcessEvent(t *testing.T) {
 func TestTelemetryPlane_IngestBatch(t *testing.T) {
 	evalCount := 0
 	detector := &MockDetector{
-		EvaluateFunc: func(evt model.Event) []Rule {
+		EvaluateFunc: func(evt model.Event) []detect.Detection {
 			evalCount++
 			if evalCount == 2 {
-				return []Rule{{}}
+				return []detect.Detection{{}}
 			}
 			return nil
 		},

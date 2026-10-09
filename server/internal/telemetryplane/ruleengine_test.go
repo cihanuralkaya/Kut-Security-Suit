@@ -1,11 +1,9 @@
 package telemetryplane
 
 import (
-	"context"
 	"testing"
 
 	"kut.corp/suite/server/internal/model"
-	"kut.corp/suite/server/internal/telemetryschema"
 )
 
 func TestRuleEngine_Evaluate(t *testing.T) {
@@ -143,37 +141,8 @@ func TestRuleEngine_LoadRulesFromJSON(t *testing.T) {
 	}
 }
 
-// Mock AlertSink and EventSink for Plane testing
-type mockSink struct{}
-
-func (s *mockSink) EmitAlert(ctx context.Context, evt telemetryschema.Event) error { return nil }
-func (s *mockSink) EmitEvent(ctx context.Context, evt telemetryschema.Event) error { return nil }
-
-func TestRuleEngine_PlaneIntegration(t *testing.T) {
-	re := NewRuleEngine()
-	re.AddRule(Rule{
-		ID:      "rule-plane",
-		Enabled: true,
-		Conditions: []RuleCondition{
-			{Field: "category", Operator: "equals", Value: "TestCategory"},
-		},
-	})
-
-	sink := &mockSink{}
-	plane := New(re, sink, sink)
-
-	ctx := context.Background()
-	plane.Start(ctx)
-	defer plane.Stop()
-
-	evt := model.Event{
-		Category: "TestCategory",
-		Message:  "Trigger Alert",
-	}
-
-	// This should process successfully and theoretically trigger the alert sink (although we mock it)
-	_, err := plane.ProcessEvent(ctx, evt)
-	if err != nil {
-		t.Fatalf("ProcessEvent failed: %v", err)
-	}
-}
+// NOTE (convergence Slice 1): the former TestRuleEngine_PlaneIntegration wired the
+// dormant RuleEngine in as the plane's Detector. The plane's Detector is now the LIVE
+// detect.Engine shape ([]detect.Detection), so the duplicate RuleEngine is no longer a
+// plane detector by design. The plane↔live-engine integration is covered by the
+// telemetryplane integration tests; RuleEngine is tested standalone above.
