@@ -1,17 +1,15 @@
 package commandplane
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
+
+	"kut.corp/suite/cmdenvelope"
 )
 
 // SignedCommandEnvelope wraps an authorized command with a cryptographic signature,
@@ -31,53 +29,12 @@ type SignedCommandEnvelope struct {
 // CanonicalSigningBytes produces deterministic canonical bytes for signing or verification.
 // Resolves SEC-005: avoids non-deterministic JSON key serialization issues by computing
 // a sorted SHA-256 hash of parameters and binding all fields with explicit unit separators.
+//
+// Kodlama, paylaşılan (internal OLMAYAN) cmdenvelope paketine DELEGE edilir; böylece ajan
+// da (commandplane'i import edemeden) BİREBİR aynı baytları üretip imzayı doğrulayabilir.
+// İmza, zaman alanlarını UnixNano int64 olarak bağlar.
 func CanonicalSigningBytes(cmdID, deviceID string, cmdType CommandType, issuedBy string, params map[string]any, nonce string, issuedAt, expiresAt time.Time) []byte {
-	var b bytes.Buffer
-	sep := byte(0x1f)
-
-	b.WriteString(cmdID)
-	b.WriteByte(sep)
-	b.WriteString(deviceID)
-	b.WriteByte(sep)
-	b.WriteString(string(cmdType))
-	b.WriteByte(sep)
-	b.WriteString(issuedBy)
-	b.WriteByte(sep)
-
-	// Canonical parameters hash
-	paramsHash := hashParams(params)
-	b.Write(paramsHash)
-	b.WriteByte(sep)
-
-	b.WriteString(nonce)
-	b.WriteByte(sep)
-	b.WriteString(fmt.Sprintf("%d", issuedAt.UnixNano()))
-	b.WriteByte(sep)
-	b.WriteString(fmt.Sprintf("%d", expiresAt.UnixNano()))
-
-	return b.Bytes()
-}
-
-func hashParams(params map[string]any) []byte {
-	if len(params) == 0 {
-		return []byte("empty")
-	}
-
-	keys := make([]string, 0, len(params))
-	for k := range params {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	h := sha256.New()
-	for _, k := range keys {
-		h.Write([]byte(k))
-		h.Write([]byte("="))
-		valBytes, _ := json.Marshal(params[k])
-		h.Write(valBytes)
-		h.Write([]byte(";"))
-	}
-	return h.Sum(nil)
+	return cmdenvelope.CanonicalBytes(cmdID, deviceID, string(cmdType), issuedBy, params, nonce, issuedAt.UnixNano(), expiresAt.UnixNano())
 }
 
 // CommandSigner signs command envelopes using an Ed25519 private key.
