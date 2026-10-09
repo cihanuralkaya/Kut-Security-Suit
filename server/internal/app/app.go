@@ -47,6 +47,7 @@ import (
 	"kut.corp/suite/server/internal/config"
 	"kut.corp/suite/server/internal/connector"
 	"kut.corp/suite/server/internal/connectors"
+	"kut.corp/suite/server/internal/controlplane"
 	"kut.corp/suite/server/internal/correlate"
 	"kut.corp/suite/server/internal/db"
 	"kut.corp/suite/server/internal/dedup"
@@ -736,8 +737,19 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		adminAPI.SetPartitionReadiness(pr.EventPartitionReady)
 	}
 	adminAPI.SetLoginLimit(cfg.LoginMaxAttempts, cfg.LoginLockout) // kaba-kuvvet koruması
-	adminAPI.SetPrivacyNotice(os.Getenv("KUT_PRIVACY_NOTICE"))     // KVKK aydınlatma (boşsa varsayılan)
-	adminAPI.SetAuditVerifier(backend.VerifyAuditChain)            // denetim izi hash-zincir doğrulama
+	// Kanonik kimlik otoritesi (controlplane): admin login'in kimlik+MFA+anti-replay
+	// kararı controlplane.Authenticator'a devredilir; adminapi yalnız IP throttling +
+	// oturum üretir. backend hem CredentialStore (LookupAdmin) hem MFAVerifier
+	// (LookupMFA/ConsumeTOTPStep) yüzeyini karşılar. Davranış eski yolla birebir aynıdır.
+	loginDummy := make([]byte, 16)
+	_, _ = rand.Read(loginDummy)
+	loginDummyHash, err := security.HashPassword("dummy-" + hex.EncodeToString(loginDummy))
+	if err != nil {
+		return err
+	}
+	adminAPI.SetAuthenticator(controlplane.NewAuthenticator(backend, backend, loginDummyHash, time.Now))
+	adminAPI.SetPrivacyNotice(os.Getenv("KUT_PRIVACY_NOTICE")) // KVKK aydınlatma (boşsa varsayılan)
+	adminAPI.SetAuditVerifier(backend.VerifyAuditChain)        // denetim izi hash-zincir doğrulama
 	if suppressHolder != nil {
 		adminAPI.SetMaintenanceProvider(suppressHolder.Windows) // bakım pencereleri görünürlüğü (#18)
 	}

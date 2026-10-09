@@ -69,12 +69,11 @@ func NewAuthenticator(creds CredentialStore, mfa MFAVerifier, dummyHash string, 
 // okuma); kimlik/MFA başarısızlığı err=nil + uygun AuthStatus ile raporlanır.
 func (a *Authenticator) Authenticate(ctx context.Context, email, password, code string) (AuthResult, error) {
 	adminID, hash, err := a.creds.LookupAdmin(ctx, strings.TrimSpace(email))
-	if err != nil {
-		return AuthResult{}, err
-	}
-	if adminID == "" {
-		// Sabit-zaman: bilinmeyen/pasif hesapta da Argon2 maliyetini öde (sonuç yok
-		// sayılır) — kullanıcı numaralandırma yan-kanalını kapatır.
+	if err != nil || adminID == "" {
+		// Bilinmeyen/pasif hesap VEYA arama hatası: her ikisinde de sabit-zaman için
+		// kukla hash ile Argon2 maliyetini öde (sonuç yok sayılır) ve AuthInvalid dön.
+		// Böylece hem kullanıcı-numaralandırma zamanlama yan-kanalı kapanır hem de
+		// geçici altyapı hatası "hesap var mı?" bilgisini sızdırmaz (mevcut davranış).
 		_, _ = security.VerifyPassword(a.dummyHash, password)
 		return AuthResult{Status: AuthInvalid}, nil
 	}

@@ -36,6 +36,7 @@ import (
 	"kut.corp/suite/server/internal/authtoken"
 	"kut.corp/suite/server/internal/authz"
 	"kut.corp/suite/server/internal/casemgmt"
+	"kut.corp/suite/server/internal/controlplane"
 	"kut.corp/suite/server/internal/dedup"
 	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/dlq"
@@ -73,6 +74,7 @@ type Server struct {
 	adminSvc       *admin.Service
 	reader         *adminread.Service
 	auth           AuthStore
+	authn          *controlplane.Authenticator // kanonik kimlik otoritesi (nil → eski satır-içi yol)
 	sessions       *security.SessionSigner
 	ttl            time.Duration
 	now            func() time.Time
@@ -362,6 +364,11 @@ func (s *Server) SetPrivacyNoticeEN(text string) {
 func (s *Server) SetLoginLimit(maxAttempts int, window time.Duration) {
 	s.loginLim = newLoginLimiter(maxAttempts, window)
 }
+
+// SetAuthenticator, admin login'in kimlik+MFA kararını devrettiği KANONİK kimlik
+// otoritesini (controlplane.Authenticator) bağlar. nil → eski satır-içi yol korunur.
+// Transport-seviyesi kaba-kuvvet throttling + oturum üretimi adminapi'de kalır.
+func (s *Server) SetAuthenticator(a *controlplane.Authenticator) { s.authn = a }
 
 // SetStream, canlı SSE akışını (/api/stream) etkinleştirir. nil ise akış ucu
 // 501 döner ve konsol yalnız periyodik yenilemeye düşer.
@@ -720,6 +727,40 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
 		writeErr(w, http.StatusTooManyRequests, "çok fazla başarısız deneme — sonra tekrar deneyin")
 		return
+	}
+
+	// Kanonik kimlik otoritesi bağlıysa (controlplane.Authenticator), kimlik+MFA
+	// kararını ona devret; adminapi yalnız transport-seviyesi throttling, hata
+	// eşlemesi ve oturum üretimini yapar. Davranış eski satır-içi yolla birebir aynıdır.
+	if s.authn != nil {
+		res, err := s.authn.Authenticate(r.Context(), req.Email, req.Password, req.Code)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "MFA durumu okunamadı")
+			return
+		}
+		switch res.Status {
+		case controlplane.AuthMFARequired:
+			writeJSON(w, http.StatusOK, map[string]bool{"mfa_required": true})
+			return
+		case controlplane.AuthMFAInvalidCode:
+			s.loginFailed(key, req.Email)
+			writeErr(w, http.StatusUnauthorized, "geçersiz doğrulama kodu")
+			return
+		case controlplane.AuthMFAReplay:
+			s.loginFailed(key, req.Email)
+			writeErr(w, http.StatusUnauthorized, "doğrulama kodu zaten kullanıldı")
+			return
+		case controlplane.AuthOK:
+			s.loginLim.recordSuccess(key)
+			metrics.IncLoginSuccess()
+			token := s.sessions.Sign(res.AdminID, s.now().Add(s.ttl))
+			writeJSON(w, http.StatusOK, map[string]string{"token": token})
+			return
+		default: // AuthInvalid
+			s.loginFailed(key, req.Email)
+			writeErr(w, http.StatusUnauthorized, "geçersiz kimlik bilgileri")
+			return
+		}
 	}
 
 	adminID, hash, err := s.auth.LookupAdmin(r.Context(), req.Email)
