@@ -1,6 +1,7 @@
 package coordinator
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -73,7 +74,7 @@ func TestRouteTelemetry(t *testing.T) {
 	}
 }
 
-func TestRegionalFailover(t *testing.T) {
+func TestRegionalFailover_StrictResidencyByDefault(t *testing.T) {
 	router := NewRegionalRouter()
 	router.SetTenantPrimaryRegion("tenant-1", "eu-central-1")
 
@@ -85,7 +86,7 @@ func TestRegionalFailover(t *testing.T) {
 		Status:    "offline",
 	})
 
-	// Healthy node in fallback region
+	// Healthy node in a different region
 	router.RegisterEdgeNode(EdgeNode{
 		ID:        "node-us-1",
 		Region:    "us-east-1",
@@ -93,13 +94,62 @@ func TestRegionalFailover(t *testing.T) {
 		Status:    "healthy",
 	})
 
-	// Route should fallback to node-us-1
+	// Default is strict residency: a pinned tenant must NOT be silently routed
+	// out-of-region. Expect a residency-policy error, not a fallback node.
+	node, err := router.RouteTelemetry("tenant-1")
+	if !errors.Is(err, ErrResidencyFallbackBlocked) {
+		t.Fatalf("expected ErrResidencyFallbackBlocked, got node=%v err=%v", node, err)
+	}
+	if node != nil {
+		t.Errorf("expected nil node on residency block, got %s", node.ID)
+	}
+}
+
+func TestRegionalFailover_CrossRegionOptIn(t *testing.T) {
+	router := NewRegionalRouter()
+	router.SetTenantPrimaryRegion("tenant-1", "eu-central-1")
+	// Operator explicitly accepts cross-region fallback for this tenant.
+	router.SetTenantCrossRegionFallback("tenant-1", true)
+
+	router.RegisterEdgeNode(EdgeNode{
+		ID:        "node-eu-1",
+		Region:    "eu-central-1",
+		LatencyMs: 20,
+		Status:    "offline",
+	})
+	router.RegisterEdgeNode(EdgeNode{
+		ID:        "node-us-1",
+		Region:    "us-east-1",
+		LatencyMs: 50,
+		Status:    "healthy",
+	})
+
 	node, err := router.RouteTelemetry("tenant-1")
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("expected no error with cross-region opt-in, got %v", err)
 	}
-	if node.ID != "node-us-1" {
-		t.Errorf("expected node-us-1, got %s", node.ID)
+	if node == nil || node.ID != "node-us-1" {
+		t.Errorf("expected node-us-1, got %v", node)
+	}
+}
+
+func TestRouteTelemetry_NoPinnedRegionRoutesAnywhere(t *testing.T) {
+	router := NewRegionalRouter()
+	// tenant-2 has no primary region → no residency constraint to enforce.
+
+	router.RegisterEdgeNode(EdgeNode{
+		ID:        "node-us-1",
+		Region:    "us-east-1",
+		LatencyMs: 50,
+		Status:    "healthy",
+	})
+
+	node, err := router.RouteTelemetry("tenant-2")
+	if err != nil {
+		t.Fatalf("expected no error for unpinned tenant, got %v", err)
+	}
+	if node == nil || node.ID != "node-us-1" {
+		t.Errorf("expected node-us-1, got %v", node)
 	}
 }
 
