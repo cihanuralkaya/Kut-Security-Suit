@@ -30,6 +30,7 @@ import (
 	"kut.corp/suite/server/internal/adminread"
 	"kut.corp/suite/server/internal/aiassist"
 	"kut.corp/suite/server/internal/aibrain"
+	"kut.corp/suite/server/internal/aiprovider"
 	"kut.corp/suite/server/internal/aisec"
 	"kut.corp/suite/server/internal/aisecnorm"
 	"kut.corp/suite/server/internal/auditexport"
@@ -87,36 +88,37 @@ type Server struct {
 	dummyHash      string // SEC-004: bilinmeyen e-postada sabit-zaman için sahte Argon2 hash
 	sseConns       int64  // SEC-007: aktif SSE bağlantı sayısı (atomik)
 	auditVerify    func(context.Context) error
-	auditExpKey    ed25519.PrivateKey            // ayarlıysa /api/audit/export imzalı manifest üretir (#16)
-	maintWindows   func() []notify.Window        // ayarlıysa /api/maintenance bakım pencerelerini döner (#18)
-	metricsToken   string                        // ayarlıysa /metrics bu Bearer token ile açılır; boşsa uç kapalı
-	ingestToken    string                        // ayarlıysa POST /api/ingest bu Bearer token ile açılır (#21)
-	tokens         authtoken.Store               // yönetilen API token'ları (rotation/expiry/iptal); nil => yalnız statik env token
-	ingestSink     EventIngestor                 // harici log alımı için olay yazma yolu
-	ingestLimiter  *ratelimit.Limiter            // /api/ingest IP-başına hız sınırı (nil = kapalı)
-	ingestLayered  *ratelimit.Layered            // /api/ingest KATMANLI hız sınırı (§8; öncelikli, nil = kapalı)
-	ingestDedup    *dedup.Seen                   // /api/ingest yineleme-tespiti (§6; nil = kapalı)
-	ingestDLQ      *dlq.Queue                    // /api/ingest ölü-mektup kuyruğu (§6; nil = kapalı)
-	eventProc      EventProcessor                // ingest edilen olayları tespit+alarm hattından geçirir (nil = yalnız kaydet)
-	detector       atomic.Pointer[detect.Engine] // tespit kural kataloğu (görünürlük ucu; canlı hot-reload için atomik)
-	vulnSet        *vuln.Set                     // zafiyet veri kümesi (nil = kapalı); envanterle eşleşir
-	features       map[string]any                // dağıtım koruma-duruşu (opsiyonel özellik bayrakları)
-	tenantID       string                        // dağıtımın kiracı kimliği (rapor atıfı)
-	aiProvider     aiassist.Provider             // §27 AI asistanı sağlayıcısı (nil → LocalProvider)
-	tracer         *trace.Tracer                 // §14 dağıtık izleme (nil → kapalı)
-	abacEngine     *iam.Engine                   // §35 ABAC motoru (nil → uç kapalı)
-	scim           iam.Provisioner               // §35 SCIM kullanıcı sağlayıcı (nil → uç kapalı)
-	mspStore       MSPStore                      // §37 MSP müşteri deposu (nil → uç kapalı)
-	gateway        *authz.Gateway                // §4 merkezi Action Authorization Gateway (blast-radius + rate-limit)
-	graph          *entitygraph.Graph            // varlık/tehdit grafı (salt-okunur pivot uçları; nil → uç kapalı)
-	cases          casemgmt.Store                // SOC vaka yönetimi (varsayılan bellek-içi; SetCaseStore ile DB destekli)
-	seqModel       *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli (salt-okunur skor sorgusu; nil → uç kapalı)
-	agentSec       *aisec.Service                // agentic tehdit savunması (salt-okunur bulgu uçları; nil → uç kapalı)
-	brain          *aibrain.Brain                // SOC AI brain (fail-open; dış AI yoksa deterministik yola döner)
-	agentTrust     *aisec.TrustVerifier          // imzalı agent telemetri doğrulayıcı (nil → /api/agentsec/telemetry kapalı)
-	verifyStore    verify.Store                  // remediation-doğrulama check deposu (nil → /api/verify uçları kapalı)
-	verifier       verify.Verifier               // check değerlendirici (nil → run ucu kapalı)
-	reqVerifyClose bool                          // true → CONTAINED→CLOSED vaka geçişi VERIFIED check ister (opt-in)
+	auditExpKey    ed25519.PrivateKey             // ayarlıysa /api/audit/export imzalı manifest üretir (#16)
+	maintWindows   func() []notify.Window         // ayarlıysa /api/maintenance bakım pencerelerini döner (#18)
+	metricsToken   string                         // ayarlıysa /metrics bu Bearer token ile açılır; boşsa uç kapalı
+	ingestToken    string                         // ayarlıysa POST /api/ingest bu Bearer token ile açılır (#21)
+	tokens         authtoken.Store                // yönetilen API token'ları (rotation/expiry/iptal); nil => yalnız statik env token
+	ingestSink     EventIngestor                  // harici log alımı için olay yazma yolu
+	ingestLimiter  *ratelimit.Limiter             // /api/ingest IP-başına hız sınırı (nil = kapalı)
+	ingestLayered  *ratelimit.Layered             // /api/ingest KATMANLI hız sınırı (§8; öncelikli, nil = kapalı)
+	ingestDedup    *dedup.Seen                    // /api/ingest yineleme-tespiti (§6; nil = kapalı)
+	ingestDLQ      *dlq.Queue                     // /api/ingest ölü-mektup kuyruğu (§6; nil = kapalı)
+	eventProc      EventProcessor                 // ingest edilen olayları tespit+alarm hattından geçirir (nil = yalnız kaydet)
+	detector       atomic.Pointer[detect.Engine]  // tespit kural kataloğu (görünürlük ucu; canlı hot-reload için atomik)
+	vulnSet        *vuln.Set                      // zafiyet veri kümesi (nil = kapalı); envanterle eşleşir
+	features       map[string]any                 // dağıtım koruma-duruşu (opsiyonel özellik bayrakları)
+	tenantID       string                         // dağıtımın kiracı kimliği (rapor atıfı)
+	aiProvider     aiassist.Provider              // §27 AI asistanı sağlayıcısı (nil → LocalProvider)
+	tracer         *trace.Tracer                  // §14 dağıtık izleme (nil → kapalı)
+	abacEngine     *iam.Engine                    // §35 ABAC motoru (nil → uç kapalı)
+	scim           iam.Provisioner                // §35 SCIM kullanıcı sağlayıcı (nil → uç kapalı)
+	mspStore       MSPStore                       // §37 MSP müşteri deposu (nil → uç kapalı)
+	gateway        *authz.Gateway                 // §4 merkezi Action Authorization Gateway (blast-radius + rate-limit)
+	graph          *entitygraph.Graph             // varlık/tehdit grafı (salt-okunur pivot uçları; nil → uç kapalı)
+	cases          casemgmt.Store                 // SOC vaka yönetimi (varsayılan bellek-içi; SetCaseStore ile DB destekli)
+	seqModel       *aibrain.SeqModel              // süreç-zinciri sekans nadirlik modeli (salt-okunur skor sorgusu; nil → uç kapalı)
+	agentSec       *aisec.Service                 // agentic tehdit savunması (salt-okunur bulgu uçları; nil → uç kapalı)
+	brain          *aibrain.Brain                 // SOC AI brain (fail-open; dış AI yoksa deterministik yola döner)
+	investigator   *aiprovider.InvestigationAgent // otonom soruşturma ajanı (salt-okunur/advisory; nil → uç kapalı)
+	agentTrust     *aisec.TrustVerifier           // imzalı agent telemetri doğrulayıcı (nil → /api/agentsec/telemetry kapalı)
+	verifyStore    verify.Store                   // remediation-doğrulama check deposu (nil → /api/verify uçları kapalı)
+	verifier       verify.Verifier                // check değerlendirici (nil → run ucu kapalı)
+	reqVerifyClose bool                           // true → CONTAINED→CLOSED vaka geçişi VERIFIED check ister (opt-in)
 }
 
 // MSPStore, MSP müşteri kaydının kalıcı deposudur (§37). db.Store (kalıcı) ve
@@ -341,6 +343,10 @@ func (s *Server) SetAgentSec(a *aisec.Service) { s.agentSec = a }
 // (Provider nil) uçlar "available:false" döner ve çekirdek deterministik yola devam eder.
 func (s *Server) SetBrain(b *aibrain.Brain) { s.brain = b }
 
+// SetInvestigator, otonom soruşturma ajanını bağlar (aiprovider; salt-okunur/advisory —
+// durum değiştirmez, aksiyon yürütmez). nil → /api/ai/investigate kapalı (available:false).
+func (s *Server) SetInvestigator(a *aiprovider.InvestigationAgent) { s.investigator = a }
+
 // SetAgentTrust, imzalı agent telemetri doğrulayıcısını bağlar (P0-A). nil →
 // /api/agentsec/telemetry kapalı. Bu uç session değil, ed25519 İMZA ile kimlik doğrular.
 func (s *Server) SetAgentTrust(v *aisec.TrustVerifier) { s.agentTrust = v }
@@ -478,6 +484,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agentsec/canonical", s.authed(s.handleAgentSecCanonical))
 	mux.HandleFunc("POST /api/agentsec/events", s.authed(s.handleAgentSecEvents))
 	mux.HandleFunc("POST /api/ai/triage", s.authed(s.handleAITriage))
+	mux.HandleFunc("POST /api/ai/investigate", s.authed(s.handleAIInvestigate))
 	mux.HandleFunc("POST /api/ai/risk", s.authed(s.handleAIRisk))
 	// Session DEĞİL, ed25519 İMZA ile kimlik doğrulanan agent telemetri ucu (P0-A).
 	mux.HandleFunc("POST /api/agentsec/telemetry", s.handleAgentSecTelemetry)
@@ -1743,6 +1750,31 @@ func (s *Server) handleAITriage(w http.ResponseWriter, r *http.Request, _ string
 			"next_steps": tr.NextSteps, "confidence": tr.Confidence, "source": tr.Source,
 		},
 	})
+}
+
+// handleAIInvestigate, bir olay için otonom soruşturma ajanını çalıştırır (SALT-OKUNUR/
+// advisory — durum DEĞİŞTİRMEZ, aksiyon YÜRÜTMEZ). FAIL-OPEN: ajan bağlı değilse veya
+// analiz başarısızsa {available:false} döner. Hassas olay metni Restricted hassasiyetle
+// router tarafından YALNIZ yerel sağlayıcıya yönlendirilir (egemenlik; buluta gitmez).
+func (s *Server) handleAIInvestigate(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		IncidentID string `json:"incident_id"`
+		Category   string `json:"category"`
+		Message    string `json:"message"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if s.investigator == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false})
+		return
+	}
+	rep, err := s.investigator.Investigate(r.Context(), req.IncidentID, req.Category, req.Message, nil, nil)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"available": true, "report": rep})
 }
 
 // handleAIRisk, deterministik sinyalleri (ve opsiyonel sekans/graf'ı) AI ile zenginleştirip
