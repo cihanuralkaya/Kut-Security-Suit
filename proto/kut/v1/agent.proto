@@ -86,6 +86,16 @@ message Command {
   CommandType type = 2;
   google.protobuf.Struct params = 3;
 
+  // CommandEnvelope güvenlik alanları (CONTRACTS §5). Komut düzlemi (commandplane)
+  // tarafından üretilir; ajan bunları doğrulayabilir (imza + tazelik + anti-replay).
+  // Geriye-uyumlu (yeni alan no'ları 4-8): eski ajan yok sayar, yeni sunucu eski
+  // komutlarda boş bırakır — bağımsız dağıtım (additive proto migrasyonu).
+  bytes signature = 4;          // Ed25519 imza (non-repudiation + bütünlük)
+  string nonce = 5;             // replay-tazelik (tek-kullanım)
+  int64 issued_at_unix = 6;     // imzalama anı (UnixNano)
+  int64 expires_at_unix = 7;    // zarf geçerlilik sonu (UnixNano)
+  string issued_by = 8;         // imzalayan/talep eden kimlik (audit)
+
   enum CommandType {
     COMMAND_TYPE_UNSPECIFIED = 0;
     COMMAND_TYPE_QUARANTINE = 1;    // Ağ izolasyonu uygula.
