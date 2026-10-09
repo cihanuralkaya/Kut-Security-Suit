@@ -64,6 +64,17 @@ func (s *Set) Size() int {
 	return len(s.byValue)
 }
 
+// Each, her göstergeyi (normalize edilmiş değer + meta veri) salt-okunur olarak fn'e
+// verir. Köprüleme/dışa-aktarma için (ör. ThreatIntelAgent'a besleme). Sıra belirsizdir.
+func (s *Set) Each(fn func(value string, ind Indicator)) {
+	if s == nil || fn == nil {
+		return
+	}
+	for v, ind := range s.byValue {
+		fn(v, ind)
+	}
+}
+
 // Load, verilen okuyucudan gösterge listesini ayrıştırır.
 func Load(r io.Reader) (*Set, error) {
 	set := &Set{byValue: map[string]Indicator{}}
