@@ -33,6 +33,21 @@ func TestLoadAndSize(t *testing.T) {
 	}
 }
 
+func TestEach(t *testing.T) {
+	s := mustLoad(t)
+	got := map[string]Indicator{}
+	s.Each(func(v string, ind Indicator) { got[v] = ind })
+	if len(got) != 4 {
+		t.Fatalf("Each 4 gösterge vermeli, %d verdi", len(got))
+	}
+	if got["evil.example.com"].Label != "phishing" {
+		t.Errorf("evil.example.com etiketi phishing bekleniyordu, alındı %q", got["evil.example.com"].Label)
+	}
+	// nil güvenliği (panik yok).
+	var ns *Set
+	ns.Each(func(string, Indicator) { t.Fatal("nil Set üzerinde fn çağrılmamalı") })
+}
+
 func TestMatchDetailsExact(t *testing.T) {
 	s := mustLoad(t)
 	// IP Details'te tam eşleşme.
