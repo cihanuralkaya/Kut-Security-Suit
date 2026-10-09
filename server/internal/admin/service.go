@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"kut.corp/suite/server/internal/commandplane"
 	"kut.corp/suite/server/internal/metrics"
 	"kut.corp/suite/server/internal/scope"
 	"kut.corp/suite/server/internal/security"
@@ -194,6 +195,11 @@ type Service struct {
 	// Yalnız operatör riski açıkça kabul ederse (KUT_SCOPE_ALLOW_UNCONFIGURED=1) veya
 	// demo modunda true'ya çekilir (geriye uyumlu kaçış kapağı).
 	scopeAllowUnconfigured bool
+	// cmdPlane, bağlıysa cihaz komutlarının geçtiği komut düzlemidir (tam hot-path
+	// entegrasyonu). guardScope (scope/ROE) bu çağrıdan ÖNCE uygulanır; düzlem bunun
+	// ÜSTÜNE Ed25519 imza + anti-replay + kanonik authz ekler ve kanıtlanmış enqueue
+	// sınırına delege eder. nil = eski doğrudan-depo yolu (geriye uyumlu).
+	cmdPlane *commandplane.Plane
 }
 
 // NewService oluşturur.
@@ -218,6 +224,52 @@ var ErrOutOfScope = errors.New("admin: operasyon scope/ROE dışı")
 // politikayı üretimde açmadan önce ayarlayabilir. tenant, hedef Target.Tenant'ıdır.
 func (s *Service) SetScopeEngine(e *scope.Engine, enforce bool, tenant string) {
 	s.scopeEng, s.scopeEnforce, s.scopeTenant = e, enforce, tenant
+}
+
+// SetCommandPlane, cihaz komutlarının geçeceği komut düzlemini bağlar (tam hot-path
+// entegrasyonu). nil geçilirse eski doğrudan-depo yolu korunur. Düzlem; mevcut
+// RBAC/tenant/scope ön-kontrollerinin ÜSTÜNE imza + anti-replay + kanonik authz ekler.
+func (s *Service) SetCommandPlane(p *commandplane.Plane) { s.cmdPlane = p }
+
+// planeRoutableCmd, commandplane.CommandType olarak kabul edilen komut türleridir.
+// Komut düzlemi bağlıyken YALNIZ bunlar düzlemden geçer; listede OLMAYAN türler (ör.
+// COLLECT_DIAGNOSTICS) doğrudan depo yoluna düşer (düzlem Validate'ini tetiklemeden,
+// davranış korunur).
+var planeRoutableCmd = map[string]bool{
+	"QUARANTINE": true, "UNQUARANTINE": true, "LOCK": true, "RESTART": true,
+	"WIPE": true, "RUN_SIGNED_SCRIPT": true, "COLLECT_FILE": true,
+}
+
+// enqueue, bir cihaz komutunu kuyruğa alır. Komut düzlemi bağlı VE komut türü
+// düzlem-uyumluysa komut düzlemden geçer (imza+anti-replay+authz, ardından kanıtlanmış
+// enqueue sınırına delege). guardScope bu çağrıdan ÖNCE uygulanmıştır. Aksi halde
+// doğrudan depo (geriye uyumlu).
+func (s *Service) enqueue(ctx context.Context, deviceID, cmdType, issuedBy string, params map[string]string) error {
+	if s.cmdPlane != nil && planeRoutableCmd[cmdType] {
+		_, err := s.cmdPlane.Dispatch(ctx, commandplane.CommandRequest{
+			DeviceID: deviceID,
+			Type:     commandplane.CommandType(cmdType),
+			IssuedBy: issuedBy,
+			Params:   anyParams(params),
+		})
+		return err
+	}
+	if params != nil {
+		return s.store.EnqueueCommandParams(ctx, deviceID, cmdType, issuedBy, params)
+	}
+	return s.store.EnqueueCommand(ctx, deviceID, cmdType, issuedBy)
+}
+
+// anyParams, string parametre haritasını komut düzleminin map[string]any biçimine çevirir.
+func anyParams(in map[string]string) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // SetScopeAllowUnconfigured, Scope/ROE motoru bağlı değilken yüksek-etkili
@@ -488,7 +540,7 @@ func (s *Service) WipeDevice(ctx context.Context, adminID, deviceID string) erro
 	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionWipe); err != nil {
 		return err
 	}
-	if err := s.store.EnqueueCommand(ctx, deviceID, "WIPE", adminID); err != nil {
+	if err := s.enqueue(ctx, deviceID, "WIPE", adminID, nil); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "WIPE", "device", deviceID)
@@ -556,7 +608,7 @@ func (s *Service) ApproveWipe(ctx context.Context, approverID, deviceID string) 
 		}
 		return fmt.Errorf("%w: bekleyen WIPE talebi yok", ErrInvalidInput) // yok ya da başka onaylayan tüketti
 	}
-	if err := s.store.EnqueueCommand(ctx, deviceID, "WIPE", approverID); err != nil {
+	if err := s.enqueue(ctx, deviceID, "WIPE", approverID, nil); err != nil {
 		return err
 	}
 	s.audit(ctx, approverID, "WIPE_APPROVE", "device", deviceID)
@@ -617,7 +669,7 @@ func (s *Service) CollectFile(ctx context.Context, adminID, deviceID, path strin
 	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionRemoteCommand); err != nil {
 		return err
 	}
-	if err := s.store.EnqueueCommandParams(ctx, deviceID, "COLLECT_FILE", adminID, map[string]string{"path": path}); err != nil {
+	if err := s.enqueue(ctx, deviceID, "COLLECT_FILE", adminID, map[string]string{"path": path}); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "COLLECT_FILE", "device", deviceID)
@@ -720,7 +772,7 @@ func (s *Service) command(ctx context.Context, adminID, deviceID, cmdType, refle
 			return err
 		}
 	}
-	if err := s.store.EnqueueCommand(ctx, deviceID, cmdType, adminID); err != nil {
+	if err := s.enqueue(ctx, deviceID, cmdType, adminID, nil); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, cmdType, "device", deviceID)
