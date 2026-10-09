@@ -47,6 +47,10 @@ var (
 	tAbuseElev    = Technique{ID: "T1548", Name: "Abuse Elevation Control Mechanism", Tactic: "Privilege Escalation"}
 	tMasquerading = Technique{ID: "T1036", Name: "Masquerading", Tactic: "Defense Evasion"}
 	tWMI          = Technique{ID: "T1047", Name: "Windows Management Instrumentation", Tactic: "Execution"}
+	// LOLBin indirme/çözme/gizleme derinliği (detect KUT-0032/0033/0034):
+	tDeobfuscate = Technique{ID: "T1140", Name: "Deobfuscate/Decode Files or Information", Tactic: "Defense Evasion"}
+	tBITSJobs    = Technique{ID: "T1197", Name: "BITS Jobs", Tactic: "Defense Evasion"}
+	tObfuscated  = Technique{ID: "T1027", Name: "Obfuscated Files or Information", Tactic: "Defense Evasion"}
 )
 
 // Catalog, sistemin eşleyebildiği tekniklerin tam listesini (kapsama matrisi)
@@ -78,6 +82,9 @@ func Catalog() []Technique {
 		tAbuseElev,       // T1548
 		tMasquerading,    // T1036
 		tWMI,             // T1047
+		tDeobfuscate,     // T1140
+		tBITSJobs,        // T1197
+		tObfuscated,      // T1027
 	}
 }
 

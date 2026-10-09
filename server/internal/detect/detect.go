@@ -468,6 +468,9 @@ var (
 	tExfilAltProto  = mitre.Technique{ID: "T1048", Name: "Exfiltration Over Alternative Protocol", Tactic: "Exfiltration"}
 	tIndicatorRem   = mitre.Technique{ID: "T1070", Name: "Indicator Removal", Tactic: "Defense Evasion"}
 	tIngressTool    = mitre.Technique{ID: "T1105", Name: "Ingress Tool Transfer", Tactic: "Command and Control"}
+	tDeobfuscate    = mitre.Technique{ID: "T1140", Name: "Deobfuscate/Decode Files or Information", Tactic: "Defense Evasion"}
+	tBITSJobs       = mitre.Technique{ID: "T1197", Name: "BITS Jobs", Tactic: "Defense Evasion"}
+	tObfuscated     = mitre.Technique{ID: "T1027", Name: "Obfuscated Files or Information", Tactic: "Defense Evasion"}
 )
 
 // DefaultRules, yerleşik tespit kural setidir. Ajanın gerçekte ürettiği olay
@@ -573,5 +576,22 @@ func DefaultRules() []Rule {
 		{ID: "KUT-0031", Name: "WMI ile yürütme", Category: "",
 			MessageRegex: `wmic\s+.*process\s+call\s+create|Invoke-WmiMethod\s+.*Win32_Process|Get-WmiObject\s+.*Win32_Process.*Create|Invoke-CimMethod\s+.*Win32_Process`,
 			Severity:     "HIGH", Technique: mitre.Technique{ID: "T1047", Name: "Windows Management Instrumentation", Tactic: "Execution"}},
+		// LOLBin indirme/çözme/gizleme derinliği: KUT-0007 bu davranışları kabaca
+		// T1059'a atfeder; aşağıdakiler DOĞRU tekniğe (T1140/T1197/T1027) atfeder ve
+		// KUT-0007'nin kaçırdığı varyantları (certutil -decode, bitsadmin, -e/-ec kısa
+		// biçim, FromBase64String+IEX dosyasız) yakalar. Kategori-bağımsız.
+		{ID: "KUT-0032", Name: "certutil ile indirme/çözme (LOLBin)", Category: "",
+			MessageRegex: `certutil(\.exe)?\s+.*-decode\b|certutil(\.exe)?\s+.*-urlcache\s+.*-f\b|certutil(\.exe)?\s+.*-verifyctl\s+.*-f\b|certutil(\.exe)?\s+.*-split\b.*-decode`,
+			Severity:     "HIGH", Technique: tDeobfuscate},
+		{ID: "KUT-0033", Name: "BITS işi ile transfer (LOLBin)", Category: "",
+			MessageRegex: `bitsadmin(\.exe)?\s+.*/transfer\b|bitsadmin(\.exe)?\s+.*/create\b|bitsadmin(\.exe)?\s+.*/addfile\b|Start-BitsTransfer\b|Import-Module\s+BitsTransfer\b`,
+			Severity:     "HIGH", Technique: tBITSJobs},
+		// Yalnız yüksek-sinyal kodlanmış-komut biçimleri: -e/-ec kısa biçimi KUT-0007'nin
+		// (-enc|-encodedcommand) imzasını atlatır. Uzun base64 kuyruğu (30+) legit kısa
+		// bayraklardan (-ExecutionPolicy vb.) ayırır → düşük FP. Çıplak base64 blob veya
+		// tek-başına FromBase64String KASITLI dışlandı (log'daki sertifika/JWT = FP riski).
+		{ID: "KUT-0034", Name: "Gizlenmiş/kodlanmış PowerShell komutu", Category: "",
+			MessageRegex: `powershell(\.exe)?.*\s-e(c|nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{30,}`,
+			Severity:     "HIGH", Technique: tObfuscated},
 	}
 }
