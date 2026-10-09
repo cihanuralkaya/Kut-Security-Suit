@@ -1,11 +1,20 @@
 package coordinator
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
+
+// FaultAuthorizer, kaos (chaos) hata enjeksiyonunu kapılar. Enjeksiyon bir bölgeyi
+// çevrimdışı işaretleyip failover'ı zorlayabildiği için operasyonel olarak yıkıcıdır;
+// bu nedenle açıkça yetkilendirilmelidir. nil yetkilendirici => fail-closed (reddet),
+// C1/H1 desenindeki gibi.
+type FaultAuthorizer interface {
+	AuthorizeFault(ctx context.Context, actor string, fault ChaosFaultType, target string) error
+}
 
 type ChaosFaultType string
 
@@ -28,16 +37,32 @@ type ChaosEngine struct {
 	mu          sync.RWMutex
 	experiments map[string]*ChaosExperiment
 	router      *RegionalRouter
+	authz       FaultAuthorizer
 }
 
-func NewChaosEngine(router *RegionalRouter) *ChaosEngine {
+// NewChaosEngine, verilen yetkilendirici ile bir ChaosEngine oluşturur. authz nil
+// ise tüm enjeksiyonlar fail-closed reddedilir (yıkıcı primitif, varsayılan kapalı).
+func NewChaosEngine(router *RegionalRouter, authz FaultAuthorizer) *ChaosEngine {
 	return &ChaosEngine{
 		experiments: make(map[string]*ChaosExperiment),
 		router:      router,
+		authz:       authz,
 	}
 }
 
-func (c *ChaosEngine) InjectFault(fault ChaosFaultType, target string, duration time.Duration) (*ChaosExperiment, error) {
+func (c *ChaosEngine) InjectFault(ctx context.Context, actor string, fault ChaosFaultType, target string, duration time.Duration) (*ChaosExperiment, error) {
+	// Fail-closed yetkilendirme: yetkilendirici yoksa veya karar reddederse enjeksiyon
+	// yapılmaz. Yıkıcı bir primitifin yetkisiz tetiklenmesini (zorlanmış failover/DoS) önler.
+	if c.authz == nil {
+		return nil, errors.New("chaos fault injection denied: no authorizer configured")
+	}
+	if actor == "" {
+		return nil, errors.New("chaos fault injection denied: empty actor")
+	}
+	if err := c.authz.AuthorizeFault(ctx, actor, fault, target); err != nil {
+		return nil, fmt.Errorf("chaos fault injection denied: %w", err)
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
