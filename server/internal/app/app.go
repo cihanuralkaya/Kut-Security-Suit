@@ -37,6 +37,7 @@ import (
 	"kut.corp/suite/server/internal/adminapi"
 	"kut.corp/suite/server/internal/adminread"
 	"kut.corp/suite/server/internal/aibrain"
+	"kut.corp/suite/server/internal/aiprovider"
 	"kut.corp/suite/server/internal/aisec"
 	"kut.corp/suite/server/internal/authtoken"
 	"kut.corp/suite/server/internal/beacon"
@@ -704,6 +705,16 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		socBrain = aibrain.New(aibrain.NewLocalProviderWithSeq(seqModel), 0) // yerel deterministik varsayılan
 	}
 	adminAPI.SetBrain(socBrain) // salt-öneri triyaj (/api/ai/triage; fail-open)
+	// Otonom soruşturma ajanı (G1 aktivasyon — sanctioned ince-adaptör deseni): SIFIR-AĞ
+	// deterministik yerel sağlayıcı ile çalışır → Restricted olay metni router tarafından
+	// YALNIZ yerele yönlendirilir (egemenlik; buluta gitmez). SALT-OKUNUR/advisory (durum
+	// değiştirmez, aksiyon yürütmez) → her zaman güvenle bağlanır. /api/ai/investigate (fail-open).
+	adminAPI.SetInvestigator(aiprovider.NewInvestigationAgent(
+		aiprovider.NewModelRouter(aiprovider.NewLocalInvestigationProvider(), nil, aiprovider.NewMockProvider()),
+		aiprovider.NewRAGStore(),
+		aiprovider.NewDataDLP(),
+	))
+	log.Println("otonom soruşturma ajanı ETKİN (deterministik yerel, salt-okunur): /api/ai/investigate")
 	// Agent telemetri güven doğrulayıcı (P0-A): KUT_AGENT_KEYS'ten ed25519 anahtarları
 	// kaydet ("agentID:base64pub:tenant,..."). İmzalı telemetri /api/agentsec/telemetry'den
 	// gelir; kayıtsız/geçersiz/replay imza fail-closed reddedilir.
