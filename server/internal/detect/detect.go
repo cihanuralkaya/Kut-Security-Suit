@@ -471,6 +471,11 @@ var (
 	tDeobfuscate    = mitre.Technique{ID: "T1140", Name: "Deobfuscate/Decode Files or Information", Tactic: "Defense Evasion"}
 	tBITSJobs       = mitre.Technique{ID: "T1197", Name: "BITS Jobs", Tactic: "Defense Evasion"}
 	tObfuscated     = mitre.Technique{ID: "T1027", Name: "Obfuscated Files or Information", Tactic: "Defense Evasion"}
+	tArchiveData    = mitre.Technique{ID: "T1560", Name: "Archive Collected Data", Tactic: "Collection"}
+	tClipboardData  = mitre.Technique{ID: "T1115", Name: "Clipboard Data", Tactic: "Collection"}
+	tAccountDiscov  = mitre.Technique{ID: "T1087", Name: "Account Discovery", Tactic: "Discovery"}
+	tUnsecuredCreds = mitre.Technique{ID: "T1552", Name: "Unsecured Credentials", Tactic: "Credential Access"}
+	tRemoteAccessSw = mitre.Technique{ID: "T1219", Name: "Remote Access Software", Tactic: "Command and Control"}
 )
 
 // DefaultRules, yerleşik tespit kural setidir. Ajanın gerçekte ürettiği olay
@@ -593,5 +598,24 @@ func DefaultRules() []Rule {
 		{ID: "KUT-0034", Name: "Gizlenmiş/kodlanmış PowerShell komutu", Category: "",
 			MessageRegex: `powershell(\.exe)?.*\s-e(c|nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{30,}`,
 			Severity:     "HIGH", Technique: tObfuscated},
+		// ATT&CK genişlik taraması (Security Fabric boşluk analizi): BOŞ olan Collection
+		// taktiğini (TA0009) doldurur + Discovery/Cred-Access/C2 derinliği. Komut-satırı
+		// gözlemlenebilir; recon/collection ikili-kullanım olduğundan MEDIUM, kimlik-avı/
+		// yetkisiz-RMM nadiren meşru olduğundan HIGH. Kategori-bağımsız.
+		{ID: "KUT-0035", Name: "Toplanan veriyi arşivleme (collection)", Category: "",
+			MessageRegex: `\brar(\.exe)?\s+a\b|\b7za?(\.exe)?\s+a\b|Compress-Archive\b|\btar\s+-?c\w*z|\bmakecab\b`,
+			Severity:     "MEDIUM", Technique: tArchiveData},
+		{ID: "KUT-0036", Name: "Pano verisi okuma (collection)", Category: "",
+			MessageRegex: `Get-Clipboard\b|GetClipboardData\b`,
+			Severity:     "MEDIUM", Technique: tClipboardData},
+		{ID: "KUT-0037", Name: "Hesap/grup keşfi (discovery)", Category: "",
+			MessageRegex: `\bnet\s+(user|group|localgroup)\b|\bdsquery\s+user\b|Get-ADUser\b|Get-ADGroupMember\b|\bwhoami\s+/groups\b`,
+			Severity:     "MEDIUM", Technique: tAccountDiscov},
+		{ID: "KUT-0038", Name: "Korumasız kimlik bilgisi avı", Category: "",
+			MessageRegex: `findstr\s+.*\bpassword\b|reg\s+query\b.*\bpassword\b|\bcmdkey\s+/list\b|vaultcmd\s+/list`,
+			Severity:     "HIGH", Technique: tUnsecuredCreds},
+		{ID: "KUT-0039", Name: "Uzaktan erişim yazılımı (RMM) kullanımı", Category: "",
+			MessageRegex: `\b(anydesk|teamviewer|screenconnect|connectwise|ngrok|atera|splashtop|logmein|gotoassist)\b`,
+			Severity:     "HIGH", Technique: tRemoteAccessSw},
 	}
 }
