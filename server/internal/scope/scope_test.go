@@ -1,8 +1,10 @@
 package scope
 
 import (
+	"fmt"
 	"net"
 	"testing"
+	"time"
 )
 
 func dec(t *testing.T, e *Engine, tg Target, a Action) Decision {
@@ -230,5 +232,52 @@ func TestRateLimitPerTenantIsolation(t *testing.T) {
 	// t2 should still have its token (isolation)
 	if d := dec(t, e, Target{Tenant: "t2"}, ActionPassiveScan); !d.Allowed {
 		t.Errorf("t2 ilk istek izolasyon sayesinde izinli olmalı")
+	}
+}
+
+// TestRateLimiterEviction, atıl ve yeniden-dolacak limiter girdilerinin temizlenerek
+// map'in sınırsız büyümesinin önlendiğini doğrular (L3 — bellek tüketimi DoS'u).
+func TestRateLimiterEviction(t *testing.T) {
+	e := New(&Policy{RateLimitRPS: 5}) // boş allow + pasif aksiyon her kiracıda geçer
+
+	for i := 0; i < 50; i++ {
+		dec(t, e, Target{Tenant: fmt.Sprintf("t%d", i)}, ActionPassiveScan)
+	}
+
+	e.rlMu.Lock()
+	before := len(e.rateLimiters)
+	stale := time.Now().Add(-2 * limiterIdleTTL)
+	for _, rl := range e.rateLimiters {
+		rl.mu.Lock()
+		rl.lastUpdate = stale
+		rl.mu.Unlock()
+	}
+	e.lastSweep = time.Time{} // anlık taramaya izin ver
+	e.maybeSweepLocked(time.Now())
+	after := len(e.rateLimiters)
+	e.rlMu.Unlock()
+
+	if before == 0 {
+		t.Fatalf("beklenen limiter girdileri oluşmadı")
+	}
+	if after != 0 {
+		t.Errorf("atıl+yeniden-dolacak limiter'lar temizlenmeli: before=%d after=%d", before, after)
+	}
+}
+
+// TestRateLimiterRecentlyActiveNotEvicted, TTL içindeki (yakın zamanda aktif)
+// girdilerin taramada korunduğunu doğrular.
+func TestRateLimiterRecentlyActiveNotEvicted(t *testing.T) {
+	e := New(&Policy{RateLimitRPS: 5})
+	dec(t, e, Target{Tenant: "t1"}, ActionPassiveScan) // lastUpdate = now
+
+	e.rlMu.Lock()
+	e.lastSweep = time.Time{}
+	e.maybeSweepLocked(time.Now())
+	n := len(e.rateLimiters)
+	e.rlMu.Unlock()
+
+	if n != 1 {
+		t.Errorf("yakın zamanda aktif limiter evict edilmemeli, kalan=%d", n)
 	}
 }

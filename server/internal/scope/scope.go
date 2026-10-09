@@ -136,6 +136,7 @@ type Decision struct {
 type rateLimiter struct {
 	mu         sync.Mutex
 	tokens     float64
+	rate       float64 // son görülen RPS (eviction uygunluk kontrolü için)
 	lastUpdate time.Time
 }
 
@@ -143,6 +144,7 @@ func (r *rateLimiter) allow(rate float64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.rate = rate
 	now := time.Now()
 	if r.lastUpdate.IsZero() {
 		r.lastUpdate = now
@@ -163,6 +165,27 @@ func (r *rateLimiter) allow(rate float64) bool {
 	return false
 }
 
+// evictable, bu limiter'ın güvenle silinebileceğini bildirir: hiç kullanılmamış,
+// ya da TTL'den uzun süredir atıl VE atıl süre boyunca kovanın TAMAMEN dolacağı
+// durumda. İkinci koşulda silip yeniden-oluşturmak, girdiyi korumakla birebir aynı
+// davranışı verir (yeni rateLimiter de dolu başlar); böylece hâlâ kısıtlanan
+// (yarı-dolu) bir kova asla erken sıfırlanmaz, ama boşaltılıp terk edilmiş bir kova
+// yeniden dolacağı anda geri kazanılır.
+func (r *rateLimiter) evictable(now time.Time, ttl time.Duration) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.lastUpdate.IsZero() {
+		// Henüz kullanılmamış (oluşturma ile ilk allow arasındaki geçici pencere):
+		// hemen ardından kullanılacak, sızıntı adayı değildir.
+		return false
+	}
+	if now.Sub(r.lastUpdate) <= ttl {
+		return false
+	}
+	refilled := r.tokens + now.Sub(r.lastUpdate).Seconds()*r.rate
+	return refilled >= r.rate
+}
+
 // Engine, kiracı-bazlı Policy'leri tutar ve yetkilendirme kararı verir.
 // Eşzamanlı erişime güvenlidir.
 type Engine struct {
@@ -172,6 +195,29 @@ type Engine struct {
 
 	rlMu         sync.Mutex
 	rateLimiters map[string]*rateLimiter
+	lastSweep    time.Time
+}
+
+const (
+	// limiterIdleTTL, bir rate-limiter girdisinin eviction için atıl sayılma eşiği.
+	limiterIdleTTL = 15 * time.Minute
+	// limiterSweepEvery, ardışık taramalar arası asgari süre (amortize maliyet).
+	limiterSweepEvery = 1 * time.Minute
+)
+
+// maybeSweepLocked, atıl/dolu rate-limiter girdilerini temizler. Çağıran e.rlMu'yu
+// tutmalıdır. Taramalar limiterSweepEvery ile sınırlıdır; böylece map, saldırganın
+// kiracı/aksiyon uzayını sondalayarak sınırsız büyütmesine karşı sınırlanır (L3).
+func (e *Engine) maybeSweepLocked(now time.Time) {
+	if !e.lastSweep.IsZero() && now.Sub(e.lastSweep) < limiterSweepEvery {
+		return
+	}
+	e.lastSweep = now
+	for k, rl := range e.rateLimiters {
+		if rl.evictable(now, limiterIdleTTL) {
+			delete(e.rateLimiters, k)
+		}
+	}
 }
 
 // New, isteğe bağlı bir global (tüm kiracılara uygulanan taban) policy ile motor kurar.
@@ -254,6 +300,8 @@ func (e *Engine) Authorize(t Target, a Action) Decision {
 		if !ok {
 			rl = &rateLimiter{}
 			e.rateLimiters[key] = rl
+			// Yeni anahtar eklendi: map büyümesini sınırlamak için fırsatçı tarama.
+			e.maybeSweepLocked(time.Now())
 		}
 		e.rlMu.Unlock()
 
