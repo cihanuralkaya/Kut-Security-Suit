@@ -2,9 +2,17 @@ package coordinator
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
+
+// ErrResidencyFallbackBlocked, bir tenant'ın birincil (pinned) bölgesinde sağlıklı
+// edge node bulunmadığında ve tenant için bölge-dışı yönlendirmeye AÇIKÇA izin
+// verilmediğinde döner. Egemen (sovereign) fabric'te bir tenant'ın telemetrisinin
+// sessizce bölge-dışına yönlendirilmesi veri ikameti (residency) ihlalidir; bu
+// nedenle varsayılan fail-closed'dur (L1).
+var ErrResidencyFallbackBlocked = errors.New("cross-region fallback blocked by data-residency policy")
 
 // RegionID represents a geographical or logical region identifier.
 type RegionID string
@@ -25,15 +33,28 @@ type RegionalRouter struct {
 	nodes        map[string]*EdgeNode
 	tenantRegion map[string]RegionID // Maps tenant to their primary region
 	regionStatus map[string]bool     // Region status overrides (e.g. for maintenance or chaos testing)
+	// tenantCrossRegion, bölge-dışı yedek (fallback) yönlendirmeye açıkça izin verilen
+	// tenant'ları tutar. Varsayılan (kayıt yok) = strict residency / fail-closed.
+	tenantCrossRegion map[string]bool
 }
 
 // NewRegionalRouter creates a new instance of RegionalRouter.
 func NewRegionalRouter() *RegionalRouter {
 	return &RegionalRouter{
-		nodes:        make(map[string]*EdgeNode),
-		tenantRegion: make(map[string]RegionID),
-		regionStatus: make(map[string]bool),
+		nodes:             make(map[string]*EdgeNode),
+		tenantRegion:      make(map[string]RegionID),
+		regionStatus:      make(map[string]bool),
+		tenantCrossRegion: make(map[string]bool),
 	}
+}
+
+// SetTenantCrossRegionFallback, bir tenant için bölge-dışı yedek yönlendirmeyi
+// açıkça etkinleştirir/kapatır. Varsayılan kapalıdır (strict residency): operatör
+// bölge-dışı yönlendirmenin uyum/egemenlik etkisini bilinçli kabul ettiğinde açılır.
+func (r *RegionalRouter) SetTenantCrossRegionFallback(tenantID string, allow bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tenantCrossRegion[tenantID] = allow
 }
 
 // SetRegionStatus sets the operational status of a region (used for maintenance or chaos testing).
@@ -144,6 +165,13 @@ func (r *RegionalRouter) RouteTelemetry(tenantID string) (*EdgeNode, error) {
 	}
 
 	if bestFallback != nil {
+		// Birincil bölgede sağlıklı node yok. Bölgeye pinlenmiş bir tenant'ın
+		// telemetrisi, yalnızca bölge-dışı yedek AÇIKÇA etkinleştirilmişse
+		// bölge dışına yönlendirilebilir; aksi halde residency ihlali olur
+		// (fail-closed). Pin'i olmayan tenant'ta residency kısıtı yoktur.
+		if hasPrimary && !r.tenantCrossRegion[tenantID] {
+			return nil, fmt.Errorf("tenant %q pinned to region %q: %w", tenantID, primaryRegion, ErrResidencyFallbackBlocked)
+		}
 		return bestFallback, nil
 	}
 
