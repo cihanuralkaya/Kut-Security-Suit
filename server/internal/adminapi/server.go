@@ -2124,6 +2124,23 @@ func (s *Server) handleVerifyList(w http.ResponseWriter, r *http.Request, adminI
 // olaylarını çekip kaynak tespit kuralını yeniden koşturur, sonucu ve kalan riski Resolve
 // eder. Kiracı-kapsamlı (çapraz-kiracı check → 404). Fail-closed: değerlendirilemezse
 // INCONCLUSIVE.
+// parseIndicator, Kind=graph_containment check'inin Expected alanında taşınan
+// gösterge spesini ("kind|id|relation", ör. "ip|1.2.3.4|connected") ayrıştırır.
+// Üç boş-olmayan parça yoksa ok=false (çağıran INCONCLUSIVE'e düşer — fail-closed).
+func parseIndicator(expected string) (kind, id, rel string, ok bool) {
+	parts := strings.Split(expected, "|")
+	if len(parts) != 3 {
+		return "", "", "", false
+	}
+	kind = strings.ToLower(strings.TrimSpace(parts[0]))
+	id = strings.TrimSpace(parts[1])
+	rel = strings.ToLower(strings.TrimSpace(parts[2]))
+	if kind == "" || id == "" || rel == "" {
+		return "", "", "", false
+	}
+	return kind, id, rel, true
+}
+
 func (s *Server) handleVerifyRun(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.verifyStore == nil || s.verifier == nil {
 		writeErr(w, http.StatusNotFound, "doğrulama motoru etkin değil")
@@ -2184,6 +2201,34 @@ func (s *Server) handleVerifyRun(w http.ResponseWriter, r *http.Request, adminID
 			}
 		}
 		outcome, residual = verify.EvaluateVulnCleared(c, dataAvail, cur)
+	} else if c.Kind == verify.KindGraphContainment {
+		// Blast-radius kapsamı: remediasyona yol açan göstergeye (Expected="kind|id|rel",
+		// ör. "ip|1.2.3.4|connected") entity-grafta bağlı AKRAN cihazlar KİRACI-KAPSAMLI
+		// çözülür (Sources — *Any DEĞİL; çapraz-kiracı sızıntıyı önler) ve her birinin
+		// kontrol-altında olup olmadığı DeviceDetail ile ölçülür. Graf yoksa/indikatör
+		// ayrıştırılamazsa dataAvail=false → INCONCLUSIVE (fail-closed).
+		dataAvail := false
+		var peers []string
+		if s.graph != nil {
+			if ik, iid, rel, ok := parseIndicator(c.Expected); ok {
+				dataAvail = true
+				target := entitygraph.Node{Kind: entitygraph.Kind(ik), ID: iid, Tenant: c.TenantID}
+				for _, n := range s.graph.Sources(target, entitygraph.Relation(rel)) {
+					if n.Kind == entitygraph.Device && n.ID != c.DeviceID {
+						peers = append(peers, n.ID)
+					}
+				}
+			}
+		}
+		contained := func(deviceID string) bool {
+			dd, ok, derr := s.reader.DeviceDetail(r.Context(), deviceID, c.TenantID)
+			if derr != nil || !ok {
+				return false // durum okunamadı → kontrol-altında SAYILMAZ (fail-closed)
+			}
+			st := strings.ToUpper(strings.TrimSpace(dd.Device.Status))
+			return st == "QUARANTINED" || st == "ISOLATED" || strings.Contains(st, "QUARANTINE")
+		}
+		outcome, residual = verify.EvaluateGraphContainment(c, dataAvail, peers, contained)
 	} else {
 		// Açılıştan bu yana cihazın taze olayları (aksiyon-sonrası pencere), kiracı-kapsamlı.
 		rows, err := s.reader.QueryEvents(r.Context(), adminread.EventFilter{
