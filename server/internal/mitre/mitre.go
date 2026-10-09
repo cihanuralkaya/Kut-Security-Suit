@@ -51,6 +51,13 @@ var (
 	tDeobfuscate = Technique{ID: "T1140", Name: "Deobfuscate/Decode Files or Information", Tactic: "Defense Evasion"}
 	tBITSJobs    = Technique{ID: "T1197", Name: "BITS Jobs", Tactic: "Defense Evasion"}
 	tObfuscated  = Technique{ID: "T1027", Name: "Obfuscated Files or Information", Tactic: "Defense Evasion"}
+	// ATT&CK genişlik taraması (Security Fabric boşluk analizi): Collection taktiği
+	// (TA0009) tamamen boştu → T1560/T1115 ekler; Discovery/Cred-Access/C2 derinliği.
+	tArchiveData    = Technique{ID: "T1560", Name: "Archive Collected Data", Tactic: "Collection"}
+	tClipboardData  = Technique{ID: "T1115", Name: "Clipboard Data", Tactic: "Collection"}
+	tAccountDiscov  = Technique{ID: "T1087", Name: "Account Discovery", Tactic: "Discovery"}
+	tUnsecuredCreds = Technique{ID: "T1552", Name: "Unsecured Credentials", Tactic: "Credential Access"}
+	tRemoteAccessSw = Technique{ID: "T1219", Name: "Remote Access Software", Tactic: "Command and Control"}
 )
 
 // Catalog, sistemin eşleyebildiği tekniklerin tam listesini (kapsama matrisi)
@@ -85,6 +92,11 @@ func Catalog() []Technique {
 		tDeobfuscate,     // T1140
 		tBITSJobs,        // T1197
 		tObfuscated,      // T1027
+		tArchiveData,     // T1560
+		tClipboardData,   // T1115
+		tAccountDiscov,   // T1087
+		tUnsecuredCreds,  // T1552
+		tRemoteAccessSw,  // T1219
 	}
 }
 
