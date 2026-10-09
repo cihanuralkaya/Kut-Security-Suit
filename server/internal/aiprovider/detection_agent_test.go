@@ -2,6 +2,7 @@ package aiprovider
 
 import (
 	"context"
+	"regexp"
 	"testing"
 )
 
@@ -33,6 +34,29 @@ func TestDraftRuleFromHypothesis(t *testing.T) {
 	}
 	if proposal.MITRETechnique != "T1059" {
 		t.Errorf("expected T1059, got %s", proposal.MITRETechnique)
+	}
+}
+
+// TestDraftRule_PatternDerivedFromSignals, taslak desenin örnek sinyalleri GERÇEKTEN
+// eşlediğini + zararsız metni eşlemediğini doğrular (aktivasyon-iyileştirmesi: eski
+// `.*malicious.*` yer-tutucusu örnekleri yok sayıyordu).
+func TestDraftRule_PatternDerivedFromSignals(t *testing.T) {
+	agent := NewDetectionAgent(nil, nil)
+	h := HuntHypothesis{ID: "h9", Title: "encoded ps", MITRETactic: "TA0002", MITRETechnique: "T1059"}
+	p, err := agent.DraftRuleFromHypothesis(context.Background(), h,
+		[]string{"powershell.exe -enc AAAA", "powershell.exe -enc BBBB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, issues := agent.ValidateProposal(p); !ok {
+		t.Fatalf("türetilen taslak geçerli olmalı (TA0002/T1059/regex): %v", issues)
+	}
+	re := regexp.MustCompile(p.Pattern)
+	if !re.MatchString("powershell.exe -enc AAAA") {
+		t.Errorf("türetilen desen örnek sinyali eşlemeli, desen=%q", p.Pattern)
+	}
+	if re.MatchString("notepad.exe opened document") {
+		t.Errorf("türetilen desen zararsız metni eşlememeli, desen=%q", p.Pattern)
 	}
 }
 
