@@ -48,7 +48,7 @@ func (a *HuntingAgent) GenerateHypotheses(ctx context.Context, focusTactic strin
 			MITRETactic:    focusTactic,
 			MITRETechnique: "T1059",
 			Description:    "Hunt for processes executing unusual command lines.",
-			TargetKind:     entitygraph.Kind("Process"),
+			TargetKind:     entitygraph.Process, // graf kind'leri küçük harf ("process"); "Process" literali HİÇBİR düğümle eşleşmezdi (aktivasyon-bulgusu)
 		},
 	}, nil
 }
