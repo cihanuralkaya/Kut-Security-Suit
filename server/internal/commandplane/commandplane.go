@@ -3,8 +3,8 @@ package commandplane
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -141,10 +141,18 @@ func (p *Plane) HandleCommandResult(ctx context.Context, deviceID, commandID str
 
 // newCommandID, kriptografik rastgele bir komut kimliği üretir (imzalama zarfının
 // CommandID'si; kuyruk atamasından ÖNCE gerekir çünkü imza bu id'yi bağlar).
+//
+// Biçim: kanonik UUIDv4 (A1′ kimlik-birleştirme). Böylece bu id, `device_commands`
+// uuid birincil anahtarına açık olarak yazılabilir → imzalanan id = saklanan id =
+// teslim command_id = ack id = cmdlog anahtarı (tek sistem-geneli komut kimliği,
+// CONTRACTS INV-046/H11). Yeni bağımlılık yok: rastgele 16 bayta sürüm/varyant
+// bitleri yazılır.
 func newCommandID() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
-	return "cmd-" + hex.EncodeToString(b[:]), nil
+	b[6] = (b[6] & 0x0f) | 0x40 // sürüm 4
+	b[8] = (b[8] & 0x3f) | 0x80 // varyant 10 (RFC 4122)
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
