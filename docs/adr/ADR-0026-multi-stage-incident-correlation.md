@@ -1,7 +1,13 @@
 # ADR-0026: Multi-Stage Incident Correlation Engine (XDR-005)
 
 ## Durum
-Kabul Edildi
+Yerini Aldı (2026-10, telemetri-düzlemi yakınsaması)
+
+> **Yerini aldı.** Aşağıda anlatılan `telemetryplane` içindeki ayrı
+> `CorrelationEngine` yakınsama sırasında kaldırıldı — kalıcılığı ve bastırması
+> olmayan, bellekte sınırsız büyüyen bir kopyaydı. Çok-aşamalı korelasyon artık
+> CANLI `server/internal/correlate` (Correlator + ChainDetector; app.go'da
+> bağlı, incidentcase'e besler) üzerinden yürür. Tarihsel kayıt aşağıda korunur.
 
 ## Bağlam
 Modern gelişmiş tehditler (APT) tekil bir uyarı yerine günlere veya saatlere yayılan çok aşamalı (multi-stage) zincirlerle ilerler (Initial Access -> Execution -> Persistence -> Lateral Movement -> Exfiltration). Güvenlik analistlerinin tekil uyarılar arasında kaybolmasını önlemek için aynı varlığa ait uyarılar kayan zaman penceresinde kümelenmeli ve MITRE ATT&CK taktik yayılımına göre vaka ciddiyeti otomatik yükseltilmelidir.

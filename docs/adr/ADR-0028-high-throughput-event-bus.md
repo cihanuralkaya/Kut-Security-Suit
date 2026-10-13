@@ -1,7 +1,14 @@
 # ADR-0028: High-Throughput In-Memory Event Bus (SCALE-001)
 
 ## Durum
-Kabul Edildi
+Yerini Aldı (2026-10, telemetri-düzlemi yakınsaması)
+
+> **Yerini aldı.** Aşağıda anlatılan `telemetryplane` içindeki ayrı in-memory
+> `EventBus` yakınsama sırasında kaldırıldı (üçüncü, mükerrer bir bus
+> implementasyonuydu). Canlı olay dağıtımı `server/internal/eventbus` (konsol
+> bildirim bus'ı; çok-kiracı filtre SSE handler'ında, server.go:3727) ve
+> telemetri-ölçekli dayanıklı akış için enterprise-tier `enterprise/bus`
+> üzerinden yürür. Tarihsel kayıt aşağıda korunur.
 
 ## Bağlam
 Milyonlarca uç nokta telemetrisinin (Process, Network, DNS, File) eşzamanlı olarak tespit motorlarına, AI ajanlarına ve adli tıp kaydedicilerine dağıtılması gerekmektedir. Yavaş bir abonenin tüm telemetri boru hattını kilitlemesini (head-of-line blocking) önlemek ve çok-kiracılı konu izolasyonunu sağlamak için sınırlandırılmış tampon (bounded buffer) ve yük atma (drop/shedding) politikasına sahip yüksek verimli bir Event Bus gereklidir.

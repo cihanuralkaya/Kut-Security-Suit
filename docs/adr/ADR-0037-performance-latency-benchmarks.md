@@ -11,6 +11,12 @@ KUT güvenlik dokusu, ticari rakipleriyle (Trend Vision One, CrowdStrike Falcon,
 1. **Telemetri Düzlemi Alım & Kural Değerlendirme (`BenchmarkTelemetryPlane_ProcessEvent`, `BenchmarkRuleEngine_Evaluate`)**:
    - Etkinlik alımı ve OCSF doğrulama süresi ölçüldü.
    - Sınırlandırılmış tamponlu EventBus yayınlama hızı test edildi (`BenchmarkEventBus_Publish`).
+
+   > **Not (2026-10 yakınsama):** `BenchmarkRuleEngine_Evaluate` ve
+   > `BenchmarkEventBus_Publish` (ve ilgili mock'lar) kaldırıldı — mükerrer
+   > motorlar silindiğinde (ADR-0017/0028) bunlar yalnız mock'ları ölçtüğü için
+   > bir şey kanıtlamıyordu. Gelecek dilim, `Plane.ProcessEvent`'i CANLI
+   > `detect.Engine` karşısında kıyaslayan gerçek bir benchmark ekleyecek.
 2. **AI Güvenlik & DLP Gecikmesi (`BenchmarkDataDLP_ScrubPII`, `BenchmarkModelRouter_Route`, `BenchmarkRAGStore_Search`)**:
    - Hassas veri ve PII temizleme işlemi ~1.7 mikro-saniye operasyon süresiyle doğrulandı.
    - Model yönlendirme ve RAG vektör benzerlik sorguları sıfır bellek ayırma (0 allocs/op) ile yüksek başarım sergiledi.
