@@ -108,3 +108,28 @@ func TestThreadSafety(t *testing.T) {
 		t.Errorf("Expected depth 0, got %d", stats.CurrentDepth)
 	}
 }
+
+// Dengesiz (fazla) Release depth'i sıfırın ALTINA indirmemeli — aksi halde usage
+// negatif olur ve yük altında shedding sessizce kapanır. Eşzamanlı fazla-release
+// race detector altında da güvenli olmalı.
+func TestReleaseFloorsAtZero(t *testing.T) {
+	c := NewBackpressureController(Config{MaxQueueDepth: 10, HighWatermark: 0.8})
+
+	// Hiç Acquire yokken Release — depth 0'da kalmalı.
+	c.Release()
+	c.Release()
+	if d := c.Stats().CurrentDepth; d != 0 {
+		t.Fatalf("Acquire olmadan Release sonrası depth 0 olmalı, alinan %d", d)
+	}
+
+	// Eşzamanlı fazla-release.
+	var wg sync.WaitGroup
+	for i := 0; i < 500; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); c.Release() }()
+	}
+	wg.Wait()
+	if d := c.Stats().CurrentDepth; d != 0 {
+		t.Fatalf("eşzamanlı fazla-release sonrası depth 0 olmalı, alinan %d", d)
+	}
+}

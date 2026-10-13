@@ -83,13 +83,22 @@ func (c *BackpressureController) Acquire(ctx context.Context, priority string) b
 	}
 }
 
-// Release releases an allocated slot.
-// İşlemi tamamlanan eventler için yuvayı serbest bırakır.
+// Release releases an allocated slot. It never drives the depth below zero: a
+// single CAS loop decrements only when depth > 0, so concurrent releases (or an
+// unbalanced release caused by misuse) cannot leave the counter negative. The
+// previous form (unconditional AddInt64(-1) then a CompareAndSwap against the
+// value it had just produced) was racy — a concurrent Acquire/Release between
+// the add and the swap invalidated the clamp and could leave depth negative,
+// which would make usage negative and silently disable shedding under load.
 func (c *BackpressureController) Release() {
-	depth := atomic.AddInt64(&c.currentDepth, -1)
-	if depth < 0 {
-		// Hatalı kullanım durumunda 0'da sabitle
-		atomic.CompareAndSwapInt64(&c.currentDepth, depth, 0)
+	for {
+		depth := atomic.LoadInt64(&c.currentDepth)
+		if depth <= 0 {
+			return // zaten boş (veya dengesiz Release) — sıfırın altına inme
+		}
+		if atomic.CompareAndSwapInt64(&c.currentDepth, depth, depth-1) {
+			return
+		}
 	}
 }
 
