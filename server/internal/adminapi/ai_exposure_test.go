@@ -71,7 +71,10 @@ func TestAIExposureScanFailOpenWhenUnset(t *testing.T) {
 		bytes.NewReader([]byte(`{"asset_id":"x","open_ports":[3389]}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+lb["token"])
-	resp, _ := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("istek başarısız: %v", err)
+	}
 	defer resp.Body.Close()
 	var out map[string]any
 	json.NewDecoder(resp.Body).Decode(&out)

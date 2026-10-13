@@ -60,7 +60,10 @@ func TestAIDetectionDraftEndpoint(t *testing.T) {
 	req2, _ := http.NewRequest("POST", ts.URL+"/api/ai/detection/draft", bytes.NewReader(b2))
 	req2.Header.Set("Content-Type", "application/json")
 	req2.Header.Set("Authorization", "Bearer "+lb["token"])
-	resp2, _ := http.DefaultClient.Do(req2)
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("istek başarısız: %v", err)
+	}
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusBadRequest {
 		t.Errorf("boş hypothesis_id 400 vermeli, alındı %d", resp2.StatusCode)
@@ -78,7 +81,10 @@ func TestAIDetectionDraftFailOpenWhenUnset(t *testing.T) {
 		bytes.NewReader([]byte(`{"hypothesis_id":"h","sample_signals":["x"]}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+lb["token"])
-	resp, _ := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("istek başarısız: %v", err)
+	}
 	defer resp.Body.Close()
 	var out map[string]any
 	json.NewDecoder(resp.Body).Decode(&out)

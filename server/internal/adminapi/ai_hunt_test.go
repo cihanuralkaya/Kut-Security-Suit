@@ -59,7 +59,10 @@ func TestAIHuntEndpoint(t *testing.T) {
 	req2, _ := http.NewRequest("POST", ts.URL+"/api/ai/hunt", bytes.NewReader([]byte(`{"tactic":""}`)))
 	req2.Header.Set("Content-Type", "application/json")
 	req2.Header.Set("Authorization", "Bearer "+lb["token"])
-	resp2, _ := http.DefaultClient.Do(req2)
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("istek başarısız: %v", err)
+	}
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusBadRequest {
 		t.Errorf("boş taktik 400 vermeli, alındı %d", resp2.StatusCode)
@@ -76,7 +79,10 @@ func TestAIHuntFailOpenWhenUnset(t *testing.T) {
 	req, _ := http.NewRequest("POST", ts.URL+"/api/ai/hunt", bytes.NewReader([]byte(`{"tactic":"Execution"}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+lb["token"])
-	resp, _ := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("istek başarısız: %v", err)
+	}
 	defer resp.Body.Close()
 	var out map[string]any
 	json.NewDecoder(resp.Body).Decode(&out)
