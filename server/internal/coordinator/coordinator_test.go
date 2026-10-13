@@ -40,12 +40,6 @@ func (m *mockCommandAuthz) Authorize(ctx context.Context, req commandplane.Actio
 	return commandplane.AuthorizationDecision{Allowed: true}, nil
 }
 
-type mockDetector struct{}
-
-func (m *mockDetector) Evaluate(ctx context.Context, evt any) (bool, error) {
-	return false, nil
-}
-
 func TestFabricCoordinator_Lifecycle(t *testing.T) {
 	control := controlplane.New(nil, nil, &mockControlStore{})
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
