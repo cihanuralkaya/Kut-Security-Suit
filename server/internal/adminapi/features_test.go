@@ -1270,6 +1270,79 @@ func TestStreamSSEDeliversNotice(t *testing.T) {
 	}
 }
 
+// TestStreamSSECrossTenantIsolation, CANLI yol üzerinde çapraz-kiracı izolasyonunu
+// uçtan uca doğrular: tenant1'e bağlı bir SSE abonesi, tenant2 olayını ASLA almaz.
+// Bu, daha önce (artık silinmiş) dormant in-memory bus'ta TestEventBus_TenantIsolation
+// ile iddia edilen invaryantın CANLI muadilidir. Sunucu-tarafı filtre
+// (server.go: streamTenant sunucuya bağlı, client seçemez) burada test edilir.
+func TestStreamSSECrossTenantIsolation(t *testing.T) {
+	ts, store, bus := setupStream(t)
+	defer ts.Close()
+
+	// tenant1'e bağlı admin: callerTenant SUNUCU-TARAFI "tenant1" çözer → streamTenant="tenant1".
+	addAdmin(t, store, "op1", "op@t1", "secret", admin.RoleOperator)
+	store.adminTen["op1"] = "tenant1"
+
+	_, body := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@t1", "password": "secret"})
+	token := body["token"]
+	if token == "" {
+		t.Fatal("giriş token vermeliydi")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/stream", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("200 beklenirdi, %d", resp.StatusCode)
+	}
+
+	// Abonelik kesin kurulana kadar bekle (zamanlamaya değil duruma bağlı). Bu, sonraki
+	// iki yayının tek FIFO abone kanalına SIRAYLA düşmesini garanti eder.
+	deadline := time.Now().Add(2 * time.Second)
+	for bus.SubscriberCount() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("SSE abonesi zamanında kaydedilmedi")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// SENTINEL-SONRASI-SIRA tekniği: önce tenant2 olayı (SIZMAMALI), hemen ardından
+	// tenant1 sentinel (GELMELİ). Tek abone kanalı FIFO olduğundan, sentinel akışta
+	// göründüğünde tenant2 olayı sunucuda zaten işlenmiş (ve filtrelenmiş) olmalıdır;
+	// böylece negatifi esnek-zamanlama (keyfi sleep) olmadan deterministik iddia ederiz.
+	bus.PublishTenantEvent("tenant2", "dev-b", "CRITICAL", "GIZLI-TENANT2-SIZINTI")
+	bus.PublishTenantEvent("tenant1", "dev-a", "HIGH", "TENANT1-SENTINEL")
+
+	buf := make([]byte, 4096)
+	var got string
+	for !strings.Contains(got, "TENANT1-SENTINEL") {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			got += string(buf[:n])
+		}
+		if err != nil {
+			t.Fatalf("tenant1 sentinel'den önce akış kapandı: %v (alınan: %q)", err, got)
+		}
+	}
+
+	// NEGATİF İDDİA: tenant2 yükü sentinel'e kadar akışta HİÇ görünmemeli.
+	if strings.Contains(got, "GIZLI-TENANT2-SIZINTI") ||
+		strings.Contains(got, `"tenant_id":"tenant2"`) ||
+		strings.Contains(got, "dev-b") {
+		t.Fatalf("çapraz-kiracı canlı sızıntı: tenant2 olayı tenant1 akışında göründü: %q", got)
+	}
+	// POZİTİF SAĞLAMA: kendi kiracısının (tenant1) olayını gerçekten aldı.
+	if !strings.Contains(got, `"tenant_id":"tenant1"`) || !strings.Contains(got, "dev-a") {
+		t.Fatalf("tenant1 sentinel olayı beklenirdi: %q", got)
+	}
+}
+
 func TestListPoliciesHTTP(t *testing.T) {
 	ts, store := setup(t)
 	defer ts.Close()
