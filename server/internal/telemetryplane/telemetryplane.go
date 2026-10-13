@@ -11,11 +11,11 @@ import (
 )
 
 // Detector defines the interface for evaluating events against detection rules.
-// CONVERGENCE (Slice 1): re-pointed to the LIVE detection engine's shape —
-// `*detect.Engine` satisfies this verbatim (detect.Engine.Evaluate). The telemetry
-// plane no longer owns a duplicate rule type; it reuses the ONE live engine. This
-// kills the two-detection-stack fork risk (dormant RuleEngine will be removed in a
-// later slice, pending product sign-off).
+// CONVERGENCE: re-pointed to the LIVE detection engine's shape — `*detect.Engine`
+// satisfies this verbatim (detect.Engine.Evaluate). The telemetry plane no longer
+// owns a duplicate rule type; it reuses the ONE live engine. The dormant duplicate
+// engines (RuleEngine/CorrelationEngine/EventBus) were removed in Slice 2, so this
+// seam is the only detection stack the plane can bind to.
 type Detector interface {
 	Evaluate(evt model.Event) []detect.Detection
 }
