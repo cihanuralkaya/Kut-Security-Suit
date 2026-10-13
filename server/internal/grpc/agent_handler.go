@@ -21,6 +21,7 @@ import (
 	"kut.corp/suite/server/internal/correlate"
 	"kut.corp/suite/server/internal/detbits"
 	"kut.corp/suite/server/internal/detect"
+	"kut.corp/suite/server/internal/detectpipe"
 	"kut.corp/suite/server/internal/entitygraph"
 	"kut.corp/suite/server/internal/ioc"
 	"kut.corp/suite/server/internal/metrics"
@@ -341,16 +342,9 @@ func (h *AgentHandler) SetBitStore(s *detbits.Store) {
 
 // scopeKey, Track'e göre kapsam anahtarı üretir (eşik sayacı ve tespit bitleri
 // bu ortak kapsamlamayı paylaşır).
-func scopeKey(track, deviceID, tenantID string) string {
-	switch strings.ToLower(strings.TrimSpace(track)) {
-	case "tenant":
-		return "tenant:" + tenantID
-	case "global":
-		return "global"
-	default: // "device" veya "" → cihaz başına (uç-nokta için varsayılan)
-		return "device:" + deviceID
-	}
-}
+// scopeKey, bastırma-kapısı kapsam anahtarı için detectpipe.ScopeKey'in yerel
+// adıdır (tek kaynak orada; grpc testleri bu adı kullanmaya devam eder).
+var scopeKey = detectpipe.ScopeKey
 
 // SetAlerter, yüksek önem düzeyli olaylarda dış uyarı (webhook) gönderimini
 // etkinleştirir. nil ise noop kalır (uyarı gönderilmez).
@@ -579,48 +573,14 @@ func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e mode
 	// best-effort; eşik/filtre notifier içinde. noop notifier'da maliyetsiz.
 	if dets := h.detector.Load().Evaluate(e); len(dets) > 0 { // atomik Load: hot-reload ile yarışsız
 		metrics.AddDetections(len(dets))
+		// Bastırma kapıları (bitler + tekrar-eşiği + korelasyon) PAYLAŞILAN
+		// detectpipe.Gate'te — gRPC ajan, HTTP log-ingest ve telemetri düzlemi
+		// AYNI durumsal örnekleri görür; hiçbir yol diğerinin bastıracağı alarmı
+		// üretemez. Gate aynı pointer'ları sarar, durum paylaşılır.
+		gate := detectpipe.NewGate(h.threshold, h.detbits, h.correlator)
 		for _, d := range dets {
-			// Çok-aşamalı tespit bitleri (opt-in, flowbits/xbits): önce
-			// ön-koşul (Require) — host'ta gerekli bitler kurulu değilse bu
-			// tespit alarma dönüşmez (aşama-2, aşama-1 görülmeden susar).
-			// Ön-koşul sağlanınca kuralın Set bitleri host'a yazılır (sonraki
-			// aşamalar için durum). Bitsiz kurallar bu daldan etkilenmez.
-			if d.Bits != nil && h.detbits != nil {
-				bscope := scopeKey(d.Bits.Track, deviceID, e.TenantID)
-				if len(d.Bits.Require) > 0 && !h.detbits.AllSet(bscope, d.Bits.Require) {
-					metrics.IncBitsGated()
-					continue
-				}
-				if len(d.Bits.RequireNot) > 0 && !h.detbits.NoneSet(bscope, d.Bits.RequireNot) {
-					metrics.IncBitsGated()
-					continue
-				}
-				if len(d.Bits.Set) > 0 {
-					ttl := time.Duration(d.Bits.TTLSeconds) * time.Second
-					for _, b := range d.Bits.Set {
-						h.detbits.Set(bscope, b, ttl)
-					}
-				}
-			}
-			// Tekrar-eşiği (opt-in): kural bir eşik tanımlıyorsa, tespit
-			// pencerede Count'a ULAŞMADAN alarma dönüşmez. Tek başarısız
-			// oturum/tarama denemesi susar; brute-force (çok tekrar) yakalanır.
-			// Eşiksiz kurallar bu daldan hiç etkilenmez (varsayılan davranış).
-			if d.Threshold != nil && d.Threshold.Count > 1 && h.threshold != nil {
-				scope := scopeKey(d.Threshold.Track, deviceID, e.TenantID)
-				win := time.Duration(d.Threshold.Seconds) * time.Second
-				if !h.threshold.Allow(d.RuleID, scope, d.Threshold.Count, win) {
-					metrics.IncThresholdGated()
-					continue
-				}
-			}
-			// Korelasyon: aynı cihaz+kural penceresindeki tekrarları tek
-			// incident'e katla ve YİNELENEN alarmı bastır (alarm-fırtınası).
-			if h.correlator != nil {
-				if _, suppress := h.correlator.Observe(ctx, deviceID, d.RuleID, d.Technique.ID, d.Severity, e.Message); suppress {
-					metrics.IncAlertSuppressed()
-					continue
-				}
+			if !gate.Admit(ctx, deviceID, e, d) {
+				continue // kapı bastırdı (ilgili metrik gate içinde artırıldı)
 			}
 			metrics.IncAlertRaised()
 			h.alerter.Notify(notify.Alert{
