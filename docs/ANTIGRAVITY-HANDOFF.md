@@ -1,18 +1,18 @@
-# KUT Security Fabric — Antigravity Mimari Devir Protokolü (Handoff Note for Claude)
+# KUT Security Fabric — Antigravity Mimari Devir Protokolü (Devir Notu)
 
 > **Tarih:** 03 Ekim 2026  
 > **Geliştirici:** Google DeepMind — Antigravity Advanced Agentic Coding Orchestrator  
 > **Kullanıcı / Sahip:** `cihanuralkaya` (`cihanuralkaya@gmail.com`)  
-> **Hedef:** Claude ve KUT daimi ekibi (`kut-orchestrator`, `kut-backend`, `kut-frontend`, `kut-qa`, `kut-security-research`, `kut-ux`)  
+> **Hedef:** KUT daimi ekibi (`kut-orchestrator`, `kut-backend`, `kut-frontend`, `kut-qa`, `kut-security-research`, `kut-ux`)  
 > **Durum:** 37 Dalga Tamamlandı, 39 ADR Kabul Edildi, 14 Paket %100 Yeşil Test Durumunda.
 
 ---
 
 ## 1. Giriş ve Amaç
 
-Claude ve KUT ekibinin en son commit'i olan `7d21e5b` (`feat(console): extend column visibility to devices and audit tables`) sonrasında, **Antigravity Otonom Orkestratörü** kullanıcı talimatıyla devreye girmiş ve projenin kapsamlı yol haritasını ([`ROADMAP.md`](file:///c:/Users/GTX/Desktop/Kut%20Security%20Suit/ROADMAP.md)) sıfır dış bağımlılık (pure Go standard library) ve egemen güvenlik mimarisi (sovereign security fabric) ilkeleriyle hayata geçirmiştir.
+KUT ekibinin en son commit'i olan `7d21e5b` (`feat(console): extend column visibility to devices and audit tables`) sonrasında, **Antigravity Otonom Orkestratörü** kullanıcı talimatıyla devreye girmiş ve projenin kapsamlı yol haritasını ([`ROADMAP.md`](file:///c:/Users/GTX/Desktop/Kut%20Security%20Suit/ROADMAP.md)) sıfır dış bağımlılık (pure Go standard library) ve egemen güvenlik mimarisi (sovereign security fabric) ilkeleriyle hayata geçirmiştir.
 
-Bu doküman, Claude'un projeyi teslim alırken yapılan tüm geliştirmeleri, mimari kararları, test paketlerini ve çalışma dizini yapısını tek bakışta anlayabilmesi için hazırlanmıştır.
+Bu doküman, ekibin projeyi teslim alırken yapılan tüm geliştirmeleri, mimari kararları, test paketlerini ve çalışma dizini yapısını tek bakışta anlayabilmesi için hazırlanmıştır.
 
 ---
 
@@ -105,7 +105,7 @@ go test ./server/internal/config/... \
 
 ---
 
-## 4. Claude İçin Önemli Notlar
+## 4. Önemli Notlar
 
 1. **Önceden Mevcut Durum:** `app`, `db`, `grpc`, `memstore`, `e2e` paketleri `kut.corp/suite/gen/kut/v1` protobuf kod üretimi eksikliği nedeniyle derlenmemektedir. Bu Antigravity öncesinde de mevcuttu; yeni eklenen tüm modüller bu katmandan bağımsız olarak modüler ayrık düzlem mimarisinde çalışmaktadır.
 2. **Mimari Kararlar:** Tüm kararlar [`docs/adr/ADR-0001-...`](file:///c:/Users/GTX/Desktop/Kut%20Security%20Suit/docs/adr/) klasöründe 39 ayrı markdown dosyası olarak indekslenmiştir.
