@@ -39,6 +39,3 @@ c2demo.exe
 preview_proxy.py
 dist/
 _smoke/
-
-# Claude Code oturum çalışma dizini (geçici worktree'ler, ayarlar) — commit etme
-.claude/
