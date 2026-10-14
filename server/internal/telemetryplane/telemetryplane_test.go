@@ -2,11 +2,47 @@ package telemetryplane
 
 import (
 	"context"
+	"go/parser"
+	"go/token"
+	"os"
+	"strings"
 	"testing"
 
 	"kut.corp/suite/server/internal/detect"
 	"kut.corp/suite/server/internal/model"
 )
+
+// STRUCTURAL GUARD (ADR-0040): the export tap must never detect or gate. It may
+// reference detect.Detection (a data type), but it must NOT import the detection
+// engine's gate machinery. If a future change re-introduces a gate into the
+// plane, this fails — that is the regression that would cause double gate
+// consumption.
+func TestPlaneHasNoGateImports(t *testing.T) {
+	forbidden := []string{"/detectpipe", "/threshold", "/detbits", "/correlate"}
+	fset := token.NewFileSet()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("paket dizini okunamadı: %v", err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("%s ayrıştırılamadı: %v", name, err)
+		}
+		for _, imp := range f.Imports {
+			p := strings.Trim(imp.Path.Value, `"`)
+			for _, bad := range forbidden {
+				if strings.HasSuffix(p, bad) {
+					t.Errorf("telemetri düzlemi %q import ediyor (%s) — tap tespit/gate yapmamalı", p, name)
+				}
+			}
+		}
+	}
+}
 
 // MockAlertSink records admitted alerts (event + firing detections).
 type MockAlertSink struct {
