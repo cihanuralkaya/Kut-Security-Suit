@@ -13,7 +13,11 @@ package ocsfexport
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
+	"os"
+	"strings"
 	"sync"
 
 	"kut.corp/suite/server/internal/detect"
@@ -45,6 +49,45 @@ type Writer struct {
 // metadata and appends each record as one JSON line to w.
 func NewWriter(w io.Writer, product telemetryschema.Product) *Writer {
 	return &Writer{w: w, product: product}
+}
+
+type nopCloser struct{}
+
+func (nopCloser) Close() error { return nil }
+
+// Open resolves an export destination spec into a Writer and a Closer. Supported
+// specs: "stdout", "file:/abs/or/rel/path" (append, created 0600),
+// "tcp://host:port", "udp://host:port". The returned Closer closes the
+// underlying file or socket; for stdout it is a no-op. An unopenable destination
+// returns an error so wiring can fail loudly at boot rather than silently drop.
+func Open(spec string, product telemetryschema.Product) (*Writer, io.Closer, error) {
+	switch {
+	case spec == "stdout":
+		return NewWriter(os.Stdout, product), nopCloser{}, nil
+	case strings.HasPrefix(spec, "file:"):
+		path := strings.TrimPrefix(spec, "file:")
+		if path == "" {
+			return nil, nil, fmt.Errorf("ocsfexport: file: hedefinde yol yok")
+		}
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			return nil, nil, fmt.Errorf("ocsfexport: dosya açılamadı %q: %w", path, err)
+		}
+		return NewWriter(f, product), f, nil
+	case strings.HasPrefix(spec, "tcp://"), strings.HasPrefix(spec, "udp://"):
+		network := spec[:3]
+		addr := spec[6:]
+		if addr == "" {
+			return nil, nil, fmt.Errorf("ocsfexport: %s hedefinde adres yok", network)
+		}
+		conn, err := net.Dial(network, addr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("ocsfexport: %s %q'ye bağlanılamadı: %w", network, addr, err)
+		}
+		return NewWriter(conn, product), conn, nil
+	default:
+		return nil, nil, fmt.Errorf("ocsfexport: desteklenmeyen hedef %q (stdout|file:…|tcp://…|udp://…)", spec)
+	}
 }
 
 // EmitEvent projects a raw canonical event to its OCSF activity mapping and
