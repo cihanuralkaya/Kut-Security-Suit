@@ -136,19 +136,25 @@ func TestProcessEventCorrelatorSuppresses(t *testing.T) {
 	}
 }
 
-// recObserver, export tap'ine giden çağrıları kaydeder (deviceID + admitted sayısı).
+// recObserver, export tap'ine giden çağrıları kaydeder (deviceID + admitted sayısı + kural id'leri).
 type recObserver struct {
 	calls []struct {
 		deviceID string
 		admitted int
+		rules    []string
 	}
 }
 
 func (r *recObserver) ObserveProcessed(_ context.Context, deviceID string, _ model.Event, admitted []detect.Detection) {
+	var rules []string
+	for _, d := range admitted {
+		rules = append(rules, d.RuleID)
+	}
 	r.calls = append(r.calls, struct {
 		deviceID string
 		admitted int
-	}{deviceID, len(admitted)})
+		rules    []string
+	}{deviceID, len(admitted), rules})
 }
 
 // Export tap: ProcessEvent HER olay için gözlemciyi çağırmalı ve yalnızca kapıdan
@@ -188,6 +194,30 @@ func TestProcessEventTapObservesRawEvent(t *testing.T) {
 	h.ProcessEvent(context.Background(), "d1", model.Event{Category: "net", Message: "hello"})
 	if len(obs.calls) != 1 || obs.calls[0].admitted != 0 {
 		t.Fatalf("eşleşmesiz ham olay admitted=0 ile 1 kez gözlemlenmeli, alinan %+v", obs.calls)
+	}
+}
+
+// Export paritesi: IoC alarmı tap'e "ioc" tespiti olarak gitmeli (konsol/webhook
+// ile aynı alarmlar). Jenerik eşleşmesiz alarm ise tap'e GİTMEMELİ — o ham olay
+// zaten EventSink ile export edilir (finding'e çevrilmez).
+func TestProcessEventIocFeedsTap(t *testing.T) {
+	h, al, _ := newProcHandler([]detect.Rule{}) // kural yok → jenerik + IoC yolu
+	h.SetIoCSet(loadIoC(t, "1.2.3.4 c2-a"))
+	obs := &recObserver{}
+	h.SetProcessedObserver(obs)
+	h.ProcessEvent(context.Background(), "devI",
+		model.Event{Category: "net", Message: "beacon to 1.2.3.4", Severity: "LOW"})
+
+	if len(obs.calls) != 1 {
+		t.Fatalf("tek olay 1 kez gözlemlenmeli, alinan %d", len(obs.calls))
+	}
+	// Tap yalnız IoC tespitini taşımalı (jenerik alarm ham olay olarak EventSink'te).
+	if len(obs.calls[0].rules) != 1 || obs.calls[0].rules[0] != "ioc" {
+		t.Fatalf("tap'e yalnız 'ioc' tespiti gitmeliydi, alinan %v", obs.calls[0].rules)
+	}
+	// Operatör yolu HEM jenerik HEM IoC alarmını görür (parite: tap IoC'yi finding yapar).
+	if n := len(al.all()); n != 2 {
+		t.Errorf("webhook/konsol jenerik+ioc = 2 alarm görmeli, alinan %d", n)
 	}
 }
 
