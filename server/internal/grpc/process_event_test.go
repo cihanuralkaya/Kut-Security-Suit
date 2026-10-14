@@ -136,6 +136,61 @@ func TestProcessEventCorrelatorSuppresses(t *testing.T) {
 	}
 }
 
+// recObserver, export tap'ine giden çağrıları kaydeder (deviceID + admitted sayısı).
+type recObserver struct {
+	calls []struct {
+		deviceID string
+		admitted int
+	}
+}
+
+func (r *recObserver) ObserveProcessed(_ context.Context, deviceID string, _ model.Event, admitted []detect.Detection) {
+	r.calls = append(r.calls, struct {
+		deviceID string
+		admitted int
+	}{deviceID, len(admitted)})
+}
+
+// Export tap: ProcessEvent HER olay için gözlemciyi çağırmalı ve yalnızca kapıdan
+// GEÇEN tespitleri devretmeli — canlı alarm sayısıyla birebir. Eşik altındaki ilk
+// olay admitted=0, eşiğe ulaşan ikinci olay admitted=1 vermeli. Gözlemci tespiti
+// DEĞİŞTİRMEMELİ (sona eklendi, gate durumuna dokunmaz).
+func TestProcessEventFeedsExportTap(t *testing.T) {
+	h, al, _ := newProcHandler([]detect.Rule{{
+		ID: "R-T", Name: "sprey", Category: "auth", Contains: []string{"fail"},
+		Severity: "MEDIUM", Threshold: &detect.ThresholdSpec{Count: 2, Seconds: 3600},
+	}})
+	obs := &recObserver{}
+	h.SetProcessedObserver(obs)
+	ev := model.Event{Category: "auth", Message: "login fail", Severity: "LOW"}
+	h.ProcessEvent(context.Background(), "devT", ev) // eşik altı → gated
+	h.ProcessEvent(context.Background(), "devT", ev) // Count=2 → ateşler
+
+	if len(obs.calls) != 2 {
+		t.Fatalf("tap her olay için çağrılmalı (2), alinan %d", len(obs.calls))
+	}
+	if obs.calls[0].admitted != 0 {
+		t.Errorf("gated olay admitted=0 olmalı, alinan %d", obs.calls[0].admitted)
+	}
+	if obs.calls[1].admitted != 1 {
+		t.Errorf("ateşleyen olay admitted=1 olmalı, alinan %d", obs.calls[1].admitted)
+	}
+	if n := len(al.all()); n != 1 {
+		t.Errorf("tap admitted toplamı canlı alarm sayısıyla eşleşmeli (1), alinan %d", n)
+	}
+}
+
+// Kural eşleşmese bile ham olay tap'e verilmeli (SIEM'e ham telemetri export'u).
+func TestProcessEventTapObservesRawEvent(t *testing.T) {
+	h, _, _ := newProcHandler([]detect.Rule{})
+	obs := &recObserver{}
+	h.SetProcessedObserver(obs)
+	h.ProcessEvent(context.Background(), "d1", model.Event{Category: "net", Message: "hello"})
+	if len(obs.calls) != 1 || obs.calls[0].admitted != 0 {
+		t.Fatalf("eşleşmesiz ham olay admitted=0 ile 1 kez gözlemlenmeli, alinan %+v", obs.calls)
+	}
+}
+
 // Çok-aşamalı bitler: Require sağlanmadan alarm çıkmamalı; bir Set kuralı ön-koşulu
 // kurduktan sonra Require kuralı ateşlemeli (aşama-1 → aşama-2 precedence).
 func TestProcessEventBitsRequireGateThenSet(t *testing.T) {

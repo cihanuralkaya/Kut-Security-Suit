@@ -164,6 +164,7 @@ type AgentHandler struct {
 	artifacts     ArtifactSink                  // adli/IR dosya toplama deposu
 	graph         *entitygraph.Graph            // varlık/tehdit grafı — olaylardan kenar besler (nil = kapalı)
 	seqModel      *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli — canlı öğrenir (nil = kapalı)
+	observer      ProcessedObserver            // yalnızca-export tap (nil = kapalı); tespit+kapı SONRASI beslenir
 	tenant        string                        // sunucu-tarafı kiracı (KUT_TENANT_ID); olaylara atanır (boş = tek-tenant)
 	tenantEnforce bool                          // sıkı çok-tenant: kiracısız cihazın olaylarını reddet (INV-044)
 	now           func() time.Time
@@ -551,6 +552,18 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 	}
 }
 
+// ProcessedObserver, bir olayı tespit + bastırma-kapısı BİTTİKTEN sonra alan
+// gözlemcidir: kanonik olay + kapıdan geçen (admitted) tespitler. Telemetri
+// düzleminin yalnızca-export tap'i bunu uygular. Gözlemci ASLA kendisi tespit
+// veya gate çalıştırmamalıdır — bu sorumluluk tek sahipli olarak burada kalır.
+type ProcessedObserver interface {
+	ObserveProcessed(ctx context.Context, deviceID string, e model.Event, admitted []detect.Detection)
+}
+
+// SetProcessedObserver, yalnızca-export tap'ini bağlar (opsiyonel; nil = export yok).
+// Wiring sırasında, herhangi bir listener başlamadan önce ayarlanır (race-free).
+func (h *AgentHandler) SetProcessedObserver(o ProcessedObserver) { h.observer = o }
+
 // processEvent, tek bir olayı sunucu-taraflı tespit + alarm hattından geçirir:
 // konsol push → kural değerlendirme → çok-aşama bitleri (Require/RequireNot/Set) →
 // tekrar-eşiği → korelasyon → alarm/zincir → IoC. Hem gRPC ajan yolu (ReportEvents)
@@ -571,6 +584,7 @@ func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e mode
 	// düzeyli + MITRE bağlamlı uyarı üret (ham olayın yerine geçer). Eşleşme
 	// yoksa jenerik yol: ham önem düzeyi + MITRE sınıflandırması. Uyarı
 	// best-effort; eşik/filtre notifier içinde. noop notifier'da maliyetsiz.
+	var admitted []detect.Detection // kapıdan geçen tespitler — export tap'ine verilir
 	if dets := h.detector.Load().Evaluate(e); len(dets) > 0 { // atomik Load: hot-reload ile yarışsız
 		metrics.AddDetections(len(dets))
 		// Bastırma kapıları (bitler + tekrar-eşiği + korelasyon) PAYLAŞILAN
@@ -582,6 +596,7 @@ func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e mode
 			if !gate.Admit(ctx, deviceID, e, d) {
 				continue // kapı bastırdı (ilgili metrik gate içinde artırıldı)
 			}
+			admitted = append(admitted, d)
 			metrics.IncAlertRaised()
 			h.alerter.Notify(notify.Alert{
 				DeviceID:      deviceID,
@@ -661,6 +676,13 @@ func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e mode
 				Tactic:        "Command and Control",
 			})
 		}
+	}
+
+	// Export tap'i (nil = bağlı değil): tespit + kapı BİTTİKTEN sonra, olayı ve
+	// kapıdan geçen tespitleri yalnızca-export düzlemine devret. Tap asla gate
+	// çağırmaz; bu yüzden ikinci bir gate'li yol oluşmaz (ADR-0040).
+	if h.observer != nil {
+		h.observer.ObserveProcessed(ctx, deviceID, e, admitted)
 	}
 }
 
