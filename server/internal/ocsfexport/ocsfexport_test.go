@@ -1,9 +1,14 @@
 package ocsfexport
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"kut.corp/suite/server/internal/detect"
@@ -92,5 +97,74 @@ func TestWriter_EmitAlert_NoDetections(t *testing.T) {
 	m := decodeLine(t, &buf)
 	if m["class_uid"].(float64) != 2004 {
 		t.Errorf("tespitsiz alarm bile Finding(2004) olmalı, alinan %v", m["class_uid"])
+	}
+}
+
+func TestOpen_File(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ocsf.ndjson")
+	w, c, err := Open("file:"+path, testProduct)
+	if err != nil {
+		t.Fatalf("Open file: %v", err)
+	}
+	if err := w.EmitEvent(context.Background(), model.Event{Category: "PROCESS", Message: "x"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	_ = c.Close()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(b), `"class_uid"`) {
+		t.Errorf("dosyaya OCSF JSON satırı yazılmalıydı, alinan %q", string(b))
+	}
+}
+
+func TestOpen_TCP(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	got := make(chan string, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		line, _ := bufio.NewReader(conn).ReadString('\n')
+		got <- line
+	}()
+
+	w, c, err := Open("tcp://"+ln.Addr().String(), testProduct)
+	if err != nil {
+		t.Fatalf("Open tcp: %v", err)
+	}
+	defer c.Close()
+	if err := w.EmitAlert(context.Background(), model.Event{Message: "a"}, []detect.Detection{{RuleID: "r"}}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	line := <-got
+	if !strings.Contains(line, `"class_uid":2004`) {
+		t.Errorf("tcp hedefine Detection Finding yazılmalıydı, alinan %q", line)
+	}
+}
+
+func TestOpen_Stdout(t *testing.T) {
+	w, c, err := Open("stdout", testProduct)
+	if err != nil || w == nil {
+		t.Fatalf("stdout Open hata vermemeli: %v", err)
+	}
+	if err := c.Close(); err != nil { // no-op, os.Stdout kapanmaz
+		t.Errorf("stdout closer no-op olmalı: %v", err)
+	}
+}
+
+func TestOpen_BadSpec(t *testing.T) {
+	if _, _, err := Open("nope", testProduct); err == nil {
+		t.Fatal("desteklenmeyen hedef hata vermeliydi")
+	}
+	if _, _, err := Open("file:", testProduct); err == nil {
+		t.Fatal("boş dosya yolu hata vermeliydi")
 	}
 }
