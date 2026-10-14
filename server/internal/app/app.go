@@ -548,6 +548,16 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		socAlerter = alerter // sunucu-taraflı tespitler de aynı yoldan uyarır
 	}
 
+	// Telemetri dışa-aktarım tap'i (ADR-0040): AgentHandler'ın tespit+kapı çıktısını
+	// OCSF olarak dışa aktaran yalnızca-export düzlemi. Opt-in (KUT_OCSF_EXPORT);
+	// gözlemci listener'lar başlamadan ÖNCE bağlanır (race-free). Kapanışta drain için
+	// defer; açılamayan hedef boot'ta sesli başarısız olur.
+	stopExport, err := wireTelemetryExport(ctx, agentHandler, cfg.TenantEnforce)
+	if err != nil {
+		return fmt.Errorf("telemetri dışa aktarımı: %w", err)
+	}
+	defer stopExport()
+
 	// Tehdit istihbaratı (IoC): KUT_IOC_FILE ayarlıysa bilinen-kötü göstergeler
 	// (IP/MAC/alan adı/hash/süreç) yüklenir; eşleşen olaylar KRİTİK uyarı üretir.
 	if iocPath := os.Getenv("KUT_IOC_FILE"); iocPath != "" {
