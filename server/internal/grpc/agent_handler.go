@@ -584,7 +584,17 @@ func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e mode
 	// düzeyli + MITRE bağlamlı uyarı üret (ham olayın yerine geçer). Eşleşme
 	// yoksa jenerik yol: ham önem düzeyi + MITRE sınıflandırması. Uyarı
 	// best-effort; eşik/filtre notifier içinde. noop notifier'da maliyetsiz.
-	var admitted []detect.Detection // kapıdan geçen tespitler — export tap'ine verilir
+	var admitted []detect.Detection // kapıdan geçen/alarma dönen tespitler — export tap'ine verilir
+	// raise, bir alarmı HEM operatör yoluna (notify) HEM export tap'ine (admitted)
+	// gönderir; d, alarmın tap'teki sentetik tespit karşılığıdır. Böylece IoC ve
+	// zincir alarmları da SIEM'e finding olarak gider (konsol/webhook ile parite,
+	// ADR-0040). Jenerik eşleşmesiz olay buradan GEÇMEZ — o ham olay zaten EventSink
+	// ile export edilir; finding'e çevirmek her olayı alarm yapardı.
+	raise := func(a notify.Alert, d detect.Detection) {
+		metrics.IncAlertRaised()
+		h.alerter.Notify(a)
+		admitted = append(admitted, d)
+	}
 	if dets := h.detector.Load().Evaluate(e); len(dets) > 0 { // atomik Load: hot-reload ile yarışsız
 		metrics.AddDetections(len(dets))
 		// Bastırma kapıları (bitler + tekrar-eşiği + korelasyon) PAYLAŞILAN
@@ -620,13 +630,15 @@ func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e mode
 				}
 				if fired, signals := h.chain.Observe(deviceID, sig, e.OccurredAt); fired {
 					metrics.IncChainFired()
-					metrics.IncAlertRaised()
-					h.alerter.Notify(notify.Alert{
+					raise(notify.Alert{
 						DeviceID:   deviceID,
 						Category:   "SECURITY",
 						Severity:   "CRITICAL",
 						Message:    "yüksek-güvenli saldırı zinciri (çok-sinyal): " + strings.Join(signals, " + "),
 						OccurredAt: e.OccurredAt,
+					}, detect.Detection{
+						RuleID: "chain", RuleName: "attack-chain", Severity: "CRITICAL",
+						Technique: d.Technique, // zinciri tetikleyen son sinyalin tekniği
 					})
 				}
 			}
@@ -655,7 +667,6 @@ func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e mode
 		}
 		if ti, ind, ok := iocSet.MatchIndicator(dm, e.Message); ok {
 			metrics.IncIocHit()
-			metrics.IncAlertRaised()
 			// Zenginleştirme: eşleşen göstergenin güven + kaynak bilgisini mesaja iliştir.
 			enrich := "IoC eşleşmesi [" + ti.Label + "] " + ind
 			if ti.Confidence != "" {
@@ -665,7 +676,7 @@ func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e mode
 				}
 				enrich += ")"
 			}
-			h.alerter.Notify(notify.Alert{
+			raise(notify.Alert{
 				DeviceID:      deviceID,
 				Category:      e.Category,
 				Severity:      "CRITICAL",
@@ -674,6 +685,9 @@ func (h *AgentHandler) ProcessEvent(ctx context.Context, deviceID string, e mode
 				TechniqueID:   "T1071",
 				TechniqueName: "Application Layer Protocol",
 				Tactic:        "Command and Control",
+			}, detect.Detection{
+				RuleID: "ioc", RuleName: ti.Label, Severity: "CRITICAL",
+				Technique: mitre.Technique{ID: "T1071", Name: "Application Layer Protocol", Tactic: "Command and Control"},
 			})
 		}
 	}
