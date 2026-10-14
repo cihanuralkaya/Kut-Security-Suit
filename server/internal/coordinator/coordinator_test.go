@@ -48,7 +48,7 @@ func TestFabricCoordinator_Lifecycle(t *testing.T) {
 	}
 	signer := commandplane.NewCommandSigner(priv, 5*time.Minute)
 	cmd := commandplane.NewPlane(&mockCommandSink{}, &mockCommandAuthz{}, signer)
-	telem := telemetryplane.New(nil, nil, nil, nil)
+	telem := telemetryplane.New(nil, nil, telemetryplane.TapConfig{})
 
 	coord := New(control, telem, cmd)
 	ctx := context.Background()
