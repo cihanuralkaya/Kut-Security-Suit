@@ -164,7 +164,7 @@ type AgentHandler struct {
 	artifacts     ArtifactSink                  // adli/IR dosya toplama deposu
 	graph         *entitygraph.Graph            // varlık/tehdit grafı — olaylardan kenar besler (nil = kapalı)
 	seqModel      *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli — canlı öğrenir (nil = kapalı)
-	observer      ProcessedObserver            // yalnızca-export tap (nil = kapalı); tespit+kapı SONRASI beslenir
+	observer      ProcessedObserver             // yalnızca-export tap (nil = kapalı); tespit+kapı SONRASI beslenir
 	tenant        string                        // sunucu-tarafı kiracı (KUT_TENANT_ID); olaylara atanır (boş = tek-tenant)
 	tenantEnforce bool                          // sıkı çok-tenant: kiracısız cihazın olaylarını reddet (INV-044)
 	now           func() time.Time

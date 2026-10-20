@@ -18,7 +18,7 @@ const unitSep = 0x1f
 // GERİYE UYUMLULUK: tenant_id YALNIZ boş-değilken zincire yazılır. Tek-tenant
 // (tenant_id="") kurulumlarda bu, tenant alanı hiç olmayan eski (tenant-öncesi)
 // hash biçimiyle BİREBİR aynı baytları üretir → mevcut denetim zincirleri migrasyon
-// (ADD COLUMN DEFAULT '') sonrası re-hash GEREKMEDEN doğrulanmaya devam eder.
+// (ADD COLUMN DEFAULT ”) sonrası re-hash GEREKMEDEN doğrulanmaya devam eder.
 // Çok-tenant satırlarda (tenant_id dolu) tenant zincire katılır → transplant koruması.
 func AuditChainHash(prev []byte, tenantID, adminRef, action, targetType, targetID string, atUnixNano int64) []byte {
 	h := sha256.New()
