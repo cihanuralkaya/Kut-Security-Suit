@@ -181,7 +181,7 @@ func TestAuditChainHashIncludesTenant(t *testing.T) {
 
 // TestAuditChainHashEmptyTenantBackwardCompatible, boş tenant_id'nin tenant-öncesi
 // (tenant alanı hiç yazılmayan) hash biçimiyle BİREBİR aynı baytları ürettiğini
-// doğrular. Böylece audit_log'a tenant_id sütunu eklendikten (ADD COLUMN DEFAULT '')
+// doğrular. Böylece audit_log'a tenant_id sütunu eklendikten (ADD COLUMN DEFAULT ”)
 // sonra mevcut tek-tenant denetim zincirleri re-hash GEREKMEDEN doğrulanabilir (H2).
 func TestAuditChainHashEmptyTenantBackwardCompatible(t *testing.T) {
 	prev := []byte("prev-hash")

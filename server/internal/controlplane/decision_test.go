@@ -90,9 +90,9 @@ func TestDecisionEngine_Evaluate_MislabeledDestructive(t *testing.T) {
 	ctx := SecurityContext{
 		TenantID:     "tenant-1",
 		ActorID:      "actor-1",
-		ActionName:   "wipe",   // yıkıcı eylem
-		ActionImpact: "read",   // çağıranın yanlış/düşürülmüş beyanı
-		RiskScore:    0.0,      // sıfır risk beyanı
+		ActionName:   "wipe", // yıkıcı eylem
+		ActionImpact: "read", // çağıranın yanlış/düşürülmüş beyanı
+		RiskScore:    0.0,    // sıfır risk beyanı
 	}
 
 	decision := engine.Evaluate("dec-mislabel", ctx)
