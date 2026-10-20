@@ -59,6 +59,7 @@ type Plane struct {
 	bp    *BackpressureController
 
 	ch   chan Record
+	done chan struct{} // Stop sinyali: worker drain-then-exit (ch ASLA kapatılmaz)
 	ctx  context.Context
 	stop context.CancelFunc
 	wg   sync.WaitGroup
@@ -96,13 +97,20 @@ func (p *Plane) Start(ctx context.Context) error {
 		return errors.New("telemetry plane is already running")
 	}
 	p.ctx, p.stop = context.WithCancel(context.WithoutCancel(ctx))
+	p.done = make(chan struct{})
 	p.running = true
 	p.wg.Add(1)
 	go p.run()
 	return nil
 }
 
-// Stop closes the queue and waits for the worker to drain what is buffered.
+// Stop signals the worker to drain what is buffered, then waits for it to exit.
+// The queue channel is NEVER closed by the sender side: a concurrent
+// ObserveProcessed that already passed the running check must never panic on a
+// send to a closed channel. Stop flips running=false under the write lock first,
+// so every in-flight enqueue (held under the read lock) completes before Stop
+// proceeds and no enqueue happens afterwards — the records the worker drains are
+// therefore final, with no send-on-closed-channel window.
 func (p *Plane) Stop() error {
 	p.mu.Lock()
 	if !p.running {
@@ -110,9 +118,9 @@ func (p *Plane) Stop() error {
 		return errors.New("telemetry plane is not running")
 	}
 	p.running = false
-	close(p.ch)
 	p.mu.Unlock()
 
+	close(p.done)
 	p.wg.Wait()
 	if p.stop != nil {
 		p.stop()
@@ -122,19 +130,39 @@ func (p *Plane) Stop() error {
 
 func (p *Plane) run() {
 	defer p.wg.Done()
-	for rec := range p.ch {
-		if p.event != nil && p.mode != "findings" {
-			if err := p.event.EmitEvent(p.ctx, rec.Event); err != nil {
-				atomic.AddUint64(&p.sinkErrors, 1)
+	for {
+		select {
+		case rec := <-p.ch:
+			p.emit(rec)
+		case <-p.done:
+			// Drain whatever is still buffered (no more sends arrive once Stop set
+			// running=false), then exit deterministically.
+			for {
+				select {
+				case rec := <-p.ch:
+					p.emit(rec)
+				default:
+					return
+				}
 			}
 		}
-		if len(rec.Admitted) > 0 && p.alert != nil {
-			if err := p.alert.EmitAlert(p.ctx, rec.Event, rec.Admitted); err != nil {
-				atomic.AddUint64(&p.sinkErrors, 1)
-			}
-		}
-		p.bp.Release()
 	}
+}
+
+// emit projects one record to the configured sinks under the worker's drain
+// context (p.ctx is not cancelled until Stop finishes waiting).
+func (p *Plane) emit(rec Record) {
+	if p.event != nil && p.mode != "findings" {
+		if err := p.event.EmitEvent(p.ctx, rec.Event); err != nil {
+			atomic.AddUint64(&p.sinkErrors, 1)
+		}
+	}
+	if len(rec.Admitted) > 0 && p.alert != nil {
+		if err := p.alert.EmitAlert(p.ctx, rec.Event, rec.Admitted); err != nil {
+			atomic.AddUint64(&p.sinkErrors, 1)
+		}
+	}
+	p.bp.Release()
 }
 
 // ObserveProcessed is the tap entry: the ingest path calls it AFTER detection and
@@ -158,6 +186,21 @@ func (p *Plane) ObserveProcessed(ctx context.Context, deviceID string, e model.E
 		prio = "HIGH"
 	}
 	if !p.bp.Acquire(ctx, prio) {
+		atomic.AddUint64(&p.dropped, 1)
+		return
+	}
+
+	// Enqueue under the read lock and re-check running. Stop takes the write lock
+	// to flip running=false before signalling drain, so this enqueue either
+	// completes before Stop proceeds or is dropped here once running is false —
+	// the channel is never closed under a live sender (no send-on-closed panic),
+	// and every accepted record is drained. Acquire is non-blocking, and the send
+	// below is non-blocking (select/default), so holding the read lock cannot
+	// deadlock Stop.
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if !p.running {
+		p.bp.Release()
 		atomic.AddUint64(&p.dropped, 1)
 		return
 	}
