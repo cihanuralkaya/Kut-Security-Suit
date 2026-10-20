@@ -1,3 +1,8 @@
+# Go kaynakları her zaman LF ile saklanır ve checkout edilir. Windows'ta
+# core.autocrlf=true altında CRLF'in blob'lara sızıp gofmt kapısını kızartmasını
+# yapısal olarak engeller (bkz. fix/ci-race-and-crlf-guard).
+*.go text eol=lf
+
 server/internal/adminapi/server.go            merge=union
 server/internal/adminapi/server_test.go       merge=union
 server/internal/adminread/service.go          merge=union
