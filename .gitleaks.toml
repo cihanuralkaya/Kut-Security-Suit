@@ -9,3 +9,9 @@ description = "Demo/geliştirme yapıtları — üretim sırrı değildir (yerel
 paths = [
   '''_demo[\\/].*''',
 ]
+# AWS dokümantasyonundaki herkese açık ÖRNEK anahtar (gerçek kimlik bilgisi
+# değildir); DLP/secret-broker testlerinde sahte girdi olarak kullanılır.
+# Yalnızca bu tam dize allowlist'e alınır — başka hiçbir AKIA... eşleşmesi değil.
+regexes = [
+  '''AKIAIOSFODNN7EXAMPLE''',
+]
