@@ -203,6 +203,9 @@ func TestLoadStrictKeyPermissions(t *testing.T) {
 	}
 
 	// Opt-out: operatör bilerek kabul ederse yalnız uyarı, boot devam.
+	// Load, sırları okuyunca ortamdan temizler (clearSecretEnv); ikinci Load için
+	// ana anahtar yeniden ayarlanmalı (Linux'ta ilk Load izin kontrolüne kadar ilerler).
+	t.Setenv("KUT_MASTER_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	t.Setenv("KUT_ALLOW_INSECURE_KEY_PERMISSIONS", "1")
 	if _, err := Load(); err != nil {
 		t.Fatalf("opt-out açıkken hata dönmemeli (yalnız uyarı): %v", err)
