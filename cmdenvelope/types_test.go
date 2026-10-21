@@ -213,43 +213,61 @@ func TestDriftGuard_ProtoEnum(t *testing.T) {
 
 var (
 	reSQLComment  = regexp.MustCompile(`(?m)--[^\n]*`)
-	reQuotedList  = regexp.MustCompile(`\(\s*'[A-Z_]+'(?:\s*,\s*'[A-Z_]+')+\s*\)`)
-	reQuotedItem  = regexp.MustCompile(`'([A-Z_]+)'`)
-	reAlterAdd    = regexp.MustCompile(`(?is)ALTER\s+TYPE\s+command_type\s+ADD\s+VALUE\s+(?:IF\s+NOT\s+EXISTS\s+)?'([A-Z_]+)'`)
+	reQuotedList  = regexp.MustCompile(`\(\s*'[A-Z0-9_]+'(?:\s*,\s*'[A-Z0-9_]+')+\s*\)`)
+	reQuotedItem  = regexp.MustCompile(`'([A-Z0-9_]+)'`)
+	reAlterAdd    = regexp.MustCompile(`(?is)ALTER\s+TYPE\s+command_type\s+ADD\s+VALUE\s+(?:IF\s+NOT\s+EXISTS\s+)?'([A-Z0-9_]+)'`)
 	reCreateEnum  = regexp.MustCompile(`(?is)CREATE\s+TYPE\s+command_type\s+AS\s+ENUM\s*\(([^)]*)\)`)
 	reCommandLike = regexp.MustCompile(`'(?:QUARANTINE|UNQUARANTINE|COLLECT_FILE|RUN_SIGNED_SCRIPT|COLLECT_DIAGNOSTICS)'`)
 )
 
-// TestDriftGuard_DBSchema (N20b): db/*.sql içindeki `command_type` ENUM'u (CREATE + ALTER ... ADD
-// VALUE) ve komut adlarından oluşan herhangi bir `IN (...)`/CHECK listesi tabloyla aynı kümede olmalı.
+// enumFromSQL, verilen SQL dosyalarından (ad → içerik) `command_type` ENUM değer kümesini
+// toplar: her dosyadaki CREATE TYPE değerleri VE tüm dosyalardaki `ALTER TYPE ... ADD VALUE`
+// satırları — CREATE TYPE içermeyen (yalnız ALTER taşıyan) göç dosyaları dâhil. found, hiç
+// CREATE TYPE görülüp görülmediğini söyler.
+func enumFromSQL(files map[string]string) (set map[string]bool, found bool) {
+	set = map[string]bool{}
+	for _, raw := range files {
+		sql := reSQLComment.ReplaceAllString(raw, "")
+		for _, m := range reCreateEnum.FindAllStringSubmatch(sql, -1) {
+			found = true
+			for _, it := range reQuotedItem.FindAllStringSubmatch(m[1], -1) {
+				set[it[1]] = true
+			}
+		}
+		for _, a := range reAlterAdd.FindAllStringSubmatch(sql, -1) {
+			set[a[1]] = true
+		}
+	}
+	return set, found
+}
+
+// TestDriftGuard_DBSchema (N20b): db/*.sql içindeki `command_type` ENUM'u (tüm dosyalardaki
+// CREATE + ALTER ... ADD VALUE birleşimi) ve komut adlarından oluşan herhangi bir `IN (...)`/CHECK
+// listesi tabloyla aynı kümede olmalı.
 func TestDriftGuard_DBSchema(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("..", "db", "*.sql"))
-	if err != nil || len(files) == 0 {
+	paths, err := filepath.Glob(filepath.Join("..", "db", "*.sql"))
+	if err != nil || len(paths) == 0 {
 		t.Fatalf("db/*.sql bulunamadı: %v", err)
 	}
 	want := Names()
-	foundEnum := false
-	for _, f := range files {
+	files := map[string]string{}
+	for _, f := range paths {
 		raw, err := os.ReadFile(f) // #nosec G304 -- depo içi sabit glob
 		if err != nil {
 			t.Fatal(err)
 		}
-		sql := reSQLComment.ReplaceAllString(string(raw), "")
-
-		set := map[string]bool{}
-		if m := reCreateEnum.FindStringSubmatch(sql); m != nil {
-			foundEnum = true
-			for _, it := range reQuotedItem.FindAllStringSubmatch(m[1], -1) {
-				set[it[1]] = true
-			}
-			for _, a := range reAlterAdd.FindAllStringSubmatch(sql, -1) {
-				set[a[1]] = true
-			}
-			if got := sortedKeys(set); !reflect.DeepEqual(got, want) {
-				t.Errorf("%s: command_type ENUM tabloyla ayrıştı:\n db    %v\n table %v", f, got, want)
-			}
-		}
-		// Enum dışında komut adı listesi taşıyan her CHECK/IN listesi de aynı küme olmalı.
+		files[f] = string(raw)
+	}
+	set, foundEnum := enumFromSQL(files)
+	if !foundEnum {
+		t.Fatal("db şemasında command_type ENUM'u bulunamadı (regex/şema değişti?)")
+	}
+	if got := sortedKeys(set); !reflect.DeepEqual(got, want) {
+		t.Errorf("command_type ENUM (tüm db/*.sql CREATE+ALTER birleşimi) tabloyla ayrıştı:\n db    %v\n table %v", got, want)
+	}
+	// Enum dışında komut adı listesi taşıyan her CHECK/IN listesi de aynı küme olmalı.
+	for f, raw := range files {
+		sql := reSQLComment.ReplaceAllString(raw, "")
 		for _, lst := range reQuotedList.FindAllString(sql, -1) {
 			if !reCommandLike.MatchString(lst) {
 				continue
@@ -263,28 +281,37 @@ func TestDriftGuard_DBSchema(t *testing.T) {
 			}
 		}
 	}
-	if !foundEnum {
-		t.Fatal("db şemasında command_type ENUM'u bulunamadı (regex/şema değişti?)")
-	}
 }
 
-// TestSchemaParserSelfCheck: ayrıştırıcı bir eksik tipi gerçekten yakalar.
+// TestSchemaParserSelfCheck: ayrıştırıcı bir eksik tipi gerçekten yakalar ve CREATE TYPE'sız bir
+// göç dosyasındaki ALTER ... ADD VALUE satırlarını da toplar (QA S1 SHOULD-FIX-1).
 func TestSchemaParserSelfCheck(t *testing.T) {
-	sql := reSQLComment.ReplaceAllString("CREATE TYPE command_type AS ENUM ('QUARANTINE', 'WIPE'); -- 'LOCK'\n"+
-		"ALTER TYPE command_type ADD VALUE IF NOT EXISTS 'LOCK';", "")
-	m := reCreateEnum.FindStringSubmatch(sql)
-	if m == nil {
+	// Tek dosya: yorum satırındaki değer sayılmaz, ALTER sayılır.
+	set, found := enumFromSQL(map[string]string{
+		"a.sql": "CREATE TYPE command_type AS ENUM ('QUARANTINE', 'WIPE'); -- 'LOCK'\n" +
+			"ALTER TYPE command_type ADD VALUE IF NOT EXISTS 'LOCK';",
+	})
+	if !found {
 		t.Fatal("CREATE TYPE ayrıştırılamadı")
-	}
-	set := map[string]bool{}
-	for _, it := range reQuotedItem.FindAllStringSubmatch(m[1], -1) {
-		set[it[1]] = true
-	}
-	for _, a := range reAlterAdd.FindAllStringSubmatch(sql, -1) {
-		set[a[1]] = true
 	}
 	if got := sortedKeys(set); !reflect.DeepEqual(got, []string{"LOCK", "QUARANTINE", "WIPE"}) {
 		t.Fatalf("ayrıştırıcı beklenmeyen küme verdi: %v", got)
+	}
+	// İki dosya: ikincisi CREATE TYPE içermez, yalnız ALTER taşır → yine de toplanmalı.
+	set, found = enumFromSQL(map[string]string{
+		"001_schema.sql":    "CREATE TYPE command_type AS ENUM ('QUARANTINE', 'WIPE');",
+		"002_migration.sql": "ALTER TYPE command_type ADD VALUE 'FAKE2';\n-- ALTER TYPE command_type ADD VALUE 'COMMENTED';",
+		"003_unrelated.sql": "ALTER TYPE other_type ADD VALUE 'NOPE';",
+	})
+	if !found {
+		t.Fatal("CREATE TYPE ayrıştırılamadı")
+	}
+	if got := sortedKeys(set); !reflect.DeepEqual(got, []string{"FAKE2", "QUARANTINE", "WIPE"}) {
+		t.Fatalf("CREATE'siz göç dosyasındaki ALTER toplanmadı / başka tipin ALTER'ı karıştı: %v", got)
+	}
+	// Yalnız ALTER içeren dosyalar (hiç CREATE yok) found=false verir; gerçek test bunu hata sayar.
+	if _, found := enumFromSQL(map[string]string{"x.sql": "ALTER TYPE command_type ADD VALUE 'X';"}); found {
+		t.Fatal("CREATE TYPE yokken found=true döndü")
 	}
 }
 
