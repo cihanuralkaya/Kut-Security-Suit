@@ -3871,6 +3871,12 @@ func respondErr(w http.ResponseWriter, err error) bool {
 		writeErr(w, http.StatusForbidden, "yetki yetersiz")
 		return true
 	}
+	// Scope/ROE guardrail reddi bir YETKİ sonucudur (sunucu hatası değil): 403. İstemciye motor
+	// gerekçesi (ROE kapsamı) sızdırılmaz; ayrıntı admin servisinin audit/log kaydındadır.
+	if errors.Is(err, admin.ErrOutOfScope) {
+		writeErr(w, http.StatusForbidden, "operasyon scope/ROE kapsamı dışı")
+		return true
+	}
 	if errors.Is(err, admin.ErrInvalidRule) {
 		writeErr(w, http.StatusBadRequest, "geçersiz kural")
 		return true
