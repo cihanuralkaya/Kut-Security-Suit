@@ -11,14 +11,14 @@ package cmdenvelope
 import (
 	"crypto/ed25519"
 	"sort"
+	"strings"
 	"time"
 )
 
 // Güven bildirimi sınırları.
 const (
-	MaxStatementKeys       = 32
-	MaxStatementSignatures = 16
-	MaxVerifyMode          = 2 // 0 none, 1 warn, 2 enforce
+	MaxStatementKeys = 32
+	MaxVerifyMode    = 2 // 0 none, 1 warn, 2 enforce
 )
 
 // KeyRole, bir anahtarın rolüdür (kodlamada U32).
@@ -39,12 +39,6 @@ type KeyEntry struct {
 	NotAfterNS  int64
 }
 
-// StatementSignature, bir KÖK anahtarın bildirim imzasıdır.
-type StatementSignature struct {
-	KeyID string
-	Sig   []byte
-}
-
 // Statement, güven bildirimidir. İmza İÇERMEYEN alanlar kanonik ileti olarak imzalanır.
 type Statement struct {
 	Epoch         uint64
@@ -53,7 +47,7 @@ type Statement struct {
 	IssuedAtNS    int64
 	MinVerifyMode uint32
 	MinAgentBuild uint64
-	Signatures    []StatementSignature
+	Signatures    []DSSESignature
 }
 
 func (k KeyEntry) inWindow(at int64) bool {
@@ -102,8 +96,8 @@ func (st Statement) Validate() error {
 	if roots < 1 || st.RootThreshold < 1 || int(st.RootThreshold) > roots {
 		return bad("root_threshold %d (1..%d kök anahtar olmalı)", st.RootThreshold, roots)
 	}
-	if len(st.Signatures) > MaxStatementSignatures {
-		return bad("%d imza > %d", len(st.Signatures), MaxStatementSignatures)
+	if len(st.Signatures) > MaxDSSESignatures {
+		return bad("%d imza > %d", len(st.Signatures), MaxDSSESignatures)
 	}
 	for _, s := range st.Signatures {
 		if !isLowerHex(s.KeyID, KeyIDHexLen) || len(s.Sig) != SignatureLen {
@@ -200,13 +194,13 @@ func SignStatement(priv ed25519.PrivateKey, st Statement) (Statement, error) {
 	if len(priv) != ed25519.PrivateKeySize {
 		return Statement{}, newErr(ReasonMalformedStatement, "geçersiz özel anahtar boyutu")
 	}
-	st.Signatures = append([]StatementSignature(nil), st.Signatures...)
-	msg, err := CanonicalStatement(st)
+	st.Signatures = append([]DSSESignature(nil), st.Signatures...)
+	body, err := CanonicalStatement(st)
 	if err != nil {
 		return Statement{}, err
 	}
 	id := KeyID(priv.Public().(ed25519.PublicKey))
-	sig := StatementSignature{KeyID: id, Sig: ed25519.Sign(priv, msg)}
+	sig := DSSESignature{KeyID: id, Sig: ed25519.Sign(priv, PAE(PayloadTypeTrust, body))}
 	for i := range st.Signatures {
 		if st.Signatures[i].KeyID == id {
 			st.Signatures[i] = sig
@@ -290,7 +284,7 @@ func ApplyStatement(local *Statement, st Statement, pins []ed25519.PublicKey, no
 	if st.Epoch <= localEpoch {
 		return Acceptance{}, newErr(ReasonStaleEpoch, "epoch %d <= yerel %d", st.Epoch, localEpoch)
 	}
-	msg := encodeStatement(st)
+	msg := PAE(PayloadTypeTrust, encodeStatement(st))
 
 	if pinSigned(msg, st.Signatures, pins) {
 		return Acceptance{Mode: AcceptPin, EpochJump: st.Epoch != localEpoch+1, Statement: st}, nil
@@ -396,7 +390,7 @@ func ActiveKeyValid(chain []Statement, pins []ed25519.PublicKey, pub ed25519.Pub
 
 // ---- iç yardımcılar ---------------------------------------------------------
 
-func pinSigned(msg []byte, sigs []StatementSignature, pins []ed25519.PublicKey) bool {
+func pinSigned(msg []byte, sigs []DSSESignature, pins []ed25519.PublicKey) bool {
 	if len(pins) == 0 {
 		return false
 	}
@@ -449,7 +443,7 @@ func sameKeySet(a, b map[string]KeyEntry) bool {
 
 // validSigners, imzalar içinden roots kümesindeki, penceresi at anını kapsayan ve doğrulanan
 // AYRIK anahtar sayısını döner.
-func validSigners(msg []byte, sigs []StatementSignature, signers map[string]KeyEntry, at int64) int {
+func validSigners(msg []byte, sigs []DSSESignature, signers map[string]KeyEntry, at int64) int {
 	counted := map[string]bool{}
 	for _, s := range sigs {
 		k, ok := signers[s.KeyID]
@@ -474,4 +468,46 @@ func quorum(msg []byte, st Statement, roots map[string]KeyEntry, need uint32, at
 		return newErr(ReasonSignerNotRoot, "bildirimi yalnız komut anahtarı imzalamış (kök rolü şart)")
 	}
 	return newErr(ReasonThresholdNotMet, "%s: %d/%d geçerli kök imzası", label, got, need)
+}
+
+// ---- DSSE gösterimi ---------------------------------------------------------------
+
+// DSSE, bildirimi DSSE zarfı olarak döner: payloadType "application/vnd.kut.trust.v2", gövde =
+// kanonik bildirim iletisi, imzalar = st.Signatures (KÖK anahtarlar; keyid doğrulanmamış ipucu).
+func (st Statement) DSSE() (DSSE, error) {
+	body, err := CanonicalStatement(st)
+	if err != nil {
+		return DSSE{}, err
+	}
+	return DSSE{PayloadType: PayloadTypeTrust, Payload: body, Signatures: append([]DSSESignature(nil), st.Signatures...)}, nil
+}
+
+// ParseStatementDSSE, DSSE zarfını Statement'a çevirir: yük türü tam eşleşmeli (başka bir
+// nesne türü ya da sürüm reddedilir), gövde KATI ayrıştırılır, imza girdileri biçim denetiminden
+// geçer. İmzaları doğrulamaz; kabul ApplyStatement'tadır.
+func ParseStatementDSSE(d DSSE) (Statement, error) {
+	if d.PayloadType != PayloadTypeTrust {
+		if strings.HasPrefix(d.PayloadType, payloadTypeTrustPrefix) {
+			return Statement{}, newErr(ReasonUnsupportedVersion, "payloadType=%q", d.PayloadType)
+		}
+		return Statement{}, newErr(ReasonBadPayloadType, "payloadType=%q", d.PayloadType)
+	}
+	if err := d.validateShape(ReasonMalformedStatement); err != nil {
+		return Statement{}, err
+	}
+	st, err := ParseStatement(d.Payload)
+	if err != nil {
+		return Statement{}, err
+	}
+	st.Signatures = append([]DSSESignature(nil), d.Signatures...)
+	return st, nil
+}
+
+// ApplyStatementDSSE = ParseStatementDSSE + ApplyStatement.
+func ApplyStatementDSSE(local *Statement, d DSSE, pins []ed25519.PublicKey, now time.Time) (Acceptance, error) {
+	st, err := ParseStatementDSSE(d)
+	if err != nil {
+		return Acceptance{}, err
+	}
+	return ApplyStatement(local, st, pins, now)
 }

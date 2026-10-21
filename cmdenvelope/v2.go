@@ -1,6 +1,8 @@
 package cmdenvelope
 
-// Komut zarfı v2 — W2 "Signed Command Fabric" tel formatı (S2'de DONDURULDU).
+// Komut zarfı v2 — W2 "Signed Command Fabric" tel formatı (S2'de DONDURULDU). İmzalı komut bir
+// DSSE zarfıdır (bkz. dsse.go): payloadType "application/vnd.kut.cmd.v2", gövde = aşağıdaki
+// kanonik ileti, imzalar = Ed25519(PAE(payloadType, gövde)).
 //
 // v1 (CanonicalBytes) hiçbir zaman tele çıkmadı; v2 telde görülen İLK sürümdür. v1
 // baytları bu dosyadan etkilenmez. Bu dosyadaki kodlama ve sınırlar ajan sürümlerine
@@ -29,10 +31,6 @@ const (
 	DomainTrustV2    = "kut-cmd-trust-v2"
 )
 
-// EnvelopeVersion2, Command.envelope_version değeridir. 0 = zarfsız (eski); 1 ve diğer
-// her değer reddedilir.
-const EnvelopeVersion2 = 2
-
 // Sert sınırlar (sunucu doğrulaması ve VerifyV2 AYNI fonksiyonları kullanır).
 const (
 	KeyIDHexLen         = 32 // hex(sha256(pub)[:16]) = 128 bit
@@ -43,7 +41,6 @@ const (
 	MaxPrincipalLen     = 128 // requested_by / approved_by / correlation_id
 	MaxTypeLen          = 32
 	SignatureLen        = ed25519.SignatureSize
-	MaxExtraSignatures  = 8
 	MaxParamKeys        = 32
 	MaxParamKeyLen      = 64
 	MaxParamStringBytes = 256 << 10
@@ -64,18 +61,21 @@ const (
 type Reason string
 
 const (
-	ReasonUnsupportedVersion Reason = "unsupported_version"
-	ReasonMalformedEnvelope  Reason = "malformed_envelope"
-	ReasonMalformedParams    Reason = "malformed_params"
-	ReasonUnknownType        Reason = "unknown_type"
-	ReasonBadLifetime        Reason = "bad_lifetime"
-	ReasonUnknownKey         Reason = "unknown_key"
-	ReasonKeyExpired         Reason = "key_expired"
-	ReasonBadSignature       Reason = "bad_signature"
-	ReasonBadDeviceID        Reason = "bad_device_id"
-	ReasonClockUnsynced      Reason = "clock_unsynced"
-	ReasonNotYetValid        Reason = "not_yet_valid"
-	ReasonExpired            Reason = "expired"
+	ReasonUnsupportedVersion     Reason = "unsupported_version"
+	ReasonMalformedEnvelope      Reason = "malformed_envelope"
+	ReasonMalformedParams        Reason = "malformed_params"
+	ReasonUnknownType            Reason = "unknown_type"
+	ReasonBadLifetime            Reason = "bad_lifetime"
+	ReasonUnknownKey             Reason = "unknown_key"
+	ReasonKeyExpired             Reason = "key_expired"
+	ReasonBadSignature           Reason = "bad_signature"
+	ReasonBadDeviceID            Reason = "bad_device_id"
+	ReasonClockUnsynced          Reason = "clock_unsynced"
+	ReasonNotYetValid            Reason = "not_yet_valid"
+	ReasonExpired                Reason = "expired"
+	ReasonBadPayloadType         Reason = "bad_payload_type"
+	ReasonWrongDevice            Reason = "wrong_device"
+	ReasonInsufficientSignatures Reason = "insufficient_signatures"
 
 	// Güven bildirimi (trust.go) nedenleri.
 	ReasonMalformedStatement Reason = "malformed_statement"
@@ -141,17 +141,10 @@ func ListParam(key string, items ...string) Param {
 	return Param{Key: key, List: items, IsList: true}
 }
 
-// Signature, bir anahtarın zarf üzerindeki imzasıdır (extra_signatures öğesi).
-type Signature struct {
-	KeyID string
-	Sig   []byte
-}
-
-// Envelope, telde taşınan v2 zarfıdır. device_id TELDE YOKTUR: imzalayan hedef cihaz
-// kimliğini, doğrulayan KENDİ kimliğini ayrıca verir (CanonicalV2/VerifyV2).
+// Envelope, bir komutun MANTIKSAL (imzasız) içeriğidir. Telde DSSE gövdesi olarak taşınır
+// (bkz. CanonicalV2/SignV2). Anahtar kimliği gövdede YOKTUR: gövde tüm imzacılar için aynıdır,
+// keyid yalnız DSSE imza girdisinde bulunur. CommandID veritabanı satır kimliğiyle aynıdır.
 type Envelope struct {
-	Version       uint32 // telde envelope_version; yalnız 2 geçerli
-	KeyID         string // birincil imza anahtarının kimliği
 	CommandID     string
 	TenantID      string
 	Type          string // kanonik ad (types.go)
@@ -163,14 +156,11 @@ type Envelope struct {
 	IssuedAtNS    int64
 	ExpiresAtNS   int64
 	Params        []Param
-
-	Signature       []byte      // birincil imza (KeyID anahtarı)
-	ExtraSignatures []Signature // aynı iletiye kendi key_id'leriyle atılan imzalar
 }
 
-// Fields, İMZALANAN iletinin alanlarıdır (zarf + cihaz kimliği + params özeti).
+// Fields, DSSE gövdesinin (imzalanan ileti) alanlarıdır: zarf + hedef cihaz kimliği + params
+// özeti. Cihaz kimliği gövdededir ve doğrulayan KENDİ kimliğine eşitliğini zorlar.
 type Fields struct {
-	KeyID         string
 	CommandID     string
 	DeviceID      string
 	TenantID      string
@@ -563,14 +553,11 @@ func ParseParams(b []byte) ([]Param, error) {
 	return out, nil
 }
 
-// ---- imzalanan ileti --------------------------------------------------------
+// ---- DSSE gövdesi (imzalanan ileti) -------------------------------------------
 
-// Validate, imzalanan alanların TÜM sınırlarını denetler (imzalamadan önce ve
-// doğrulamada AYNI fonksiyon).
+// Validate, gövde alanlarının TÜM sınırlarını denetler (imzalamadan önce ve doğrulamada AYNI
+// fonksiyon).
 func (f Fields) Validate() error {
-	if !isLowerHex(f.KeyID, KeyIDHexLen) {
-		return newErr(ReasonMalformedEnvelope, "key_id tam %d küçük harfli hex olmalı", KeyIDHexLen)
-	}
 	if !canonicalUUIDv4(f.CommandID) {
 		return newErr(ReasonMalformedEnvelope, "command_id kanonik küçük harfli UUIDv4 değil")
 	}
@@ -604,23 +591,26 @@ func (f Fields) Validate() error {
 	return nil
 }
 
-// Encode, imzalanan ileti baytlarını üretir (önce Validate):
+// Encode, DSSE gövdesini üretir (önce Validate):
 //
-//	LP("kut-cmd-envelope-v2") || LP(key_id) || LP(command_id) || LP(device_id) ||
-//	LP(tenant_id) || LP(type) || LP(requested_by) || LP(approved_by) ||
-//	LP(correlation_id) || U64(sequence) || LP(nonce) || I64(issued_at_ns) ||
-//	I64(expires_at_ns) || LP(params_digest)
+//	LP("kut-cmd-envelope-v2") || LP(command_id) || LP(device_id) || LP(tenant_id) ||
+//	LP(type) || LP(requested_by) || LP(approved_by) || LP(correlation_id) ||
+//	U64(sequence) || LP(nonce) || I64(issued_at_ns) || I64(expires_at_ns) ||
+//	LP(params_digest)
+//
+// key_id gövdede YOKTUR (gövde tüm imzacılar için aynıdır).
 func (f Fields) Encode() ([]byte, error) {
 	if err := f.Validate(); err != nil {
 		return nil, err
 	}
-	return f.encode(), nil
+	return f.EncodeUnvalidated(), nil
 }
 
-func (f Fields) encode() []byte {
+// EncodeUnvalidated, alanları DENETLEMEDEN kodlar. YALNIZ test vektörü/araç üretimi içindir
+// (geçerli imzalı ama biçimsiz gövde üretmek); üretim imzalama yolunda kullanılmaz.
+func (f Fields) EncodeUnvalidated() []byte {
 	b := make([]byte, 0, 320)
 	b = appendLP(b, DomainEnvelopeV2)
-	b = appendLP(b, f.KeyID)
 	b = appendLP(b, f.CommandID)
 	b = appendLP(b, f.DeviceID)
 	b = appendLP(b, f.TenantID)
@@ -636,16 +626,15 @@ func (f Fields) encode() []byte {
 	return b
 }
 
-// ParseCanonicalV2, imzalanan ileti baytlarını KATI ayrıştırır: etiket tam eşleşmeli,
-// her alan kendi üst sınırı içinde ve karakter kümesinde olmalı, artık bayt olmamalı.
-// Başarılı sonuç için Encode() girdiyle bayt-bayt aynıdır.
+// ParseCanonicalV2, DSSE gövdesini KATI ayrıştırır: etiket tam eşleşmeli, her alan kendi
+// üst sınırı içinde ve karakter kümesinde olmalı, artık bayt olmamalı. Başarılı sonuç için
+// Encode() girdiyle bayt-bayt aynıdır.
 func ParseCanonicalV2(b []byte) (Fields, error) {
 	r := &reader{b: b}
 	var f Fields
 	if string(r.lp(len(DomainEnvelopeV2))) != DomainEnvelopeV2 {
 		return Fields{}, newErr(ReasonMalformedEnvelope, "etki alanı etiketi uyuşmuyor")
 	}
-	f.KeyID = string(r.lp(KeyIDHexLen))
 	f.CommandID = string(r.lp(CommandIDLen))
 	f.DeviceID = string(r.lp(MaxDeviceIDLen))
 	f.TenantID = string(r.lp(MaxTenantIDLen))
@@ -672,15 +661,15 @@ func ParseCanonicalV2(b []byte) (Fields, error) {
 	return f, nil
 }
 
-// Fields, zarf + hedef cihaz kimliğinden imzalanan alanları kurar (params özetini
-// hesaplar ve tüm sınırları denetler).
+// Fields, zarf + hedef cihaz kimliğinden gövde alanlarını kurar (params özetini hesaplar ve
+// tüm sınırları denetler).
 func (e Envelope) Fields(deviceID string) (Fields, error) {
 	d, err := ParamsDigest(e.Params)
 	if err != nil {
 		return Fields{}, err
 	}
 	f := Fields{
-		KeyID: e.KeyID, CommandID: e.CommandID, DeviceID: deviceID, TenantID: e.TenantID,
+		CommandID: e.CommandID, DeviceID: deviceID, TenantID: e.TenantID,
 		Type: e.Type, RequestedBy: e.RequestedBy, ApprovedBy: e.ApprovedBy,
 		CorrelationID: e.CorrelationID, Sequence: e.Sequence, Nonce: e.Nonce,
 		IssuedAtNS: e.IssuedAtNS, ExpiresAtNS: e.ExpiresAtNS, ParamsDigest: d,
@@ -691,125 +680,126 @@ func (e Envelope) Fields(deviceID string) (Fields, error) {
 	return f, nil
 }
 
-// CanonicalV2, zarfın imzalanan ileti baytlarını döner. deviceID imzalayan için hedef
-// cihaz, doğrulayan için ajanın KENDİ kimliğidir; telden gelmez.
+// CanonicalV2, zarfın DSSE gövdesini döner. deviceID, imzalayan için HEDEF cihazdır.
 func CanonicalV2(deviceID string, e Envelope) ([]byte, error) {
 	f, err := e.Fields(deviceID)
 	if err != nil {
 		return nil, err
 	}
-	return f.encode(), nil
+	return f.EncodeUnvalidated(), nil
 }
 
-// SignV2, zarfı priv ile imzalar: Version=2, KeyID=KeyID(pub) atanır; önceki imzalar
-// silinir. Alanlar geçersizse İMZALANMAZ (sunucu tarafı sınır denetimi).
-func SignV2(priv ed25519.PrivateKey, deviceID string, e Envelope) (Envelope, error) {
-	if len(priv) != ed25519.PrivateKeySize {
-		return Envelope{}, newErr(ReasonUnknownKey, "geçersiz özel anahtar boyutu")
-	}
-	e.Version = EnvelopeVersion2
-	e.KeyID = KeyID(priv.Public().(ed25519.PublicKey))
-	e.Signature = nil
-	e.ExtraSignatures = nil
-	msg, err := CanonicalV2(deviceID, e)
+// SignV2, zarfı priv ile imzalayıp tek imzalı DSSE zarfı döner. Alanlar geçersizse
+// İMZALANMAZ (sunucu tarafı sınır denetimi). Ek imzalar (ör. onaylayan) CoSign ile eklenir.
+func SignV2(priv ed25519.PrivateKey, deviceID string, e Envelope) (DSSE, error) {
+	payload, err := CanonicalV2(deviceID, e)
 	if err != nil {
-		return Envelope{}, err
+		return DSSE{}, err
 	}
-	e.Signature = ed25519.Sign(priv, msg)
-	return e, nil
-}
-
-// CoSignV2, aynı iletiyi (KENDİ key_id'si yerleştirilerek) ek imza için imzalar.
-func CoSignV2(priv ed25519.PrivateKey, deviceID string, e Envelope) (Signature, error) {
-	if len(priv) != ed25519.PrivateKeySize {
-		return Signature{}, newErr(ReasonUnknownKey, "geçersiz özel anahtar boyutu")
-	}
-	e.KeyID = KeyID(priv.Public().(ed25519.PublicKey))
-	msg, err := CanonicalV2(deviceID, e)
+	sig, err := SignDSSE(priv, PayloadTypeCommand, payload)
 	if err != nil {
-		return Signature{}, err
+		return DSSE{}, err
 	}
-	return Signature{KeyID: e.KeyID, Sig: ed25519.Sign(priv, msg)}, nil
+	return DSSE{PayloadType: PayloadTypeCommand, Payload: payload, Signatures: []DSSESignature{sig}}, nil
 }
 
 // VerifyInput, VerifyV2'nin bağlamıdır.
 type VerifyInput struct {
-	// DeviceID, doğrulayanın KENDİ kimliğidir (ajanda sertifika CN'i, küçük harf).
+	// DeviceID, doğrulayanın KENDİ kimliğidir (ajanda sertifika CN'i, küçük harf). Gövdedeki
+	// device_id buna eşit olmalıdır (ReasonWrongDevice).
 	DeviceID string
 	// Keys, güvenilen anahtarlardır; yalnız KeyRoleCommand girdileri komut doğrular.
 	Keys []KeyEntry
 	// Now, güvenilir (sunucuya çıpalı) saattir. Sıfır = senkronsuz → geçici ret.
 	Now time.Time
+	// MinSignatures, gereken ayrık geçerli imza sayısıdır; 0 = RequiredSignatures(type).
+	MinSignatures int
+	// WireCommandID / WireType, telde gövdenin DIŞINDA taşınan değerlerdir (Command.command_id,
+	// Command.type adı). Doluysa gövdedekiyle aynı olmalıdır.
+	WireCommandID string
+	WireType      string
 }
 
 // Verified, başarılı bir doğrulamanın sonucudur.
 type Verified struct {
-	Digest [32]byte // sha256(birincil imzalanan ileti) → CommandResult.envelope_digest
-	KeyIDs []string // geçerli sayılan imzaların anahtar kimlikleri
+	Digest [32]byte // sha256(PAE(payloadType, gövde)) → CommandResult.envelope_digest
+	KeyIDs []string // geçerli sayılan imzaların anahtar kimlikleri (ayrık)
+	Fields Fields   // doğrulanmış gövde alanları
 }
 
-// VerifyV2, zarfı durumsuz doğrular. Sıra: sürüm → alan sınırları → imza biçimi →
-// anahtar araması (rol/pencere) → imza → zaman. Hatalar tiplidir (*Error).
-func VerifyV2(e Envelope, in VerifyInput) (Verified, error) {
-	if e.Version != EnvelopeVersion2 {
-		return Verified{}, newErr(ReasonUnsupportedVersion, "envelope_version=%d", e.Version)
+// VerifyV2, bir komut DSSE zarfını ve telde ayrıca taşınan params'ı durumsuz doğrular. Sıra:
+// yük türü → biçim → gövde alan sınırları → cihaz/tel eşitliği → params sınırları → anahtar
+// araması (keyid ipucu; rol/pencere) → Ed25519(PAE) → params özeti → zaman. Hatalar tiplidir.
+func VerifyV2(d DSSE, params []Param, in VerifyInput) (Verified, error) {
+	if d.PayloadType != PayloadTypeCommand {
+		if strings.HasPrefix(d.PayloadType, payloadTypeCommandPrefix) {
+			return Verified{}, newErr(ReasonUnsupportedVersion, "payloadType=%q", d.PayloadType)
+		}
+		return Verified{}, newErr(ReasonBadPayloadType, "payloadType=%q", d.PayloadType)
 	}
-	f, err := e.Fields(in.DeviceID)
+	if !ValidDeviceID(in.DeviceID) {
+		return Verified{}, newErr(ReasonBadDeviceID, "doğrulayanın cihaz kimliği kanonik değil")
+	}
+	if err := d.validateShape(ReasonMalformedEnvelope); err != nil {
+		return Verified{}, err
+	}
+	f, err := ParseCanonicalV2(d.Payload)
 	if err != nil {
 		return Verified{}, err
 	}
-	if len(e.Signature) != SignatureLen {
-		return Verified{}, newErr(ReasonMalformedEnvelope, "birincil imza %d bayt olmalı (var: %d)", SignatureLen, len(e.Signature))
+	if f.DeviceID != in.DeviceID {
+		return Verified{}, newErr(ReasonWrongDevice, "zarf başka bir cihaz için imzalanmış")
 	}
-	if len(e.ExtraSignatures) > MaxExtraSignatures {
-		return Verified{}, newErr(ReasonMalformedEnvelope, "%d ek imza > %d", len(e.ExtraSignatures), MaxExtraSignatures)
+	if in.WireCommandID != "" && in.WireCommandID != f.CommandID {
+		return Verified{}, newErr(ReasonMalformedEnvelope, "tel command_id gövdedekinden farklı")
 	}
-	type cand struct {
-		keyID string
-		sig   []byte
+	if in.WireType != "" && in.WireType != f.Type {
+		return Verified{}, newErr(ReasonMalformedEnvelope, "tel tipi gövdedekinden farklı")
 	}
-	cands := []cand{{e.KeyID, e.Signature}}
-	seen := map[string]bool{e.KeyID: true}
-	for _, x := range e.ExtraSignatures {
-		if !isLowerHex(x.KeyID, KeyIDHexLen) || len(x.Sig) != SignatureLen {
-			return Verified{}, newErr(ReasonMalformedEnvelope, "ek imza biçimi geçersiz")
-		}
-		if seen[x.KeyID] {
-			return Verified{}, newErr(ReasonMalformedEnvelope, "yinelenen imza anahtarı %s", x.KeyID)
-		}
-		seen[x.KeyID] = true
-		cands = append(cands, cand{x.KeyID, x.Sig})
+	if err := ValidateParams(params); err != nil {
+		return Verified{}, err
 	}
 
 	keys := commandKeyIndex(in.Keys)
-	var good []string
+	msg := PAE(d.PayloadType, d.Payload)
+	good := map[string]bool{}
+	var goodIDs []string
 	var sawBad, sawExpired bool
-	for _, c := range cands {
-		k, ok := keys[c.keyID]
-		if !ok {
+	for _, s := range d.Signatures {
+		k, ok := keys[s.KeyID]
+		if !ok || good[s.KeyID] {
 			continue
 		}
 		if k.NotAfterNS == 0 || f.IssuedAtNS < k.NotBeforeNS || f.IssuedAtNS > k.NotAfterNS {
 			sawExpired = true
 			continue
 		}
-		ff := f
-		ff.KeyID = c.keyID
-		if ed25519.Verify(k.Pub, ff.encode(), c.sig) {
-			good = append(good, c.keyID)
+		if ed25519.Verify(k.Pub, msg, s.Sig) {
+			good[s.KeyID] = true
+			goodIDs = append(goodIDs, s.KeyID)
 		} else {
 			sawBad = true
 		}
 	}
-	if len(good) < RequiredSignatures(e.Type) {
+	required := in.MinSignatures
+	if required <= 0 {
+		required = RequiredSignatures(f.Type)
+	}
+	if len(goodIDs) < required {
 		switch {
 		case sawBad:
 			return Verified{}, newErr(ReasonBadSignature, "imza doğrulanamadı")
+		case len(goodIDs) > 0:
+			return Verified{}, newErr(ReasonInsufficientSignatures, "%d geçerli imza, %d gerekli", len(goodIDs), required)
 		case sawExpired:
 			return Verified{}, newErr(ReasonKeyExpired, "anahtar issued_at anında geçerli değil")
 		default:
 			return Verified{}, newErr(ReasonUnknownKey, "güvenilen komut anahtarı yok")
 		}
+	}
+	// İmza gövdeyi doğruladı; telde ayrı taşınan params'ın gövdedeki özete uyması gerekir.
+	if pd, _ := ParamsDigest(params); pd != f.ParamsDigest {
+		return Verified{}, newErr(ReasonBadSignature, "params, imzalı özetle uyuşmuyor")
 	}
 
 	if in.Now.IsZero() {
@@ -822,11 +812,11 @@ func VerifyV2(e Envelope, in VerifyInput) (Verified, error) {
 	if now > f.ExpiresAtNS {
 		return Verified{}, newErr(ReasonExpired, "zarf süresi doldu")
 	}
-	return Verified{Digest: sha256.Sum256(f.encode()), KeyIDs: good}, nil
+	return Verified{Digest: sha256.Sum256(msg), KeyIDs: goodIDs, Fields: f}, nil
 }
 
-// commandKeyIndex, güvenilen anahtar listesinden yalnız KOMUT rolündeki, kimliği
-// açık anahtardan türeyen girdileri indeksler. Aynı kimlik iki kez görünürse belirsizlik
+// commandKeyIndex, güvenilen anahtar listesinden yalnız KOMUT rolündeki, kimliği açık
+// anahtardan türeyen girdileri indeksler. Aynı kimlik iki kez görünürse belirsizlik
 // fail-closed çözülür (ikisi de atılır).
 func commandKeyIndex(keys []KeyEntry) map[string]KeyEntry {
 	idx := make(map[string]KeyEntry, len(keys))
