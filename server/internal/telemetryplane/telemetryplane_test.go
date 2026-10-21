@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"kut.corp/suite/server/internal/detect"
@@ -145,5 +146,42 @@ func TestPlane_DropWhenNotRunning(t *testing.T) {
 	p.ObserveProcessed(context.Background(), "d", model.Event{}, nil)
 	if s := p.Stats(); s.Dropped != 1 {
 		t.Fatalf("başlamadan önce drop beklenir, alinan %d", s.Dropped)
+	}
+}
+
+// REGRESSION (close/send race): Stop must never close the queue channel while a
+// sender is in flight — otherwise ObserveProcessed could send on a closed channel
+// and panic (a send inside select/default still panics on a closed channel). Many
+// goroutines hammer the tap with a small queue (so the full-queue "racing Stop"
+// path is exercised) while Stop fires concurrently. The fix is that the sender
+// side never closes ch (Stop signals a drain-then-exit and flips running under
+// the lock); this test guards it, and -race flags the close/send window on the
+// old code. Success = no panic, clean Stop, and accepted+dropped accounts for all
+// sends that observed a running plane.
+func TestPlane_ConcurrentObserveDuringStop(t *testing.T) {
+	for iter := 0; iter < 50; iter++ {
+		p := New(&MockAlertSink{}, &MockEventSink{}, TapConfig{QueueDepth: 4})
+		if err := p.Start(context.Background()); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+
+		const senders, perSender = 16, 50
+		var wg sync.WaitGroup
+		wg.Add(senders)
+		for i := 0; i < senders; i++ {
+			go func() {
+				defer wg.Done()
+				for j := 0; j < perSender; j++ {
+					// Must never panic, whether the plane is running, stopping, or stopped.
+					p.ObserveProcessed(context.Background(), "d", model.Event{Message: "x"}, nil)
+				}
+			}()
+		}
+
+		// Stop concurrently with the in-flight senders: this is the close/send window.
+		if err := p.Stop(); err != nil {
+			t.Fatalf("stop: %v", err)
+		}
+		wg.Wait()
 	}
 }
