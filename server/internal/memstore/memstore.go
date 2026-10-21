@@ -250,9 +250,12 @@ func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollm
 	defer s.mu.Unlock()
 	id := in.PreferredDeviceID
 	if id == "" {
-		// mac bidx eşleşen cihaz varsa onu güncelle (yeniden kayıt).
+		// S-3 (db ile aynı): MAC tekilliği KİRACI BAŞINADIR. Yalnız AYNI kiracıda (legacy boş
+		// kiracı ≡ default dahil) eşleşen cihaz yeniden-kayıt sayılır; başka kiracıdaki aynı
+		// MAC o satıra DOKUNMAZ ve bu kiracı kendi cihazını alır (MAC-squat DoS yok).
 		for _, d := range s.devices {
-			if len(d.macBidx) > 0 && string(d.macBidx) == string(in.MACBlindIndex) {
+			if len(d.macBidx) > 0 && string(d.macBidx) == string(in.MACBlindIndex) &&
+				tenant.Equivalent(d.tenant, in.TenantID) {
 				id = d.id
 				break
 			}
@@ -267,6 +270,14 @@ func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollm
 		// gerçek hiçbir kiracıyla değil. Eşdeğer yeniden kayıtta kiracı default'a normalleşir.
 		if !tenant.Equivalent(d.tenant, in.TenantID) {
 			return "", enroll.ErrTenantMismatch
+		}
+		// db parity (uq_devices_tenant_mac): preferred yolunda MAC değişimi AYNI kiracıdaki
+		// başka bir cihazın MAC'iyle çakışamaz.
+		for _, o := range s.devices {
+			if o.id != id && len(in.MACBlindIndex) > 0 && string(o.macBidx) == string(in.MACBlindIndex) &&
+				tenant.Equivalent(o.tenant, d.tenant) {
+				return "", fmt.Errorf("memstore: mac_address_bidx bu kiracıda zaten kayıtlı")
+			}
 		}
 		d.tenant = tenant.Canonical(d.tenant)
 		d.hostnameEnc, d.macEnc, d.osEnc = in.HostnameEnc, in.MACEnc, in.OSInfoEnc

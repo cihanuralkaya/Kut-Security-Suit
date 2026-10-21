@@ -163,12 +163,17 @@ func (s *Store) UpsertEnrollingDevice(ctx context.Context, in enroll.DeviceEnrol
 		return id, nil
 	}
 
+	// S-3: tekillik KİRACI BAŞINADIR (uq_devices_tenant_mac: kanonik kiracı + MAC). Aynı MAC
+	// başka bir kiracıda zaten varsa çakışma OLMAZ → o kiracı kendi cihaz satırını alır;
+	// böylece bir kiracı başkasının MAC'ini önceden kaydedip onu enroll'dan engelleyemez
+	// (MAC-squat DoS) ve mevcut satır HİÇ değişmez (re-home yok). Çakışma yalnız AYNI
+	// kiracıda (legacy boş kiracı ≡ default dahil) oluşur ve o kiracının satırını günceller.
 	const ins = `
 		INSERT INTO devices
 			(hostname_encrypted, mac_address_encrypted, os_info_encrypted,
 			 mac_address_bidx, os_platform, agent_version, tenant_id, status)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,'ACTIVE')
-		ON CONFLICT (mac_address_bidx) DO UPDATE SET
+		ON CONFLICT ((COALESCE(NULLIF(tenant_id, ''), 'default')), mac_address_bidx) DO UPDATE SET
 			hostname_encrypted = EXCLUDED.hostname_encrypted,
 			mac_address_encrypted = EXCLUDED.mac_address_encrypted,
 			os_info_encrypted = EXCLUDED.os_info_encrypted,
@@ -177,16 +182,10 @@ func (s *Store) UpsertEnrollingDevice(ctx context.Context, in enroll.DeviceEnrol
 			tenant_id = COALESCE(NULLIF(devices.tenant_id, ''), $8::varchar),
 			status = CASE WHEN devices.status IN ('PENDING_ENROLLMENT','OFFLINE','UNINSTALLED')
 			              THEN 'ACTIVE'::device_status ELSE devices.status END
-		WHERE COALESCE(NULLIF(devices.tenant_id, ''), $8::varchar) = COALESCE(NULLIF(EXCLUDED.tenant_id, ''), $8::varchar)
 	 RETURNING id::text`
 	var id string
 	err := s.pool.QueryRow(ctx, ins, in.HostnameEnc, in.MACEnc, in.OSInfoEnc,
 		in.MACBlindIndex, in.OSPlatform, in.AgentVersion, in.TenantID, string(tenant.Default)).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		// ON CONFLICT ... WHERE: kiracı eşleşmedi → satır güncellenmedi/döndürülmedi;
-		// aynı MAC başka kiracıya ait. Re-homing YOK (fail-closed).
-		return "", enroll.ErrTenantMismatch
-	}
 	if err != nil {
 		return "", fmt.Errorf("db: cihaz ekleme: %w", err)
 	}

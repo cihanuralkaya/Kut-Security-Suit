@@ -66,18 +66,24 @@ func TestPGEnrollTenantWallAndStatusKept(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, id) })
 
-	// NEGATIF: aynı MAC, başka kiracının token'ı → ErrTenantMismatch; satır değişmez.
+	// NEGATIF (re-home): aynı MAC, başka kiracının token'ı → A'nın satırına DOKUNULMAZ; B kendi
+	// AYRI cihazını alır (S-3: tekillik kiracı başına, MAC-squat DoS yok).
 	evil := in
 	evil.TenantID, evil.HostnameEnc = tB, []byte("EVIL")
-	if _, err := s.UpsertEnrollingDevice(ctx, evil); !errors.Is(err, enroll.ErrTenantMismatch) {
-		t.Fatalf("çapraz-kiracı yeniden kayıt ErrTenantMismatch olmalı: %v", err)
+	idB, err := s.UpsertEnrollingDevice(ctx, evil)
+	if err != nil || idB == id {
+		t.Fatalf("çapraz-kiracı kayıt A'nın cihazını devralmamalı, B kendi satırını almalı: id=%q err=%v", idB, err)
 	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, idB) })
 	if tn, _ := s.TenantForDevice(ctx, id); tn != tA {
 		t.Fatalf("cihaz kiracısı değişmemeli: %q", tn)
 	}
+	if tn, _ := s.TenantForDevice(ctx, idB); tn != tB {
+		t.Fatalf("B cihazı B kiracısında olmalı: %q", tn)
+	}
 	var host []byte
 	if err := s.pool.QueryRow(ctx, `SELECT hostname_encrypted FROM devices WHERE id = $1::uuid`, id).Scan(&host); err != nil || string(host) != "h1" {
-		t.Fatalf("reddedilen kayıt alanları değiştirmemeli: %q %v", host, err)
+		t.Fatalf("diğer kiracının kaydı A'nın alanlarını değiştirmemeli: %q %v", host, err)
 	}
 
 	// NEGATIF: token'a bağlı cihaz (PreferredDeviceID) yolu da kiracı duvarına tabi.
@@ -189,14 +195,17 @@ func TestPGLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 		t.Fatalf("legacy cihaz boş kiracıyla başlamalı: %q", tn)
 	}
 
-	// NEGATIF: gerçek kiracı legacy cihazı devralamaz; satır değişmez.
+	// NEGATIF: gerçek kiracı legacy cihazı devralamaz: kendi AYRI satırını alır (S-3), legacy
+	// satır değişmez.
 	evil := in
 	evil.TenantID, evil.HostnameEnc = other, []byte("EVIL")
-	if _, err := s.UpsertEnrollingDevice(ctx, evil); !errors.Is(err, enroll.ErrTenantMismatch) {
-		t.Fatalf("gerçek kiracı legacy cihazı devralamaz: %v", err)
+	idO, err := s.UpsertEnrollingDevice(ctx, evil)
+	if err != nil || idO == id {
+		t.Fatalf("gerçek kiracı legacy cihazı devralamaz, kendi satırını almalı: id=%q err=%v", idO, err)
 	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, idO) })
 	if tn := devTenant(ctx, t, s, id); tn != "" {
-		t.Fatalf("reddedilen kayıt kiracıyı değiştirmemeli: %q", tn)
+		t.Fatalf("diğer kiracının kaydı legacy kiracıyı değiştirmemeli: %q", tn)
 	}
 
 	// POZITIF: "default" token'ı aynı cihazı günceller + kiracıyı normalleştirir.
@@ -213,9 +222,9 @@ func TestPGLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 	if err := s.pool.QueryRow(ctx, `SELECT hostname_encrypted FROM devices WHERE id = $1::uuid`, id).Scan(&host); err != nil || string(host) != "new" {
 		t.Fatalf("alanlar güncellenmeli: %q %v", host, err)
 	}
-	// Normalleşmeden sonra da gerçek kiracı için duvar aynı.
-	if _, err := s.UpsertEnrollingDevice(ctx, evil); !errors.Is(err, enroll.ErrTenantMismatch) {
-		t.Fatalf("normalleşmiş cihaz başka kiracıya taşınamaz: %v", err)
+	// Normalleşmeden sonra da gerçek kiracı için duvar aynı: yine kendi satırını alır.
+	if again, err := s.UpsertEnrollingDevice(ctx, evil); err != nil || again != idO {
+		t.Fatalf("normalleşmiş cihaz başka kiracıya taşınamaz, other kendi satırını güncellemeli: %q %v", again, err)
 	}
 
 	// PreferredDeviceID yolu: ikinci bir legacy cihaz.
@@ -308,4 +317,82 @@ func TestPGMFAPendingSecretSwap(t *testing.T) {
 		t.Fatal(err)
 	}
 	look("", false, "")
+}
+
+// S-3 (PG): MAC-squat DoS. Kiracı A, B'nin MAC'ini önceden kaydetse bile B kendi cihazını
+// enroll edebilir; uq_devices_tenant_mac aynı kiracıda ikinci satırı engeller (kanonik
+// kiracı: legacy boş ≡ default); eski küresel kısıt artık yoktur.
+func TestPGMACSquatCannotBlockOtherTenant(t *testing.T) {
+	s, ctx := pgStore(t)
+	evilT, victimT := uniq(t, "tevil-"), uniq(t, "tvic-")
+	mac := []byte(uniq(t, "mac-squat-"))
+	base := enroll.DeviceEnrollment{
+		MACBlindIndex: mac, HostnameEnc: []byte("squat"), MACEnc: []byte("m"), OSInfoEnc: []byte("o"),
+		OSPlatform: "linux", AgentVersion: "1", TenantID: evilT,
+	}
+	squat, err := s.UpsertEnrollingDevice(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, squat) })
+
+	// NEGATIF (saldırı): squat eden kiracı kurbanın aynı MAC'iyle kurbanı engelleyemez.
+	vin := base
+	vin.TenantID, vin.HostnameEnc = victimT, []byte("real")
+	victim, err := s.UpsertEnrollingDevice(ctx, vin)
+	if err != nil {
+		t.Fatalf("kurban kiracı aynı MAC ile enroll olabilmeli: %v", err)
+	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, victim) })
+	if victim == squat {
+		t.Fatal("kurban squat eden kiracının satırını almamalı")
+	}
+	if tn, _ := s.TenantForDevice(ctx, victim); tn != victimT {
+		t.Fatalf("kurban cihazı kurban kiracısında olmalı: %q", tn)
+	}
+	if tn, _ := s.TenantForDevice(ctx, squat); tn != evilT {
+		t.Fatalf("squat satırı değişmemeli: %q", tn)
+	}
+
+	// POZITIF: kurban yeniden kaydı kendi satırını günceller (ON CONFLICT yeni hedef).
+	vin.HostnameEnc = []byte("real2")
+	if again, err := s.UpsertEnrollingDevice(ctx, vin); err != nil || again != victim {
+		t.Fatalf("kurban yeniden kaydı kendi satırını güncellemeli: %q %v", again, err)
+	}
+
+	// Şema: aynı kiracıda aynı MAC ikinci satır OLAMAZ; farklı kiracıda olabilir; eski küresel
+	// tekillik kısıtı yok; yeni indeks var.
+	dup := `INSERT INTO devices (hostname_encrypted, mac_address_encrypted, mac_address_bidx, tenant_id)
+	        VALUES ('\x01', '\x01', $1, $2)`
+	if _, err := s.pool.Exec(ctx, dup, mac, evilT); err == nil {
+		t.Fatal("aynı kiracıda aynı MAC için ikinci satır unique ihlali olmalı")
+	}
+	var oldConstraint, newIndex int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM pg_constraint WHERE conname = 'devices_mac_address_bidx_key'`).Scan(&oldConstraint); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM pg_indexes WHERE indexname = 'uq_devices_tenant_mac'`).Scan(&newIndex); err != nil {
+		t.Fatal(err)
+	}
+	if oldConstraint != 0 || newIndex != 1 {
+		t.Fatalf("eski küresel kısıt kalkmalı (%d), yeni indeks var olmalı (%d)", oldConstraint, newIndex)
+	}
+}
+
+// S-3 (PG): yükseltme bloğu yeniden çalıştırılabilir (idempotent) — iki kez uygulanınca hata yok.
+func TestPGUpgradeBlockIdempotent(t *testing.T) {
+	s, ctx := pgStore(t)
+	for i := 0; i < 2; i++ {
+		for _, stmt := range []string{
+			`CREATE UNIQUE INDEX IF NOT EXISTS uq_devices_tenant_mac
+			   ON devices ((COALESCE(NULLIF(tenant_id, ''), 'default')), mac_address_bidx)`,
+			`ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_mac_address_bidx_key`,
+			`ALTER TABLE policies ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(63) NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS idx_policies_tenant ON policies (tenant_id)`,
+		} {
+			if _, err := s.pool.Exec(ctx, stmt); err != nil {
+				t.Fatalf("yükseltme ifadesi tekrar çalıştırılabilmeli (tur %d): %v\n%s", i, err, stmt)
+			}
+		}
+	}
 }
