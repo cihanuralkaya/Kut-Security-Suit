@@ -626,8 +626,15 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 
 	// Sertifika iptali: bellek-içi küme + depodan periyodik tazeleme.
 	revCache := revocation.NewCache()
-	go revocation.NewRefresher(backend, revCache, 60*time.Second,
-		func(m string) { log.Println("[revocation] " + m) }).Run(ctx)
+	revRefresher := revocation.NewRefresher(backend, revCache, 60*time.Second,
+		func(m string) { log.Println("[revocation] " + m) })
+	// İlk tazeleme SENKRON: dinleyiciler açılmadan önce iptal kümesi dolu olmalı; aksi halde
+	// arka plan ilk turu bitene dek iptal edilmiş sertifikalar kabul edilirdi. Okunamazsa
+	// fail-closed: sunucu başlamaz.
+	if err := revRefresher.Prime(ctx); err != nil {
+		return fmt.Errorf("iptal listesi ilk yüklemesi başarısız (fail-closed): %w", err)
+	}
+	go revRefresher.Run(ctx)
 
 	tlsMat := xgrpc.TLSMaterial{
 		ServerCertPEM: serverCertPEM,

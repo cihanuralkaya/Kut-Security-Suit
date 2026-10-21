@@ -63,6 +63,9 @@ func buildTLS(m TLSMaterial, clientAuth tls.ClientAuthType) (*tls.Config, error)
 			// iptal (revocation) kontrolü ekler — güvenliği zayıflatmaz (gosec G123
 			// CI'de dışlanır: kasıtlı mTLS iptal kontrolü).
 			cfg.VerifyPeerCertificate = revocation.VerifyPeerCertificate(m.Revocation)
+			// VerifyPeerCertificate oturum DEVAMINDA (resumption/PSK) çağrılmaz → iptalden sonra
+			// eski bilet yeniden bağlanırdı. VerifyConnection her el sıkışmada (devam dahil) çalışır.
+			cfg.VerifyConnection = revocation.VerifyConnection(m.Revocation)
 		}
 	}
 	return cfg, nil

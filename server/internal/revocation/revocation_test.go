@@ -6,8 +6,10 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -94,5 +96,57 @@ func TestRefresherPopulatesCache(t *testing.T) {
 	cancel()
 	if cache.Size() != 2 {
 		t.Fatalf("refresher kümeyi doldurmalıydı, %d", cache.Size())
+	}
+}
+
+type errSource struct{}
+
+func (errSource) RevokedFingerprints(context.Context) ([][]byte, error) {
+	return nil, errors.New("db down")
+}
+
+// Prime senkron doldurur (dinleyici açılmadan önce açık pencere kalmaz).
+func TestPrimeFillsCacheSynchronously(t *testing.T) {
+	cache := NewCache()
+	r := NewRefresher(fakeSource{fps: [][]byte{[]byte("a")}}, cache, time.Hour, nil)
+	if err := r.Prime(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if cache.Size() != 1 {
+		t.Fatalf("Prime dönünce küme dolu olmalıydı: %d", cache.Size())
+	}
+}
+
+// Kaynak okunamazsa Prime hata döner (çağıran fail-closed davranır).
+func TestPrimeReturnsSourceError(t *testing.T) {
+	r := NewRefresher(errSource{}, NewCache(), time.Hour, nil)
+	if err := r.Prime(context.Background()); err == nil {
+		t.Fatal("kaynak hatasında Prime hata dönmeliydi")
+	}
+}
+
+// VerifyConnection: PeerCertificates üzerinden iptal reddi (VerifiedChains boş olsa bile),
+// VerifiedChains'ten reddi, iptalsizde izin, sertifikasızda (enroll) izin.
+func TestVerifyConnection(t *testing.T) {
+	cache := NewCache()
+	verify := VerifyConnection(cache)
+	leaf := makeLeaf(t)
+
+	peerOnly := tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}}
+	chainOnly := tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{leaf}}}
+
+	if err := verify(peerOnly); err != nil {
+		t.Fatalf("iptalsiz sertifika reddedilmemeli: %v", err)
+	}
+	if err := verify(tls.ConnectionState{}); err != nil {
+		t.Fatalf("sertifikasız bağlantı (enroll) reddedilmemeli: %v", err)
+	}
+	sum := sha256.Sum256(leaf.Raw)
+	cache.Replace([][]byte{sum[:]})
+	if err := verify(peerOnly); !errors.Is(err, ErrRevoked) {
+		t.Fatalf("PeerCertificates ile iptal ErrRevoked olmalı: %v", err)
+	}
+	if err := verify(chainOnly); !errors.Is(err, ErrRevoked) {
+		t.Fatalf("VerifiedChains ile iptal ErrRevoked olmalı: %v", err)
 	}
 }
