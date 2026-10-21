@@ -5,6 +5,7 @@ package kut.v1;
 option go_package = "kut.corp/suite/gen/kut/v1;kutv1";
 
 import "google/protobuf/timestamp.proto";
+import "kut/v1/common.proto";
 
 // EnrollmentService, ajanın ilk güven tesisini (PKI bootstrap) yönetir.
 //
@@ -50,4 +51,8 @@ message EnrollResponse {
   bytes client_cert_pem = 2;       // İmzalanmış istemci sertifikası.
   bytes ca_chain_pem = 3;          // Ajanın sunucuyu doğrulaması için CA zinciri.
   google.protobuf.Timestamp cert_not_after = 4; // Yenileme zamanlaması için.
+  // W2 komut dokusu: yeni kayıtlarda CA ile sabitli kayıt kanalından dağıtılan güven
+  // bildirimi ve cihazın kiracı bağı. Eski sunucu boş bırakır, eski ajan yok sayar.
+  TrustStatement command_trust = 5;
+  TenantBinding tenant_binding = 6;
 }
