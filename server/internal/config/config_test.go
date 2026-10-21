@@ -8,15 +8,39 @@ import (
 	"testing"
 )
 
+// writeKeyFile, 0600 izinli GERÇEK bir anahtar dosyası yazar. checkKeyPermissions
+// Linux'ta dosyayı gerçekten stat eder (Windows'ta no-op), bu yüzden sahte yollar
+// CI'da (Linux) fail-closed izin kontrolüne takılır — testler cross-platform olsun
+// diye gerçek 0600 dosya kullanılır.
+func writeKeyFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte("key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// setValidTLS, Load'ın beklediği TLS materyali env'lerini ayarlar: anahtar dosyaları
+// GERÇEK ve 0600 (izin kontrolünü her iki OS'ta geçer); sertifika yolları izin
+// kontrol edilmediğinden (yalnız env'in dolu olması aranır) sahte kalabilir.
+func setValidTLS(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	caKey := dir + "/ca.key"
+	srvKey := dir + "/server.key"
+	writeKeyFile(t, caKey)
+	writeKeyFile(t, srvKey)
+	t.Setenv("KUT_CA_CERT", "/x/ca.crt")
+	t.Setenv("KUT_CA_KEY", caKey)
+	t.Setenv("KUT_SERVER_CERT", "/x/s.crt")
+	t.Setenv("KUT_SERVER_KEY", srvKey)
+}
+
 // setValid, geçerli bir yapılandırma için gereken tüm zorunlu env'leri ayarlar.
 func setValid(t *testing.T) {
 	t.Helper()
 	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
 	t.Setenv("KUT_MASTER_KEY", key)
-	t.Setenv("KUT_CA_CERT", "/x/ca.crt")
-	t.Setenv("KUT_CA_KEY", "/x/ca.key")
-	t.Setenv("KUT_SERVER_CERT", "/x/s.crt")
-	t.Setenv("KUT_SERVER_KEY", "/x/s.key")
+	setValidTLS(t)
 }
 
 func TestLoadValid(t *testing.T) {
@@ -62,10 +86,7 @@ func TestLoadRejectsBadNumeric(t *testing.T) {
 
 func TestLoadMasterKeyFromFile(t *testing.T) {
 	// TLS materyali + master-key dosyası; env'de KUT_MASTER_KEY YOK, _FILE var.
-	t.Setenv("KUT_CA_CERT", "/x/ca.crt")
-	t.Setenv("KUT_CA_KEY", "/x/ca.key")
-	t.Setenv("KUT_SERVER_CERT", "/x/s.crt")
-	t.Setenv("KUT_SERVER_KEY", "/x/s.key")
+	setValidTLS(t)
 	t.Setenv("KUT_MASTER_KEY", "")
 
 	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
@@ -182,6 +203,9 @@ func TestLoadStrictKeyPermissions(t *testing.T) {
 	}
 
 	// Opt-out: operatör bilerek kabul ederse yalnız uyarı, boot devam.
+	// Load, sırları okuyunca ortamdan temizler (clearSecretEnv); ikinci Load için
+	// ana anahtar yeniden ayarlanmalı (Linux'ta ilk Load izin kontrolüne kadar ilerler).
+	t.Setenv("KUT_MASTER_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	t.Setenv("KUT_ALLOW_INSECURE_KEY_PERMISSIONS", "1")
 	if _, err := Load(); err != nil {
 		t.Fatalf("opt-out açıkken hata dönmemeli (yalnız uyarı): %v", err)

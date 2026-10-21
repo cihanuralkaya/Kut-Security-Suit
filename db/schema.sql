@@ -483,6 +483,18 @@ CREATE INDEX idx_saved_searches_created ON saved_searches (created_at DESC);
 
 ALTER TABLE incidents ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(63) NOT NULL DEFAULT '';
 
+-- Bypass politikalarının hedef rolü (ADR-0002). Rol yoksa politika oluşturma
+-- "role does not exist" ile şemayı yarıda keser; bu yüzden idempotent olarak
+-- NOLOGIN (oturum açamaz, BYPASSRLS yok) bir rol olarak oluşturulur — yetki
+-- genişletmez, yalnız politikaların başvurduğu rolü var eder.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kut_admin') THEN
+        CREATE ROLE kut_admin NOLOGIN;
+    END IF;
+END
+$$;
+
 -- event_logs
 ALTER TABLE event_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_logs FORCE ROW LEVEL SECURITY;
