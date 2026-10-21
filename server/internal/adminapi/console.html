@@ -2367,6 +2367,19 @@
   function loadActivity(){
     return api("/api/activity").then(function(r){
       var c=(r&&r.counters)||{}, box=$("act-grid"); if(!box) return;
+      // Kiracıya bağlı görünümde süreç-geneli sayaçlar sunucuda çıkarılır (counters_omitted):
+      // sıfır kutucuk ve düz grafik yerine kısa bir not göster (yanıltıcı "etkinlik yok" olmasın).
+      var chartEl=$("act-chart"), chartLbl=chartEl?chartEl.previousElementSibling:null;
+      if(r&&r.counters_omitted){
+        var upO=(r&&r.uptime_seconds)||0, utO=$("act-uptime");
+        if(utO) utO.textContent=(Math.floor(upO/3600)+"s "+Math.floor((upO%3600)/60)+"dk");
+        box.innerHTML="<div class='empty' style='padding:10px;grid-column:1/-1'>"+esc("Bu sayaçlar platform genelidir; kiracı görünümünde gösterilmez.")+"</div>";
+        if(chartEl) chartEl.style.display="none";
+        if(chartLbl) chartLbl.style.display="none";
+        return;
+      }
+      if(chartEl) chartEl.style.display="flex";
+      if(chartLbl) chartLbl.style.display="";
       renderEventRate(c.events_ingested||0);
       var up=(r&&r.uptime_seconds)||0, h=Math.floor(up/3600), m=Math.floor((up%3600)/60);
       var utEl=$("act-uptime"); if(utEl) utEl.textContent=(h+"s "+m+"dk");
@@ -2961,12 +2974,11 @@
       var arts=(res[2]&&res[2].artifacts)||[];
       var artHtml="";
       if(arts.length){
-        var canDl = canOperate(); // VIEWER: sunucu 403 döner → indirme denetimini gizle
+        // Artefakt listesi OPERATOR+ gerektirir (VIEWER için sunucu 403 döner, soft() boş liste verir →
+        // bu dal hiç çalışmaz): burada ayrıca kilit simgesi dalı gerekmez.
         artHtml=arts.map(function(a){
           return "<div class='mini' style='display:flex;gap:8px;align-items:baseline;padding:3px 0'>"+
-            (canDl
-              ? "<span class='click' style='cursor:pointer;color:var(--accent)' data-artdl='"+esc(a.id)+"' data-artname='"+esc(a.path)+"' title='İndir'><svg class='bi' viewBox='0 0 24 24' aria-hidden='true'><use href='#i-download'/></svg></span>"
-              : "<span style='color:var(--faint)' title='İndirmek için OPERATOR veya üstü yetki gerekir'><svg class='bi' viewBox='0 0 24 24' aria-hidden='true'><use href='#i-lock'/></svg></span>")+
+            "<span class='click' style='cursor:pointer;color:var(--accent)' data-artdl='"+esc(a.id)+"' data-artname='"+esc(a.path)+"' title='İndir'><svg class='bi' viewBox='0 0 24 24' aria-hidden='true'><use href='#i-download'/></svg></span>"+
             "<span style='flex:1;word-break:break-all'>"+esc(a.path)+"</span>"+
             "<span class='mono' style='color:var(--faint)'>"+fmtBytes(a.size)+"</span></div>";
         }).join("");

@@ -68,6 +68,9 @@ type Triage struct {
 type SequenceInput struct {
 	Tokens []string
 	Kind   string // "process" | "command" | "auth"
+	// Tenant, taban çizgisinin alınacağı kiracı bölümüdür. SUNUCU-TARAFI atanır (çağıranın
+	// kiracısı); istemci verisinden ASLA türetilmez.
+	Tenant string
 }
 
 // SequenceScore, bir dizinin nadirlik/anomali skorudur (açıklamalı).

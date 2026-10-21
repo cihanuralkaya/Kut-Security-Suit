@@ -8,10 +8,13 @@ package incidentcase
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"kut.corp/suite/server/internal/casemgmt"
 	"kut.corp/suite/server/internal/correlate"
+	"kut.corp/suite/server/internal/metrics"
+	"kut.corp/suite/server/internal/tenant"
 )
 
 // TenantResolver, bir cihazın kiracısını çözer (server-side; enrollment'ta bağlanan).
@@ -23,14 +26,44 @@ type Sink struct {
 	inner    correlate.IncidentSink
 	cases    casemgmt.Store
 	tenantOf TenantResolver
+	enforce  bool // KUT_TENANT_ENFORCE: kiracısız (legacy) cihaz için vaka AÇILMAZ (INV-044)
 }
 
 // New, inner sink'i sararak otomatik vaka açan bir Sink döner. cases nil ise vaka
 // açılmaz (yalnız delege). tenantOf, tetikleyen CİHAZIN kiracısını çözer → otomatik
-// vaka, olayın/cihazın kiracısını taşır (dağıtım-geneli sabit değil). nil veya boş
-// dönerse "default" kovası kullanılır.
+// vaka, olayın/cihazın kiracısını taşır (dağıtım-geneli sabit değil).
+//
+// FAIL-CLOSED (Z5-19): kiracı çözümlemesi hata verirse (ya da çözümleyici yoksa) vaka
+// AÇILMAZ ve sayılır — "default" kovasına düşülmez (aksi halde bir kiracının incident'i
+// başka kiracının vaka kuyruğuna karışırdı). Boş dönen kiracı kiracı-öncesi (legacy) cihazdır
+// ve tenant.Canonical ile "default" kiracısıdır; WithEnforce(true) iken o da atlanır.
 func New(inner correlate.IncidentSink, cases casemgmt.Store, tenantOf TenantResolver) *Sink {
 	return &Sink{inner: inner, cases: cases, tenantOf: tenantOf}
+}
+
+// WithEnforce, sıkı çok-kiracı zorlamasını (KUT_TENANT_ENFORCE) ayarlar: açıkken kiracıya
+// bağlı olmayan cihaz için vaka açılmaz (INV-044: eksik kiracı → DENY).
+func (s *Sink) WithEnforce(on bool) *Sink {
+	s.enforce = on
+	return s
+}
+
+// caseTenant, vakanın kiracısını çözer; ok=false ise vaka açılmamalıdır.
+func (s *Sink) caseTenant(ctx context.Context, deviceID string) (string, bool) {
+	if s.tenantOf == nil {
+		return "", false
+	}
+	t, err := s.tenantOf(ctx, deviceID)
+	if err != nil {
+		return "", false
+	}
+	if t == "" {
+		if s.enforce {
+			return "", false
+		}
+		return tenant.Canonical(""), true
+	}
+	return t, true
 }
 
 // OpenIncident, asıl sink'e delege eder ve başarılıysa otomatik bir vaka açar
@@ -42,23 +75,27 @@ func (s *Sink) OpenIncident(ctx context.Context, deviceID, key, ruleID, techniqu
 		return id, err
 	}
 	// Vaka, tetikleyen cihazın kiracısını taşır (server-side; çapraz-kiracı vaka sızıntısını
-	// önler). Çözülemezse "default" kovası.
-	tenant := "default"
-	if s.tenantOf != nil {
-		if t, terr := s.tenantOf(ctx, deviceID); terr == nil && t != "" {
-			tenant = t
-		}
+	// önler). Çözülemezse vaka AÇILMAZ (fail-closed) — incident yine açılmıştır, atlanma sayılır.
+	caseTenant, ok := s.caseTenant(ctx, deviceID)
+	if !ok {
+		metrics.IncIncidentCaseSkipped()
+		log.Printf("[incidentcase] cihaz %s: kiracı çözülemedi — otomatik vaka açılmadı (incident %s)", deviceID, id)
+		return id, err
 	}
-	_, _ = s.cases.Create(casemgmt.Case{
+	if _, cerr := s.cases.Create(casemgmt.Case{
 		ID:           "case-" + id,
-		TenantID:     tenant,
+		TenantID:     caseTenant,
 		Title:        message,
 		Severity:     mapSeverity(severity),
 		Owner:        "system", // otomatik açıldı; bir analist Assign ile devralır
 		Assets:       nonEmpty(deviceID),
 		MITRE:        nonEmpty(technique),
 		EvidenceRefs: []string{"incident:" + id},
-	})
+	}); cerr != nil {
+		// Vaka yazım hatası sessizce yutulmaz (görünür metrik + log); incident yine açıktır.
+		metrics.IncIncidentCaseError()
+		log.Printf("[incidentcase] cihaz %s: vaka oluşturulamadı (incident %s): %v", deviceID, id, cerr)
+	}
 	return id, err
 }
 

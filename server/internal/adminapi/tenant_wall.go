@@ -4,6 +4,7 @@ package adminapi
 // kiracı sunucu-tarafı oturumdan çözülür, istemci gövdesinden ASLA güvenilmez.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -71,4 +72,37 @@ func normalizeTenantInput(raw string) (string, error) {
 		return "", err
 	}
 	return string(n), nil
+}
+
+// resolveReadScope, kiracı-bölümlü bir kaynağı (agentsec grafı, AI av grafı) OKUYAN/YAZAN bir
+// isteğin kiracı kapsamını SUNUCU-TARAFI çözer (W1b-2):
+//
+//   - Kiracıya bağlı çağıran (callerTenant != ""): HER ZAMAN kendi kiracısı; istekteki değer
+//     (query/gövde) YOK SAYILIR — başka kiracıyı seçme yolu yoktur.
+//   - Platform admini (callerTenant == ""): requested doluysa tenant.Normalize ile
+//     doğrulanmış AÇIK kiracı filtresi (geçersiz → admin.ErrInvalidInput); boşsa all=true
+//     (tüm kiracılar; yazma yollarında çağıran bunu platform bölümüne çevirir).
+func resolveReadScope(callerTenant, requested string) (tenantID string, all bool, err error) {
+	if callerTenant != "" {
+		return callerTenant, false, nil
+	}
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return "", true, nil
+	}
+	n, nerr := normalizeTenantInput(requested)
+	if nerr != nil {
+		return "", false, admin.ErrInvalidInput
+	}
+	return n, false, nil
+}
+
+// readScope, resolveReadScope'u oturumdaki yöneticiye uygular (AdminTenant hatası yayılır:
+// bilinmeyen/pasif yönetici fail-closed 403).
+func (s *Server) readScope(ctx context.Context, adminID, requested string) (string, bool, error) {
+	ct, err := s.callerTenant(ctx, adminID)
+	if err != nil {
+		return "", false, err
+	}
+	return resolveReadScope(ct, requested)
 }

@@ -33,6 +33,7 @@ type tenantAdmin struct {
 	lastTenant string
 	events     int
 	tenantHits int
+	devTenants []string // PublishTenantDevice kiracıları (sıralı)
 }
 
 func (t *tenantAdmin) PublishEvent(string, string, string) { t.events++ }
@@ -41,7 +42,9 @@ func (t *tenantAdmin) PublishTenantEvent(tenant, _, _, _ string) {
 	t.lastTenant = tenant
 	t.tenantHits++
 }
-func (t *tenantAdmin) PublishTenantDevice(string, string) {}
+func (t *tenantAdmin) PublishTenantDevice(tenant, _ string) {
+	t.devTenants = append(t.devTenants, tenant)
+}
 
 // SetTenant + kiracı-farkındalı admin: ProcessEvent olayı sunucu kiracısıyla atıflayıp
 // PublishTenantEvent'i çağırmalı (klasik PublishEvent'i DEĞİL).

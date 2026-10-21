@@ -69,3 +69,36 @@ func TestWriteExposition(t *testing.T) {
 		t.Error("önem düzeyi satırları alfabetik sıralı değil")
 	}
 }
+
+// W1b-2: sınırlı bellek-içi durumun düşen/atılan/boyut metrikleri /metrics'te görünür.
+func TestWriteBoundedStateMetrics(t *testing.T) {
+	SetGraphStats(7, 5, 3, 120, 90)
+	SetSeqModelStats(11, 2, 4, 33)
+	AddAgentSecDropped(6)
+	IncAnalyzerSkipped()
+	IncIncidentCaseSkipped()
+	IncIncidentCaseError()
+
+	var sb strings.Builder
+	Write(&sb, Snapshot{})
+	out := sb.String()
+	for _, want := range []string{
+		"kut_graph_dropped_total 7",
+		"kut_graph_evicted_total 5",
+		"kut_graph_pruned_total 3",
+		`kut_graph_size{kind="edges"} 120`,
+		`kut_graph_size{kind="nodes"} 90`,
+		"kut_seqmodel_dropped_total 11",
+		`kut_seqmodel_evicted_total{reason="lru"} 2`,
+		`kut_seqmodel_evicted_total{reason="ttl"} 4`,
+		"kut_seqmodel_sources 33",
+		"kut_agentsec_dropped_total ",
+		"kut_analyzer_skipped_total ",
+		`kut_incident_case_total{result="skipped"} `,
+		`kut_incident_case_total{result="error"} `,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("/metrics çıktısında %q yok", want)
+		}
+	}
+}

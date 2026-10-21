@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	neturl "net/url"
 	"os"
@@ -363,11 +364,24 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	// Varlık/tehdit grafı: ajan olaylarından (DNS→alan, bağlantı→IP) cihaz-merkezli
 	// kenarlar beslenir; aynı örnek admin API'ye salt-okunur pivot uçları için verilir.
 	entGraph := entitygraph.New()
+	// Ajan-kontrollü dizgelerden beslendiği için graf kiracı başına SERT tavanlıdır (Z3-03/Z5-18);
+	// KUT_GRAPH_MAX_EDGES / KUT_GRAPH_MAX_NODES (kiracı başına) ve KUT_GRAPH_MAX_EDGES_PER_DEVICE
+	// (cihaz başına; tek ajanın sel ile diğer cihazların kenarlarını tahliye etmesini önler) ile ayarlanır, 0/boş = varsayılan.
+	entGraph.SetLimits(entitygraph.Limits{
+		MaxEdgesPerTenant: atoiEnv("KUT_GRAPH_MAX_EDGES"),
+		MaxNodesPerTenant: atoiEnv("KUT_GRAPH_MAX_NODES"),
+		MaxEdgesPerDevice: atoiEnv("KUT_GRAPH_MAX_EDGES_PER_DEVICE"),
+	})
 	agentHandler.SetEntityGraph(entGraph)
 	// Süreç-zinciri sekans nadirlik modeli: ajan hattı canlı öğrenir, admin API
 	// salt-okunur skorlar (aynı paylaşımlı örnek). aibrain P4.1 — deterministik.
-	seqModel := aibrain.NewSeqModel()
+	seqModel := aibrain.NewSeqModels() // kiracı başına ayrı, sınırlı taban çizgisi
+	seqModel.SetLimits(aibrain.SeqLimits{MaxSources: atoiEnv("KUT_SEQMODEL_MAX_SOURCES")})
 	agentHandler.SetSeqModel(seqModel)
+	// TTL süpürmesi: KUT_GRAPH_TTL (varsayılan 720h = 30 gün) kadar gözlenmeyen kenar/kaynaklar
+	// atılır (Graph.Prune'un üretimde çağıranı yoktu). KUT_GRAPH_SWEEP_INTERVAL varsayılan 10dk.  KUT_GRAPH_TTL=0 süpürmeyi kapatır.
+	runBoundedStateMaintenance(ctx, entGraph, seqModel,
+		graphTTLFromEnv(720*time.Hour), getdurEnv("KUT_GRAPH_SWEEP_INTERVAL", 10*time.Minute))
 	// Paylaşımlı SOC vaka deposu: korelasyon incident'leri otomatik vaka açar
 	// (incidentcase dekoratörü) ve admin API aynı depoyu sunar (/api/cases). DB
 	// modunda kalıcı (cases tablosu, write-through), demo modunda bellek-içi.
@@ -430,7 +444,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		corrWindow = d
 	}
 	// incidentcase: yeni incident açılışında otomatik SOC vakası da açılır (best-effort).
-	agentHandler.SetCorrelator(correlate.New(corrWindow, incidentcase.New(backend, caseStore, backend.TenantForDevice)))
+	agentHandler.SetCorrelator(correlate.New(corrWindow, incidentcase.New(backend, caseStore, backend.TenantForDevice).WithEnforce(cfg.TenantEnforce)))
 	// Çok-sinyal korelasyon: aynı cihazda KUT_CHAIN_WINDOW (varsayılan 15dk) içinde
 	// KUT_CHAIN_THRESHOLD (varsayılan 3) FARKLI kill-chain sinyali birikirse
 	// yüksek-güvenli saldırı-zinciri uyarısı üretilir. 0 eşik → kapalı.
@@ -762,7 +776,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		socBrain = aibrain.New(aibrain.NewHTTPProvider(aiURL, os.Getenv("KUT_AI_KEY"), os.Getenv("KUT_AI_MODEL"), 0), 0)
 		log.Printf("SOC AI brain: dış sağlayıcı bağlı (%s)", aiURL)
 	} else {
-		socBrain = aibrain.New(aibrain.NewLocalProviderWithSeq(seqModel), 0) // yerel deterministik varsayılan
+		socBrain = aibrain.New(aibrain.NewLocalProviderWithSeqs(seqModel), 0) // yerel deterministik varsayılan
 	}
 	adminAPI.SetBrain(socBrain) // salt-öneri triyaj (/api/ai/triage; fail-open)
 	// Otonom soruşturma ajanı (G1 aktivasyon — sanctioned ince-adaptör deseni): SIFIR-AĞ
@@ -966,26 +980,36 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				intervals[c.Name] = c.Interval()
 			}
 			seen := dedup.New(10*time.Minute, 200000)
-			sink := func(evs []model.Event) {
-				byDev := map[string][]model.Event{}
-				for _, ev := range evs {
-					if seen.Duplicate(ev.EnsureID()) {
-						continue
-					}
-					byDev[ev.DeviceID] = append(byDev[ev.DeviceID], ev)
+			// Her bağlayıcı KENDİ yapılandırılmış kiracısıyla (yoksa dağıtımın varsayılan
+			// kiracısı) damgalanır — kaydetmeden ÖNCE (Z3-02). Kiracı operatör
+			// yapılandırmasından gelir, kaynak verisinden değil.
+			tenants := map[string]connectors.Binding{}
+			for _, c := range cfgs {
+				// KUT_TENANT_ENFORCE=1: kiracısız bağlayıcı REDDEDİLİR (HTTP ingest'in kiracısız
+				// token'ı reddetmesiyle aynı fail-closed, INV-044); kapalıyken dağıtım kiracısı.
+				bd, terr := c.ResolveBinding(cfg.TenantID, cfg.TenantEnforce)
+				if terr != nil {
+					log.Printf("connector %q atlandı (ÇALIŞTIRILMIYOR): %v", c.Name, terr)
+					continue
 				}
-				for dev, list := range byDev {
-					if _, serr := backend.SaveEvents(ctx, dev, list); serr != nil {
-						log.Printf("connector olay yazımı hatası (%s): %v", dev, serr)
-					}
-				}
+				tenants[c.Name] = bd
 			}
+			isDup := func(e *model.Event) bool { return seen.Duplicate(e.EnsureID()) }
+			started := 0
 			for _, c := range reg.List() {
+				bd, ok := tenants[c.Name()]
+				if !ok {
+					continue // geçersiz kiracı: fail-closed, bağlayıcı çalıştırılmaz
+				}
+				sink := connectors.NewTenantSink(ctx, bd.Tenant, bd.IDTenant, isDup, backend.SaveEvents, func(dev string, serr error) {
+					log.Printf("connector olay yazımı hatası (%s): %v", dev, serr)
+				})
 				runner := connector.NewRunner(c, intervals[c.Name()], sink).
 					OnError(func(name string, err error) { log.Printf("connector %q hata: %v", name, err) })
 				go runner.Start(ctx, nil)
+				started++
 			}
-			log.Printf("%d connector kaynağı ETKİN (§29/§30)", len(reg.List()))
+			log.Printf("%d connector kaynağı ETKİN, %d atlandı (§29/§30)", started, len(reg.List())-started)
 		}
 	}
 	// ABAC (§35): KUT_ABAC_FILE ayarlıysa öznitelik-tabanlı erişim politikaları
@@ -1101,6 +1125,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		"cert_expiry_days":      certMinDays,
 	})
 	adminAPI.SetTenantID(cfg.TenantID)
+	adminAPI.SetTenantEnforce(cfg.TenantEnforce) // sıkı çok-tenant: kiracısız ingest token'ı reddedilir (INV-044)
 	if cfg.TenantID != "default" {
 		log.Printf("kiracı (tenant): %s", cfg.TenantID)
 	}
@@ -1166,11 +1191,17 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 			if err != nil {
 				continue
 			}
-			c := metrics.Counters()
+			// Çok-kiracılı (zorlama açık) dağıtımda özet kiracı-kapsamlıdır ama süreç sayaçları TÜM
+			// kiracıları toplar → sayaçlar rapora konmaz (Z5-15). Tek-kiracılıda dağıtım = kiracı.
+			var c map[string]int64
+			if !cfg.TenantEnforce {
+				c = metrics.Counters()
+			}
 			d := report.Data{
 				GeneratedAt: time.Now(), SchemaVersion: model.EventSchemaVersion, TenantID: cfg.TenantID,
-				Title:        "Güvenlik Duruş Raporu",
-				DevicesTotal: sum.DevicesTotal, DevicesOnline: sum.DevicesOnline, DevicesOffline: sum.DevicesOffline,
+				CountersOmitted: cfg.TenantEnforce,
+				Title:           "Güvenlik Duruş Raporu",
+				DevicesTotal:    sum.DevicesTotal, DevicesOnline: sum.DevicesOnline, DevicesOffline: sum.DevicesOffline,
 				DevicesQuarantined: sum.DevicesQuarantined, NonCompliant: sum.NonCompliantDevices,
 				EventsBySeverity: sum.EventsBySeverity, DevicesByOS: sum.DevicesByOS,
 				Detections: c["detections"], AlertsRaised: c["alerts_raised"],
@@ -1226,7 +1257,20 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		"T1071": "Command and Control", "T1071.004": "Command and Control",
 		"T1046": "Discovery", "T1110": "Credential Access",
 	}
-	trackIncident := func(dev, ruleID, tech, sev, msg string, at time.Time) {
+	// Bulgu yazma yolu (Z2-03/04): kiracıyı cihazdan SUNUCU-TARAFI çözer ve damgalar,
+	// kaydı yalnız başarılıysa yayınlar/uyarır ve başarıyı çağırana bildirir.
+	findings := &findingEmitter{
+		save: backend.SaveEvents,
+		tenants: analyzerTenants{
+			lookup:  backend.TenantForDevice,
+			deflt:   cfg.TenantID,
+			enforce: cfg.TenantEnforce,
+		},
+		publish: liveBus.PublishTenantEvent,
+		notify:  socAlerter.Notify,
+	}
+	// trackIncident: tn, bulgunun yazıldığı kiracıdır (zincir olayı da aynı kiracıya yazılır).
+	trackIncident := func(dev, tn, ruleID, tech, sev, msg string, at time.Time) {
 		if dev == "" {
 			return
 		}
@@ -1245,13 +1289,11 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				Category: "SECURITY", Severity: "CRITICAL",
 				Message:    "yüksek-güvenli saldırı zinciri (sunucu-taraflı çok-sinyal): " + strings.Join(signals, " + "),
 				OccurredAt: at,
-				Details:    `{"attack_chain":true,"source":"server-side"}`,
+				Details:    findingDetails(map[string]any{"attack_chain": true, "source": "server-side"}),
 			}
-			if _, err := backend.SaveEvents(ctx, dev, []model.Event{cev}); err == nil {
-				liveBus.PublishEvent(dev, cev.Severity, cev.Message)
-			}
-			socAlerter.Notify(notify.Alert{DeviceID: dev, Category: "SECURITY", Severity: "CRITICAL",
-				Message: cev.Message, OccurredAt: at})
+			// Zincir uyarısı kayıt sonucundan bağımsız iletilir (uyarı kalıcılığa bağlı değil).
+			findings.emit(ctx, dev, tn, cev, notify.Alert{Category: "SECURITY", Severity: "CRITICAL",
+				Message: cev.Message, OccurredAt: at}, true)
 			log.Printf("[chain] cihaz %s: %s", dev, cev.Message)
 		}
 	}
@@ -1285,6 +1327,9 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				if err != nil {
 					continue
 				}
+				// W3 NOTU (Z2-05): bu okuma adminread'in sorgu başına 1000 satır sınırına tabidir;
+				// sayfalı tarama yolu W3 dalgasında ele alınacak.
+				hints := tenantHints(evs) // cihaz → sunucu-damgalı olay kiracısı (kayıtsız kaynaklar için)
 				conns := make([]beacon.Conn, 0, len(evs))
 				for _, e := range evs {
 					var d struct {
@@ -1302,21 +1347,21 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 					if alerted[key] {
 						continue
 					}
-					alerted[key] = true
 					ev := model.Event{
 						Category: "SECURITY", Severity: "HIGH",
 						Message: fmt.Sprintf("olası C2 beacon: %s (%d bağlantı, ~%s aralık, jitter %%%.0f)",
 							f.RemoteIP, f.Count, f.MeanInterval.Round(time.Second), f.CoV*100),
 						OccurredAt: time.Now(),
-						Details: fmt.Sprintf(`{"beacon":true,"remote_ip":%q,"count":%d,"mean_interval_sec":%d,"cov":%.3f,"technique":"T1071"}`,
-							f.RemoteIP, f.Count, int(f.MeanInterval.Seconds()), f.CoV),
+						Details: findingDetails(map[string]any{"beacon": true, "remote_ip": f.RemoteIP, "count": f.Count,
+							"mean_interval_sec": int(f.MeanInterval.Seconds()), "cov": math.Round(f.CoV*1000) / 1000, "technique": "T1071"}),
 					}
-					if _, err := backend.SaveEvents(ctx, f.DeviceID, []model.Event{ev}); err == nil {
-						liveBus.PublishEvent(f.DeviceID, ev.Severity, ev.Message)
-						socAlerter.Notify(notify.Alert{DeviceID: f.DeviceID, Category: "SECURITY", Severity: "HIGH",
-							Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1071",
-							TechniqueName: "Application Layer Protocol", Tactic: "Command and Control"})
-						trackIncident(f.DeviceID, "SRV-BEACON", "T1071", ev.Severity, ev.Message, ev.OccurredAt)
+					// "Uyarıldı" bayrağı YALNIZ başarılı kayıttan sonra set edilir (Z2-04): geçici
+					// DB hatası bulguyu kalıcı susturmaz, sonraki turda yeniden denenir.
+					if tn, ok := findings.emit(ctx, f.DeviceID, hints[f.DeviceID], ev, notify.Alert{Category: "SECURITY", Severity: "HIGH",
+						Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1071",
+						TechniqueName: "Application Layer Protocol", Tactic: "Command and Control"}, false); ok {
+						alerted[key] = true
+						trackIncident(f.DeviceID, tn, "SRV-BEACON", "T1071", ev.Severity, ev.Message, ev.OccurredAt)
 						log.Printf("[beacon] cihaz %s: %s", f.DeviceID, ev.Message)
 					}
 				}
@@ -1328,22 +1373,20 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 					if alerted[key] {
 						continue
 					}
-					alerted[key] = true
-					metrics.IncLateralMovement()
 					ev := model.Event{
 						Category: "SECURITY", Severity: "HIGH",
 						Message: fmt.Sprintf("olası yanal hareket: %s içinde %d farklı iç hedefe bağlantı",
 							f.Window.Round(time.Minute), f.DistinctPeers),
 						OccurredAt: time.Now(),
-						Details: fmt.Sprintf(`{"lateral_movement":true,"distinct_peers":%d,"window_sec":%d,"technique":"T1046"}`,
-							f.DistinctPeers, int(f.Window.Seconds())),
+						Details: findingDetails(map[string]any{"lateral_movement": true, "distinct_peers": f.DistinctPeers,
+							"window_sec": int(f.Window.Seconds()), "technique": "T1046"}),
 					}
-					if _, err := backend.SaveEvents(ctx, f.DeviceID, []model.Event{ev}); err == nil {
-						liveBus.PublishEvent(f.DeviceID, ev.Severity, ev.Message)
-						socAlerter.Notify(notify.Alert{DeviceID: f.DeviceID, Category: "SECURITY", Severity: "HIGH",
-							Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1046",
-							TechniqueName: "Network Service Discovery", Tactic: "Discovery"})
-						trackIncident(f.DeviceID, "SRV-LATERAL", "T1046", ev.Severity, ev.Message, ev.OccurredAt)
+					if tn, ok := findings.emit(ctx, f.DeviceID, hints[f.DeviceID], ev, notify.Alert{Category: "SECURITY", Severity: "HIGH",
+						Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1046",
+						TechniqueName: "Network Service Discovery", Tactic: "Discovery"}, false); ok {
+						alerted[key] = true
+						metrics.IncLateralMovement()
+						trackIncident(f.DeviceID, tn, "SRV-LATERAL", "T1046", ev.Severity, ev.Message, ev.OccurredAt)
 						log.Printf("[lateral] cihaz %s: %s", f.DeviceID, ev.Message)
 					}
 				}
@@ -1378,6 +1421,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				if err != nil {
 					continue
 				}
+				hints := tenantHints(evs) // cihaz → sunucu-damgalı olay kiracısı (W3 NOTU: Z2-05 satır sınırı)
 				queries := make([]dnstunnel.Query, 0, len(evs))
 				for _, e := range evs {
 					var d struct {
@@ -1396,22 +1440,22 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 					if dtAlerted[key] {
 						continue
 					}
-					dtAlerted[key] = true
-					metrics.IncDNSTunnel()
 					ev := model.Event{
 						Category: "SECURITY", Severity: "HIGH",
 						Message: fmt.Sprintf("olası DNS tünelleme: %s altında %s içinde %d farklı alt alan",
 							f.Parent, f.Window.Round(time.Minute), f.DistinctSubdomains),
 						OccurredAt: time.Now(),
-						Details: fmt.Sprintf(`{"dns_tunnel":true,"parent":%q,"distinct_subdomains":%d,"window_sec":%d,"technique":"T1071.004"}`,
-							f.Parent, f.DistinctSubdomains, int(f.Window.Seconds())),
+						// f.Parent ajan-kaynaklı DNS adından türer: encoding/json kontrol karakterlerini
+						// kaçışlar / geçersiz UTF-8'i düzeltir → Details HER ZAMAN geçerli JSON (Z2-04).
+						Details: findingDetails(map[string]any{"dns_tunnel": true, "parent": f.Parent,
+							"distinct_subdomains": f.DistinctSubdomains, "window_sec": int(f.Window.Seconds()), "technique": "T1071.004"}),
 					}
-					if _, err := backend.SaveEvents(ctx, f.DeviceID, []model.Event{ev}); err == nil {
-						liveBus.PublishEvent(f.DeviceID, ev.Severity, ev.Message)
-						socAlerter.Notify(notify.Alert{DeviceID: f.DeviceID, Category: "SECURITY", Severity: "HIGH",
-							Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1071.004",
-							TechniqueName: "DNS", Tactic: "Command and Control"})
-						trackIncident(f.DeviceID, "SRV-DNSTUNNEL", "T1071.004", ev.Severity, ev.Message, ev.OccurredAt)
+					if tn, ok := findings.emit(ctx, f.DeviceID, hints[f.DeviceID], ev, notify.Alert{Category: "SECURITY", Severity: "HIGH",
+						Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1071.004",
+						TechniqueName: "DNS", Tactic: "Command and Control"}, false); ok {
+						dtAlerted[key] = true
+						metrics.IncDNSTunnel()
+						trackIncident(f.DeviceID, tn, "SRV-DNSTUNNEL", "T1071.004", ev.Severity, ev.Message, ev.OccurredAt)
 						log.Printf("[dnstunnel] cihaz %s: %s", f.DeviceID, ev.Message)
 					}
 				}
@@ -1452,6 +1496,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				if err != nil {
 					continue
 				}
+				hints := tenantHints(evs) // cihaz → sunucu-damgalı olay kiracısı (W3 NOTU: Z2-05 satır sınırı)
 				attempts := make([]bruteforce.Attempt, 0, len(evs))
 				logons := make([]bruteforce.LogonEvent, 0, len(evs))
 				for _, e := range evs {
@@ -1484,8 +1529,6 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 					if bfAlerted[key] {
 						continue
 					}
-					bfAlerted[key] = true
-					metrics.IncBruteForce()
 					// Çok sayıda farklı hedef hesap → parola-püskürtme; tek hesap → kaba-kuvvet.
 					kind := "kaba-kuvvet"
 					if f.DistinctTargets >= 5 {
@@ -1500,15 +1543,16 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 						Message: fmt.Sprintf("olası %s: %s içinde %d başarısız oturum açma%s",
 							kind, f.Window.Round(time.Minute), f.Count, attr),
 						OccurredAt: time.Now(),
-						Details: fmt.Sprintf(`{"brute_force":true,"failed_logons":%d,"window_sec":%d,"distinct_sources":%d,"distinct_targets":%d,"top_source":%q,"technique":"T1110"}`,
-							f.Count, int(f.Window.Seconds()), f.DistinctSources, f.DistinctTargets, f.TopSource),
+						Details: findingDetails(map[string]any{"brute_force": true, "failed_logons": f.Count,
+							"window_sec": int(f.Window.Seconds()), "distinct_sources": f.DistinctSources,
+							"distinct_targets": f.DistinctTargets, "top_source": f.TopSource, "technique": "T1110"}),
 					}
-					if _, err := backend.SaveEvents(ctx, f.DeviceID, []model.Event{ev}); err == nil {
-						liveBus.PublishEvent(f.DeviceID, ev.Severity, ev.Message)
-						socAlerter.Notify(notify.Alert{DeviceID: f.DeviceID, Category: "SECURITY", Severity: "HIGH",
-							Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1110",
-							TechniqueName: "Brute Force", Tactic: "Credential Access"})
-						trackIncident(f.DeviceID, "SRV-BRUTEFORCE", "T1110", ev.Severity, ev.Message, ev.OccurredAt)
+					if tn, ok := findings.emit(ctx, f.DeviceID, hints[f.DeviceID], ev, notify.Alert{Category: "SECURITY", Severity: "HIGH",
+						Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1110",
+						TechniqueName: "Brute Force", Tactic: "Credential Access"}, false); ok {
+						bfAlerted[key] = true
+						metrics.IncBruteForce()
+						trackIncident(f.DeviceID, tn, "SRV-BRUTEFORCE", "T1110", ev.Severity, ev.Message, ev.OccurredAt)
 						log.Printf("[bruteforce] cihaz %s: %s", f.DeviceID, ev.Message)
 					}
 				}
@@ -1519,8 +1563,6 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 					if bfAlerted[key] {
 						continue
 					}
-					bfAlerted[key] = true
-					metrics.IncBruteForceSuccess()
 					attr := ""
 					if f.SourceIP != "" {
 						attr = fmt.Sprintf(" (kaynak IP %s)", f.SourceIP)
@@ -1530,15 +1572,15 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 						Message: fmt.Sprintf("olası BAŞARILI kaba-kuvvet — hesap ele geçirilmiş olabilir: %d başarısız denemenin ardından başarılı oturum açma%s",
 							f.FailuresBefore, attr),
 						OccurredAt: time.Now(),
-						Details: fmt.Sprintf(`{"brute_force_success":true,"failures_before":%d,"window_sec":%d,"source_ip":%q,"technique":"T1110"}`,
-							f.FailuresBefore, int(bfWindow.Seconds()), f.SourceIP),
+						Details: findingDetails(map[string]any{"brute_force_success": true, "failures_before": f.FailuresBefore,
+							"window_sec": int(bfWindow.Seconds()), "source_ip": f.SourceIP, "technique": "T1110"}),
 					}
-					if _, err := backend.SaveEvents(ctx, f.DeviceID, []model.Event{ev}); err == nil {
-						liveBus.PublishEvent(f.DeviceID, ev.Severity, ev.Message)
-						socAlerter.Notify(notify.Alert{DeviceID: f.DeviceID, Category: "SECURITY", Severity: "CRITICAL",
-							Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1110",
-							TechniqueName: "Brute Force", Tactic: "Credential Access"})
-						trackIncident(f.DeviceID, "SRV-BFSUCCESS", "T1110", ev.Severity, ev.Message, ev.OccurredAt)
+					if tn, ok := findings.emit(ctx, f.DeviceID, hints[f.DeviceID], ev, notify.Alert{Category: "SECURITY", Severity: "CRITICAL",
+						Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1110",
+						TechniqueName: "Brute Force", Tactic: "Credential Access"}, false); ok {
+						bfAlerted[key] = true
+						metrics.IncBruteForceSuccess()
+						trackIncident(f.DeviceID, tn, "SRV-BFSUCCESS", "T1110", ev.Severity, ev.Message, ev.OccurredAt)
 						log.Printf("[bruteforce] cihaz %s (BAŞARILI): %s", f.DeviceID, ev.Message)
 					}
 				}

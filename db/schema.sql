@@ -351,6 +351,7 @@ CREATE TABLE tokens (
     id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     token_hash   TEXT NOT NULL UNIQUE,       -- sha256(hex) düz-sır özeti
     scope        TEXT NOT NULL,              -- 'metrics' | 'ingest'
+    tenant_id    VARCHAR(63) NOT NULL DEFAULT '',  -- ingest token'ının bağlı kiracısı (sunucu-tarafı; '' = legacy/kiracısız)
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at   TIMESTAMPTZ,                -- NULL => süresiz
     revoked_at   TIMESTAMPTZ,               -- NULL => etkin
@@ -648,3 +649,19 @@ ALTER TABLE policies ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(63) NOT NULL DEF
 CREATE INDEX IF NOT EXISTS idx_policies_tenant ON policies (tenant_id);
 
 -- END W1B1-UPGRADE
+
+-- =============================================================================
+-- W1b-2 YÜKSELTME BLOĞU (idempotent, yeniden çalıştırılabilir)
+-- =============================================================================
+-- Taze kurulumda yukarıdaki CREATE TABLE son biçimdedir ve bu blok no-op'tur.
+-- MEVCUT kurulumlarda yalnız BEGIN/END arasını uygulayın:
+--   sed -n '/^-- BEGIN W1B2-UPGRADE/,/^-- END W1B2-UPGRADE/p' db/schema.sql | psql "$KUT_DATABASE_URL"
+-- BEGIN W1B2-UPGRADE
+
+-- Z3-01 / Z4a-15: yönetilen ingest token'ları bir kiracıya bağlanır (platform admini
+-- oluşturmada verir; sunucu-tarafı). Mevcut tüm token'lar '' (kiracısız / legacy) kalır;
+-- bunlarla alınan olaylar dağıtımın varsayılan kiracısına düşer (KUT_TENANT_ENFORCE=1
+-- iken reddedilir).
+ALTER TABLE tokens ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(63) NOT NULL DEFAULT '';
+
+-- END W1B2-UPGRADE
