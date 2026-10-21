@@ -1028,6 +1028,11 @@ func (s *Server) handleTokenCreate(w http.ResponseWriter, r *http.Request, admin
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
+	// Yönetilen metrics/ingest token'ları DAĞITIM GENELİ kimlik bilgileridir (tüm kiracıların
+	// özetini okur / herhangi bir kaynak için olay yazar) → yalnız PLATFORM admini (Z4a-03).
+	if respondErr(w, s.requirePlatformAdmin(r.Context(), adminID)) {
+		return
+	}
 	if s.tokens == nil {
 		writeErr(w, http.StatusNotImplemented, "yönetilen token deposu yapılandırılmadı")
 		return
@@ -1050,6 +1055,7 @@ func (s *Server) handleTokenCreate(w http.ResponseWriter, r *http.Request, admin
 		writeErr(w, http.StatusInternalServerError, "token oluşturulamadı")
 		return
 	}
+	s.adminSvc.RecordAudit(r.Context(), adminID, "API_TOKEN_CREATE:"+req.Scope, "token", id)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id": id, "scope": req.Scope, "secret": secret,
 		"note": "Bu sır YALNIZCA burada gösterilir — güvenli saklayın.",
@@ -1059,6 +1065,9 @@ func (s *Server) handleTokenCreate(w http.ResponseWriter, r *http.Request, admin
 // handleTokenList, yönetilen token'ları (SIR OLMADAN) listeler (ADMIN).
 func (s *Server) handleTokenList(w http.ResponseWriter, r *http.Request, adminID string) {
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
+		return
+	}
+	if respondErr(w, s.requirePlatformAdmin(r.Context(), adminID)) {
 		return
 	}
 	if s.tokens == nil {
@@ -1078,6 +1087,9 @@ func (s *Server) handleTokenRevoke(w http.ResponseWriter, r *http.Request, admin
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
+	if respondErr(w, s.requirePlatformAdmin(r.Context(), adminID)) {
+		return
+	}
 	if s.tokens == nil {
 		writeErr(w, http.StatusNotImplemented, "yönetilen token deposu yapılandırılmadı")
 		return
@@ -1090,6 +1102,7 @@ func (s *Server) handleTokenRevoke(w http.ResponseWriter, r *http.Request, admin
 		}
 		return
 	}
+	s.adminSvc.RecordAudit(r.Context(), adminID, "API_TOKEN_REVOKE", "token", r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]any{"revoked": r.PathValue("id")})
 }
 
@@ -1107,7 +1120,15 @@ type MFAStore interface {
 // ile birlikte döner (authenticator uygulamasına eklenir). Etkin olması için
 // activate gerekir.
 func (s *Server) handleMFAEnroll(w http.ResponseWriter, r *http.Request, adminID string) {
-	secret, uri, err := s.adminSvc.BeginMFAEnrollment(r.Context(), adminID)
+	// MFA zaten etkinse yeniden kayıt için mevcut TOTP kodu gerekir ({"code":"123456"});
+	// ilk kayıtta gövde boş/{} olabilir.
+	var req struct {
+		Code string `json:"code"`
+	}
+	if !decodeOptional(w, r, &req) {
+		return
+	}
+	secret, uri, err := s.adminSvc.BeginMFAEnrollment(r.Context(), adminID, req.Code)
 	if respondErr(w, err) {
 		return
 	}
@@ -1154,21 +1175,26 @@ func clientIP(r *http.Request) string {
 }
 
 func (s *Server) handleIssueToken(w http.ResponseWriter, r *http.Request, adminID string) {
-	// Çok-tenant SaaS: token'ın kiracısı opsiyonel gövdeden ({"tenant_id":"..."}) seçilir;
-	// boş/gövdesiz → dağıtımın varsayılan kiracısı (s.tenantID). Kiracı SUNUCU tarafında token'a
-	// mühürlenir ve enroll'da cihaza bağlanır — ajan/client kiracıyı belirleyemez. (Hangi
-	// kiracıyı seçebileceğinin admin-başına kapsamla sıkılaştırılması ayrı bir dilim.)
-	tenant := s.tenantID
+	// Çok-tenant SaaS: token'ın kiracısı SUNUCU tarafında token'a mühürlenir ve enroll'da
+	// cihaza bağlanır — ajan/client kiracıyı belirleyemez. Kiracıya bağlı admin: daima kendi
+	// kiracısı (gövde farklıysa 403, boşsa kendi kiracısı). Platform admini: opsiyonel gövdeden
+	// ({"tenant_id":"..."}) tenant.Normalize ile doğrulanmış kiracı; boşsa dağıtımın
+	// varsayılan kiracısı (s.tenantID).
 	var body struct {
 		TenantID string `json:"tenant_id"`
 	}
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body) // opsiyonel; boş gövde tolere edilir
+	if !decodeOptional(w, r, &body) { // opsiyonel; boş gövde tolere edilir
+		return
 	}
-	if t := strings.TrimSpace(body.TenantID); t != "" {
-		tenant = t
+	callerTenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
 	}
-	token, err := s.adminSvc.IssueEnrollmentToken(r.Context(), adminID, tenant)
+	tokTenant, err := resolveTokenTenant(callerTenant, body.TenantID, s.tenantID)
+	if respondErr(w, err) {
+		return
+	}
+	token, err := s.adminSvc.IssueEnrollmentToken(r.Context(), adminID, tokTenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -2906,6 +2932,11 @@ func (s *Server) requirePlatformAdmin(ctx context.Context, adminID string) error
 // yakalardı?" raporunu döner. Kuralı üretime almadan önce etkisini ölçmek için. Salt-okuma.
 // rules verilmezse mevcut motor kuralları kullanılır (mevcut setin geçmiş kapsamı).
 func (s *Server) handleReplayDetection(w http.ResponseWriter, r *http.Request, adminID string) {
+	// Aday kuralı tüm geçmiş olaylara uygular (pahalı + tespit mühendisliği): vaka/doğrulama
+	// koşusu gibi OPERATOR+.
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
+		return
+	}
 	var req struct {
 		Rules           []detect.Rule `json:"rules"` // aday kural(lar); boşsa mevcut set
 		DeviceID        string        `json:"device_id"`
@@ -3496,6 +3527,10 @@ func (s *Server) handleDeviceEvidence(w http.ResponseWriter, r *http.Request, ad
 // TRANSFERRED/SEALED) ekler (§23): eylemi yapan = oturum açan admin. Zincirin ucuna
 // hash-bağlı yeni kayıt hesaplanır ve depolanır. Adli/IR zinciri.
 func (s *Server) handleRecordCustody(w http.ResponseWriter, r *http.Request, adminID string) {
+	// Delil zincirine KALICI yazma: salt-okur VIEWER değil, OPERATOR+ (adli/IR rolü).
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
+		return
+	}
 	var req struct {
 		Action string `json:"action"`
 	}
@@ -3515,6 +3550,11 @@ func (s *Server) handleRecordCustody(w http.ResponseWriter, r *http.Request, adm
 
 // handleDownloadArtifact, tek bir artefaktın ham içeriğini indirir (attachment).
 func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request, adminID string) {
+	// Uç noktadan toplanmış HAM dosya içeriği: toplamayı tetikleyen (COLLECT_FILE) rolle
+	// aynı eşik — OPERATOR+. VIEWER ham delil indiremez.
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
+		return
+	}
 	id := r.PathValue("id")
 	tenant, err := s.callerTenant(r.Context(), adminID)
 	if respondErr(w, err) {

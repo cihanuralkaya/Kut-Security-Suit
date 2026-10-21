@@ -11,6 +11,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"kut.corp/suite/server/internal/security"
 )
@@ -93,13 +94,99 @@ func (s *Service) AdminTenant(ctx context.Context, adminID string) (string, erro
 	return s.store.AdminTenant(ctx, adminID)
 }
 
-// SetAdminRole, bir yöneticinin rolünü değiştirir (ADMIN).
+// enforceAdminTarget, bir yönetici-yönetimi mutasyonunun (rol değiştir / pasifleştir)
+// kiracı sınırını doğrular ve çağıranın kiracısını döner. Platform admini (kiracısız)
+// kısıtsızdır. Kiracıya bağlı bir admin YALNIZ kendi kiracısının yöneticilerine dokunabilir:
+// hedefin kiracısı boş (platform admini) ya da başka bir kiracı ya da bilinmeyen/pasif
+// hedef → ErrForbidden (fail-closed; CreateAdmin'in kiracı korumasının aynası).
+func (s *Service) enforceAdminTarget(ctx context.Context, adminID, targetID string) (string, error) {
+	callerTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return "", err
+	}
+	if callerTenant == "" {
+		return "", nil // platform admini: kısıtsız
+	}
+	targetTenant, err := s.store.AdminTenant(ctx, targetID)
+	if err != nil {
+		return "", err
+	}
+	if targetTenant == "" || targetTenant != callerTenant {
+		return "", ErrForbidden
+	}
+	return callerTenant, nil
+}
+
+// ErrLastAdmin, bir yöneticinin kendi ADMIN yetkisini (rol düşürme / pasifleştirme ile)
+// kaldırmasının, kapsamındaki SON etkin ADMIN'i yok edeceği durumda döner. ErrForbidden'ı
+// sarar (HTTP 403): kiracı (veya platform) yönetimsiz kalıp kilitlenmesin.
+var ErrLastAdmin = fmt.Errorf("%w: kapsamdaki son etkin ADMIN kendi yetkisini kaldıramaz", ErrForbidden)
+
+// hasOtherActiveAdmin, adminID dışında, adminID ile AYNI kapsamda (kiracı; platform
+// adminleri için boş kiracı) en az bir ETKİN ADMIN olup olmadığını döner. Fail-closed:
+// okuma hatası çağırana yayılır (guard "var" demez).
+func (s *Service) hasOtherActiveAdmin(ctx context.Context, adminID, tenantID string) (bool, error) {
+	infos, err := s.store.ListAdmins(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	for _, a := range infos {
+		if a.ID == adminID || !a.Active || a.Role != RoleAdmin {
+			continue
+		}
+		if tenantID == "" {
+			// Boş kiracı filtresi TÜM yöneticileri döner; platform kapsamı yalnız boş
+			// kiracılı adminlerdir (kiracılı bir admin platformu yönetemez).
+			t, err := s.store.AdminTenant(ctx, a.ID)
+			if err != nil {
+				return false, err
+			}
+			if t != "" {
+				continue
+			}
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// guardLastAdmin, bir yöneticinin KENDİNİ ADMIN'likten çıkarmasını (rol düşürme veya
+// pasifleştirme) kapsamındaki son etkin ADMIN ise engeller (Z4a-01 kendini-düşürme /
+// son-admin koruması). Hedef çağıranın kendisi değilse hiçbir şey yapmaz: başka bir
+// yönetici üzerinde işlem yapan ADMIN çağıran zaten kapsamda kalır.
+func (s *Service) guardLastAdmin(ctx context.Context, adminID, targetID, callerTenant string) error {
+	if adminID != targetID {
+		return nil
+	}
+	other, err := s.hasOtherActiveAdmin(ctx, adminID, callerTenant)
+	if err != nil {
+		return err
+	}
+	if !other {
+		return ErrLastAdmin
+	}
+	return nil
+}
+
+// SetAdminRole, bir yöneticinin rolünü değiştirir (ADMIN). Kiracıya bağlı bir admin yalnız
+// kendi kiracısındaki yöneticilerin rolünü değiştirebilir (enforceAdminTarget): başka kiracıya
+// veya platform adminlerine ADMIN dahil hiçbir rol veremez. Kendi rolünü ADMIN'in altına
+// düşürmek, kapsamındaki SON etkin ADMIN ise reddedilir (ErrLastAdmin).
 func (s *Service) SetAdminRole(ctx context.Context, adminID, targetID string, role Role) error {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
 		return err
 	}
 	if !validAdminRole(role) {
 		return ErrInvalidInput
+	}
+	callerTenant, err := s.enforceAdminTarget(ctx, adminID, targetID)
+	if err != nil {
+		return err
+	}
+	if role != RoleAdmin {
+		if err := s.guardLastAdmin(ctx, adminID, targetID, callerTenant); err != nil {
+			return err
+		}
 	}
 	if err := s.store.SetAdminRole(ctx, targetID, role); err != nil {
 		return err
@@ -109,9 +196,18 @@ func (s *Service) SetAdminRole(ctx context.Context, adminID, targetID string, ro
 }
 
 // DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false) (ADMIN).
-// Pasif yönetici artık oturum açamaz ve yetki denetimlerinden geçemez.
+// Pasif yönetici artık oturum açamaz ve yetki denetimlerinden geçemez. Kiracıya bağlı
+// bir admin yalnız kendi kiracısının yöneticilerini pasifleştirebilir. Kendini pasifleştirmek,
+// kapsamındaki SON etkin ADMIN ise reddedilir (ErrLastAdmin).
 func (s *Service) DeactivateAdmin(ctx context.Context, adminID, targetID string) error {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
+		return err
+	}
+	callerTenant, err := s.enforceAdminTarget(ctx, adminID, targetID)
+	if err != nil {
+		return err
+	}
+	if err := s.guardLastAdmin(ctx, adminID, targetID, callerTenant); err != nil {
 		return err
 	}
 	if err := s.store.DeactivateAdmin(ctx, targetID); err != nil {
@@ -121,12 +217,18 @@ func (s *Service) DeactivateAdmin(ctx context.Context, adminID, targetID string)
 	return nil
 }
 
-// ListAdmins, tüm yöneticileri döner (OPERATOR+). Parola hash'i ASLA dönmez.
+// ListAdmins, yöneticileri döner (OPERATOR+). Platform admini hepsini görür; kiracıya
+// bağlı çağıran YALNIZ kendi kiracısının yöneticilerini görür (platform adminleri ve
+// diğer kiracılar listelenmez). Parola hash'i ASLA dönmez.
 func (s *Service) ListAdmins(ctx context.Context, adminID string) ([]AdminView, error) {
 	if err := s.require(ctx, adminID, RoleOperator); err != nil {
 		return nil, err
 	}
-	infos, err := s.store.ListAdmins(ctx)
+	callerTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return nil, err
+	}
+	infos, err := s.store.ListAdmins(ctx, callerTenant)
 	if err != nil {
 		return nil, err
 	}

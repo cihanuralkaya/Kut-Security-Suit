@@ -22,6 +22,11 @@ var ErrInvalidToken = errors.New("enroll: geçersiz veya kullanılmış enrollme
 // döner (SEC-002 iptal bypass koruması).
 var ErrDeviceRevoked = errors.New("enroll: cihaz iptal edilmiş — yenileme reddedildi")
 
+// ErrTenantMismatch, kayıt token'ının kiracısı ile mevcut cihaz kaydının kiracısı
+// farklı olduğunda döner: bir cihaz ASLA kiracılar arası taşınmaz (devralma/re-homing
+// koruması). Fail-closed: kayıt reddedilir, mevcut cihaz satırı değişmez.
+var ErrTenantMismatch = errors.New("enroll: cihaz başka bir kiracıya ait — kayıt reddedildi")
+
 // Store, enrollment'ın ihtiyaç duyduğu kalıcılık işlemleridir.
 type Store interface {
 	// ConsumeEnrollmentToken, token'ı ATOMİK olarak doğrular ve kullanılmış
@@ -32,6 +37,11 @@ type Store interface {
 
 	// UpsertEnrollingDevice, cihazı mac blind index'e göre oluşturur veya
 	// bulur ve şifreli alanlarını günceller. Atanmış device_id döner.
+	// KİRACI DUVARI: eşleşen mevcut cihazın kiracısı in.TenantID ile AYNI değilse
+	// ErrTenantMismatch döner ve satır DEĞİŞMEZ (cihaz kiracılar arası taşınmaz).
+	// Mevcut cihazın güvenlik durumu (QUARANTINE_PENDING/QUARANTINED) yeniden
+	// kayıtla ACTIVE'e düşürülmez; yalnız PENDING_ENROLLMENT/OFFLINE/UNINSTALLED
+	// cihazlar ACTIVE olur.
 	UpsertEnrollingDevice(ctx context.Context, in DeviceEnrollment) (deviceID string, err error)
 
 	// SaveCertificate, imzalanan istemci sertifikasını kaydeder.

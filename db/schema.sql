@@ -384,12 +384,14 @@ CREATE TABLE admins (
     tenant_id     VARCHAR(63) NOT NULL DEFAULT '',  -- çok-tenant: admin'in kiracısı (okuma izolasyonu; boş = tüm kiracılar / platform admini)
     password_hash TEXT,                       -- Argon2id (uygulama katmanı)
     mfa_secret    BYTEA,                       -- AES-256-GCM ile şifreli TOTP sırrı (2FA)
+    mfa_pending_secret BYTEA,                  -- yeniden kayıtta bekleyen (henüz etkin olmayan) şifreli TOTP sırrı; etkinleşene dek mfa_secret/mfa_enrolled DEĞİŞMEZ
     mfa_enrolled  BOOLEAN NOT NULL DEFAULT FALSE,
     mfa_last_step BIGINT NOT NULL DEFAULT 0,    -- en son kabul edilen TOTP adımı (tek-kullanım/anti-replay)
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 -- Mevcut kurulum için migrasyon: ALTER TABLE admins ADD COLUMN IF NOT EXISTS mfa_last_step BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS mfa_pending_secret BYTEA;
 
 -- FK'ları burada bağla (admins tablosu artık mevcut).
 ALTER TABLE enrollment_tokens
