@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"time"
 
+	"kut.corp/suite/cmdenvelope"
 	"kut.corp/suite/server/internal/authz"
 	"kut.corp/suite/server/internal/model"
 	"kut.corp/suite/server/internal/scope"
@@ -93,7 +94,7 @@ func (a *AutoQuarantiner) AutoQuarantine(ctx context.Context, deviceID, reason s
 			return fmt.Errorf("response: otomatik karantina yetkilendirilmedi (%s): %v", d.Result, d.ReasonCodes)
 		}
 	}
-	if err := a.store.EnqueueCommand(ctx, deviceID, "QUARANTINE", systemActor); err != nil {
+	if err := a.store.EnqueueCommand(ctx, deviceID, cmdenvelope.TypeQuarantine, systemActor); err != nil {
 		return fmt.Errorf("response: karantina komutu kuyruğa alınamadı: %w", err)
 	}
 	_ = a.store.SetDeviceStatus(ctx, deviceID, "QUARANTINE_PENDING") // DESIRED; effective ajan onayıyla (F-D)

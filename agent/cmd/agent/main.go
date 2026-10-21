@@ -773,7 +773,10 @@ func handleCommands(ctx context.Context, cmds []*kutv1.Command, quar *quarantine
 			// RBAC=ADMIN ve doDeviceAction'daki güvenli-mod denetimi.)
 			doDeviceAction(buf, safeMode, "WIPE", "veri silme", selectWipeFn(deviceaction.WipeArmed()))
 		default:
-			// Diğer komut tipleri ileride.
+			// Diğer komut tipleri ileride (UNINSTALL, COLLECT_DIAGNOSTICS) ya da
+			// UNSPECIFIED/tanınmayan: YÜRÜTÜLMEZ. Yalnız görünürlük için günlüğe yazılır;
+			// ack/kayıt davranışı değişmez. Korumalılık sunucuyla aynı komut tablosundan.
+			log.Printf("komut tipi %s bu ajan sürümünde yürütülmüyor (korumalı=%v)", c.GetType(), commandProtected(c.GetType()))
 		}
 		// Komut işlendi (senkron uygulandı ya da arka plana verildi): idempotency için
 		// kaydet ve sunucuya onay kuyruğuna al (sonraki heartbeat'te bildirilir).

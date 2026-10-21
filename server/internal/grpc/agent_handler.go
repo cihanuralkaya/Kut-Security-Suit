@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"kut.corp/suite/cmdenvelope"
 	kutv1 "kut.corp/suite/gen/kut/v1"
 	"kut.corp/suite/server/internal/aibrain"
 	"kut.corp/suite/server/internal/correlate"
@@ -517,15 +518,15 @@ func (h *AgentHandler) noticeTenant(ctx context.Context, deviceID string) (strin
 func commandTypeName(t kutv1.Command_CommandType) string {
 	switch t {
 	case kutv1.Command_COMMAND_TYPE_QUARANTINE:
-		return "QUARANTINE"
+		return cmdenvelope.TypeQuarantine
 	case kutv1.Command_COMMAND_TYPE_UNQUARANTINE:
-		return "UNQUARANTINE"
+		return cmdenvelope.TypeUnquarantine
 	case kutv1.Command_COMMAND_TYPE_LOCK:
-		return "LOCK"
+		return cmdenvelope.TypeLock
 	case kutv1.Command_COMMAND_TYPE_RESTART:
-		return "RESTART"
+		return cmdenvelope.TypeRestart
 	case kutv1.Command_COMMAND_TYPE_WIPE:
-		return "WIPE"
+		return cmdenvelope.TypeWipe
 	default:
 		return ""
 	}
