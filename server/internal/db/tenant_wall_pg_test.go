@@ -583,3 +583,147 @@ func TestPGWritesCarryTenantPredicate(t *testing.T) {
 		t.Fatalf("platform etiketi yazılmalı: %v", tg)
 	}
 }
+
+func pgDevice(ctx context.Context, t *testing.T, s *Store, tenantID string) string {
+	t.Helper()
+	id, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
+		MACBlindIndex: []byte(uniq(t, "mac-pol-")), HostnameEnc: []byte("h"), MACEnc: []byte("m"),
+		OSInfoEnc: []byte("o"), OSPlatform: "linux", AgentVersion: "1", TenantID: tenantID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, id) })
+	return id
+}
+
+func pgPolicy(ctx context.Context, t *testing.T, s *Store, name, tenantID string) string {
+	t.Helper()
+	id, err := s.CreatePolicy(ctx, name, "v1", tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM policies WHERE id = $1::uuid`, id) })
+	return id
+}
+
+// Z4a-04 / Z4b-04 (PG): politika sahipliği — PolicyTenant, kiracı süzmeli liste (kendi +
+// paylaşımlı, cihaz sayımı yalnız kendi kiracısı), atama bütünlüğü (SQL seviyesinde) ve
+// CurrentPolicy'nin çapraz-kiracı atamayı ajana itmemesi.
+func TestPGPolicyTenantOwnership(t *testing.T) {
+	s, ctx := pgStore(t)
+	tA, tB := uniq(t, "ta-"), uniq(t, "tb-")
+	polA := pgPolicy(ctx, t, s, uniq(t, "pa-"), tA)
+	polB := pgPolicy(ctx, t, s, uniq(t, "pb-"), tB)
+	polS := pgPolicy(ctx, t, s, uniq(t, "ps-"), "")
+	devA, devB := pgDevice(ctx, t, s, tA), pgDevice(ctx, t, s, tB)
+
+	// PolicyTenant.
+	if tn, ok, err := s.PolicyTenant(ctx, polA); err != nil || !ok || tn != tA {
+		t.Fatalf("PolicyTenant %q olmalı: %q %v %v", tA, tn, ok, err)
+	}
+	if tn, ok, err := s.PolicyTenant(ctx, polS); err != nil || !ok || tn != "" {
+		t.Fatalf("paylaşımlı politika '' olmalı: %q %v %v", tn, ok, err)
+	}
+	for _, id := range []string{"00000000-0000-0000-0000-000000000004", "uuid-degil"} {
+		if _, ok, err := s.PolicyTenant(ctx, id); err != nil || ok {
+			t.Fatalf("yok/geçersiz id found=false, hata yok olmalı (%q): %v %v", id, ok, err)
+		}
+	}
+
+	// NEGATIF: SQL seviyesinde atama bütünlüğü — A cihazına B politikası bağlanamaz.
+	if err := s.AssignPolicy(ctx, devA, polB); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("çapraz-kiracı atama ErrForbidden olmalı: %v", err)
+	}
+	if err := s.AssignPolicy(ctx, "00000000-0000-0000-0000-000000000005", polA); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("bilinmeyen cihaz ErrForbidden olmalı: %v", err)
+	}
+	if err := s.AssignPolicy(ctx, devA, "uuid-degil"); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("geçersiz politika id ErrForbidden olmalı: %v", err)
+	}
+	var n int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM device_policies WHERE device_id = $1::uuid`, devA).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("reddedilen atamalar satır yazmamalı: %d %v", n, err)
+	}
+	// POZITIF: kendi + paylaşımlı; tekrar atama idempotent.
+	for _, p := range []string{polA, polS, polA} {
+		if err := s.AssignPolicy(ctx, devA, p); err != nil {
+			t.Fatalf("meşru atama geçmeli: %v", err)
+		}
+	}
+	if err := s.AssignPolicy(ctx, devB, polS); err != nil {
+		t.Fatalf("paylaşımlı politika her kiracıya atanabilmeli: %v", err)
+	}
+
+	// Liste süzmesi: A yalnız kendi + paylaşımlı; B politikası görünmez; sayım yalnız A cihazları.
+	rows, err := s.ListPolicies(ctx, 1000, tA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]adminreadPolicy{}
+	for _, r := range rows {
+		seen[r.ID] = adminreadPolicy{r.TenantID, r.DeviceCount}
+	}
+	if _, leaked := seen[polB]; leaked {
+		t.Fatal("A, B'nin politikasını listelememeli")
+	}
+	if got, ok := seen[polA]; !ok || got.tenant != tA || got.devices != 1 {
+		t.Fatalf("A kendi politikasını 1 cihazla görmeli: %+v", seen[polA])
+	}
+	if got, ok := seen[polS]; !ok || got.tenant != "" || got.devices != 1 {
+		t.Fatalf("paylaşımlıda yalnız A'nın cihazı sayılmalı (B cihazı sızmaz): %+v", seen[polS])
+	}
+	// POZITIF: platform (boş) hepsini ve tüm cihazları görür.
+	allRows, _ := s.ListPolicies(ctx, 1000, "")
+	seenAll := map[string]adminreadPolicy{}
+	for _, r := range allRows {
+		seenAll[r.ID] = adminreadPolicy{r.TenantID, r.DeviceCount}
+	}
+	if _, ok := seenAll[polB]; !ok || seenAll[polS].devices < 2 {
+		t.Fatalf("platform hepsini görmeli, paylaşımlı >=2 cihaz: %+v", seenAll[polS])
+	}
+
+	// CurrentPolicy: eski/bozuk çapraz-kiracı atama (doğrudan SQL ile) ajana itilmez; meşru olan verilir.
+	if _, err := s.pool.Exec(ctx, `INSERT INTO device_policies (device_id, policy_id) VALUES ($1::uuid, $2::uuid)`, devB, polA); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddPolicyRule(ctx, polA, admin.RuleInput{Type: "APP_BLOCK_ALWAYS", Target: "x.exe"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddPolicyRule(ctx, polS, admin.RuleInput{Type: "APP_BLOCK_ALWAYS", Target: "s.exe"}); err != nil {
+		t.Fatal(err)
+	}
+	// devB'ye hem bozuk (polA) hem meşru (polS) bağlı: yalnız polS kuralı gelmeli.
+	b, err := s.CurrentPolicy(ctx, devB)
+	if err != nil || b == nil {
+		t.Fatalf("meşru (paylaşımlı) politika verilmeli: %v %v", b, err)
+	}
+	for _, r := range b.GetRules() {
+		if r.GetTargetValue() == "x.exe" {
+			t.Fatal("çapraz-kiracı politikanın kuralı ajana itilmemeli")
+		}
+	}
+	if len(b.GetRules()) != 1 || b.GetRules()[0].GetTargetValue() != "s.exe" {
+		t.Fatalf("yalnız paylaşımlı kural beklenirdi: %v", b.GetRules())
+	}
+}
+
+type adminreadPolicy struct {
+	tenant  string
+	devices int
+}
+
+// Z4b-04 (PG): legacy boş kiracılı cihaz ≡ 'default' kiracı — 'default' politikası atanabilir,
+// gerçek kiracının politikası atanamaz.
+func TestPGPolicyAssignLegacyEmptyTenantDevice(t *testing.T) {
+	s, ctx := pgStore(t)
+	legacy := pgDevice(ctx, t, s, "") // kiracı öncesi cihaz: tenant_id = ''
+	polDefault := pgPolicy(ctx, t, s, uniq(t, "pd-"), "default")
+	polOther := pgPolicy(ctx, t, s, uniq(t, "po-"), uniq(t, "tx-"))
+	if err := s.AssignPolicy(ctx, legacy, polOther); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("gerçek kiracının politikası legacy cihaza atanamaz: %v", err)
+	}
+	if err := s.AssignPolicy(ctx, legacy, polDefault); err != nil {
+		t.Fatalf("'default' politikası legacy cihaza atanabilmeli: %v", err)
+	}
+}

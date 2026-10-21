@@ -3,6 +3,7 @@ package adminapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -391,5 +392,112 @@ func TestLastTenantAdminSelfDemotionDeniedHTTP(t *testing.T) {
 	}
 	if code, _ := post(t, ts.URL+"/api/admins/acme-adm/role", acme, map[string]string{"role": "VIEWER"}); code != http.StatusOK {
 		t.Fatalf("ikinci ADMIN varken düşürmek geçmeli: %d", code)
+	}
+}
+
+// --- Z4a-04 / Z4b-04: politika sahipliği HTTP ---
+
+func TestPolicyTenantWallHTTP(t *testing.T) {
+	ts, store := wallServer(t)
+	store.deviceTenant = map[string]string{"d-acme": "acme", "d-globex": "globex"}
+	acme := wallAdmin(t, ts, store, "acme-adm", admin.RoleAdmin, "acme")
+	plat := wallAdmin(t, ts, store, "plat-adm", admin.RoleAdmin, "")
+
+	// Platform: globex'e özel politika + paylaşımlı politika oluşturur.
+	_, gb := post(t, ts.URL+"/api/policies", plat, map[string]string{"name": "G", "version": "v1", "tenant_id": "globex"})
+	_, sb := post(t, ts.URL+"/api/policies", plat, map[string]string{"name": "S", "version": "v1"})
+	globexPol, sharedPol := gb["policy_id"], sb["policy_id"]
+	if globexPol == "" || sharedPol == "" {
+		t.Fatalf("platform politikaları oluşturabilmeli: %v %v", gb, sb)
+	}
+	// acme kendi politikasını oluşturur (gövdedeki tenant boş = kendi kiracısı).
+	code, ab := post(t, ts.URL+"/api/policies", acme, map[string]string{"name": "A", "version": "v1"})
+	acmePol := ab["policy_id"]
+	if code != http.StatusOK || acmePol == "" {
+		t.Fatalf("acme kendi politikasını oluşturabilmeli: %d %v", code, ab)
+	}
+	// NEGATIF: acme başka kiracı adına politika oluşturamaz.
+	if code, _ := post(t, ts.URL+"/api/policies", acme, map[string]string{"name": "X", "version": "v1", "tenant_id": "globex"}); code != http.StatusForbidden {
+		t.Fatalf("başka kiracı adına oluşturma 403 olmalı: %d", code)
+	}
+	// NEGATIF: platform geçersiz kiracı kimliğiyle 400 alır.
+	if code, _ := post(t, ts.URL+"/api/policies", plat, map[string]string{"name": "X", "version": "v1", "tenant_id": "Bad Tenant!"}); code != http.StatusBadRequest {
+		t.Fatalf("geçersiz kiracı kimliği 400 olmalı: %d", code)
+	}
+
+	rule := map[string]any{"type": "APP_BLOCK_ALWAYS", "target": "evil.exe"}
+	// NEGATIF: acme, globex ve paylaşımlı politikaya kural ekleyemez / globex kurallarını okuyamaz.
+	if code, _ := post(t, ts.URL+"/api/policies/"+globexPol+"/rules", acme, rule); code != http.StatusForbidden {
+		t.Fatalf("yabancı politikaya kural 403 olmalı: %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/policies/"+sharedPol+"/rules", acme, rule); code != http.StatusForbidden {
+		t.Fatalf("paylaşımlı politikaya kural (kiracılı admin) 403 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/policies/"+globexPol+"/rules", acme, ""); code != http.StatusForbidden {
+		t.Fatalf("yabancı politika kural listesi 403 olmalı: %d", code)
+	}
+	if len(store.rules[globexPol]) != 0 || len(store.rules[sharedPol]) != 0 {
+		t.Fatal("reddedilen çağrılar kural yazmamalı")
+	}
+	// NEGATIF: yabancı politika atama.
+	if code, _ := post(t, ts.URL+"/api/policies/assign", acme, map[string]string{"device_id": "d-acme", "policy_id": globexPol}); code != http.StatusForbidden {
+		t.Fatalf("yabancı politika atama 403 olmalı: %d", code)
+	}
+	// NEGATIF: platform bile acme politikasını globex cihazına atayamaz.
+	if code, _ := post(t, ts.URL+"/api/policies/assign", plat, map[string]string{"device_id": "d-globex", "policy_id": acmePol}); code != http.StatusForbidden {
+		t.Fatalf("kiracılar arası atama (platform dahil) 403 olmalı: %d", code)
+	}
+	if len(store.assigned) != 0 {
+		t.Fatalf("reddedilen atamalar yazılmamalı: %v", store.assigned)
+	}
+
+	// POZITIF: kendi politikasına kural + okuma + atama; paylaşımlı atama; platform kural.
+	if code, _ := post(t, ts.URL+"/api/policies/"+acmePol+"/rules", acme, rule); code != http.StatusOK {
+		t.Fatalf("kendi politikasına kural 200 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/policies/"+acmePol+"/rules", acme, ""); code != http.StatusOK {
+		t.Fatalf("kendi kuralları 200 olmalı: %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/policies/assign", acme, map[string]string{"device_id": "d-acme", "policy_id": acmePol}); code != http.StatusOK {
+		t.Fatalf("kendi politikası atama 200 olmalı: %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/policies/assign", acme, map[string]string{"device_id": "d-acme", "policy_id": sharedPol}); code != http.StatusOK {
+		t.Fatalf("paylaşımlı politika atama 200 olmalı: %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/policies/"+globexPol+"/rules", plat, rule); code != http.StatusOK {
+		t.Fatalf("platform her politikaya kural ekleyebilmeli: %d", code)
+	}
+
+	// Liste: acme yalnız kendi + paylaşımlı; platform hepsi.
+	listIDs := func(token string) map[string]bool {
+		resp, err := authedGET(t, ts.URL+"/api/policies", token)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("politika listesi 200 olmalı: %v %v", resp, err)
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Policies []struct {
+				ID     string `json:"id"`
+				Shared bool   `json:"shared"`
+			} `json:"policies"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatal(err)
+		}
+		ids := map[string]bool{}
+		for _, p := range out.Policies {
+			ids[p.ID] = p.Shared
+		}
+		return ids
+	}
+	got := listIDs(acme)
+	if _, leaked := got[globexPol]; leaked || len(got) != 2 {
+		t.Fatalf("acme yalnız kendi + paylaşımlı politikaları görmeli: %v", got)
+	}
+	if shared, ok := got[sharedPol]; !ok || !shared {
+		t.Fatalf("paylaşımlı politika shared=true ile listelenmeli: %v", got)
+	}
+	if all := listIDs(plat); len(all) != 3 {
+		t.Fatalf("platform admini 3 politikayı görmeli: %v", all)
 	}
 }

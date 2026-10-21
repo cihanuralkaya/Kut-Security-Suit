@@ -38,6 +38,8 @@ type memStore struct {
 	tokenTen      map[string]string // tokenID -> mühürlü kiracı
 	polID         string
 	polVer        string
+	polTen        map[string]string // policyID -> sahip kiracı ("" = platform/paylaşımlı)
+	polSeq        int
 	rules         map[string][]admin.RuleInput // policyID -> kurallar
 	assigned      map[string]string            // deviceID -> policyID
 	statuses      map[string]string            // deviceID -> son ayarlanan durum
@@ -121,20 +123,33 @@ func (m *memStore) ListEnrollmentTokens(_ context.Context, _ int, _ string) ([]a
 	return m.tokenRows, nil
 }
 
-func (m *memStore) ListPolicies(_ context.Context, _ int) ([]adminread.PolicyRow, error) {
+func (m *memStore) ListPolicies(_ context.Context, _ int, tenantID string) ([]adminread.PolicyRow, error) {
 	counts := map[string]int{}
-	for _, pid := range m.assigned {
-		counts[pid]++
+	for dev, pid := range m.assigned {
+		if tenantID == "" || m.deviceTenant[dev] == tenantID {
+			counts[pid]++
+		}
+	}
+	ids := map[string]bool{}
+	for id := range m.rules {
+		ids[id] = true
+	}
+	for id := range m.polTen {
+		ids[id] = true
 	}
 	var out []adminread.PolicyRow
-	for id, rules := range m.rules {
+	for id := range ids {
+		owner := m.polTen[id]
+		if tenantID != "" && owner != "" && owner != tenantID {
+			continue // db gibi: kiracıya bağlı çağıran yalnız kendi + paylaşımlı politikaları görür
+		}
 		ver := ""
 		if id == m.polID {
 			ver = m.polVer
 		}
 		out = append(out, adminread.PolicyRow{
-			ID: id, Name: id, Version: ver,
-			RuleCount: len(rules), DeviceCount: counts[id],
+			ID: id, Name: id, Version: ver, TenantID: owner,
+			RuleCount: len(m.rules[id]), DeviceCount: counts[id],
 		})
 	}
 	return out, nil
@@ -179,8 +194,26 @@ func (m *memStore) WriteAudit(_ context.Context, adminID, action, targetType, ta
 	}}, m.auditRows...)
 	return nil
 }
-func (m *memStore) CreatePolicy(_ context.Context, _, _ string) (string, error) {
-	return "pol-1", nil
+func (m *memStore) CreatePolicy(_ context.Context, _, _, tenantID string) (string, error) {
+	if m.polTen == nil {
+		m.polTen = map[string]string{}
+	}
+	m.polSeq++
+	id := "pol-" + strconv.Itoa(m.polSeq)
+	m.polTen[id] = tenantID
+	return id, nil
+}
+
+// PolicyTenant: db gibi — sahibi bilinen politika (CreatePolicy ile oluşturulan ya da testte
+// tohumlanan: polID / rules) bulunur; aksi found=false.
+func (m *memStore) PolicyTenant(_ context.Context, policyID string) (string, bool, error) {
+	if t, ok := m.polTen[policyID]; ok {
+		return t, true, nil
+	}
+	if _, ok := m.rules[policyID]; ok || policyID == m.polID {
+		return "", true, nil
+	}
+	return "", false, nil
 }
 func (m *memStore) AssignPolicy(_ context.Context, deviceID, policyID string) error {
 	m.assigned[deviceID] = policyID

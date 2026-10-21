@@ -86,6 +86,7 @@ type policyRule struct {
 
 type policyRec struct {
 	id, name, version string
+	tenant            string // sahip kiracı; "" = platform/paylaşımlı (kiracıya bağlı admin için salt-okunur)
 	rules             []policyRule
 }
 
@@ -481,6 +482,11 @@ func (s *Store) CurrentPolicy(_ context.Context, deviceID string) (*kutv1.Policy
 	if !ok {
 		return nil, nil
 	}
+	// db ile aynı: yalnız platform/paylaşımlı ya da cihazın kiracısına ait politika uygulanır
+	// (eski/bozuk çapraz-kiracı atama ajana kural itemez).
+	if p.tenant != "" && !tenant.Equivalent(p.tenant, d.tenant) {
+		return nil, nil
+	}
 	var rules []*kutv1.PolicyRule
 	for _, r := range p.rules {
 		rules = append(rules, &kutv1.PolicyRule{
@@ -694,25 +700,36 @@ func (s *Store) VerifyAuditChain(_ context.Context) error {
 	return nil
 }
 
-func (s *Store) CreatePolicy(_ context.Context, name, version string) (string, error) {
+func (s *Store) CreatePolicy(_ context.Context, name, version, tenantID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := randID("pol-")
-	s.policies[id] = &policyRec{id: id, name: name, version: version}
+	s.policies[id] = &policyRec{id: id, name: name, version: version, tenant: tenantID}
 	return id, nil
 }
 
+// PolicyTenant, politikanın sahibi kiracıyı döner ("" = platform/paylaşımlı); yoksa found=false.
+func (s *Store) PolicyTenant(_ context.Context, policyID string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.policies[policyID]; ok {
+		return p.tenant, true, nil
+	}
+	return "", false, nil
+}
+
+// AssignPolicy, db ile aynı derinlemesine savunmayı uygular: politika platform/paylaşımlı ya
+// da cihazın kiracısına ait olmalı; aksi halde (veya cihaz/politika yoksa) ErrForbidden.
 func (s *Store) AssignPolicy(_ context.Context, deviceID, policyID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	d, ok := s.devices[deviceID]
-	if !ok {
-		return nil
+	d, dok := s.devices[deviceID]
+	p, pok := s.policies[policyID]
+	if !dok || !pok || (p.tenant != "" && !tenant.Equivalent(p.tenant, d.tenant)) {
+		return admin.ErrForbidden
 	}
-	if p, ok := s.policies[policyID]; ok {
-		d.policyID = policyID
-		d.policyVersion = p.version
-	}
+	d.policyID = policyID
+	d.policyVersion = p.version
 	return nil
 }
 
@@ -773,19 +790,24 @@ func (s *Store) DevicesForPolicy(_ context.Context, policyID string) ([]string, 
 
 // ListPolicies, tüm politikaları kural + atanmış cihaz sayımlarıyla, ada göre
 // sıralı döner (deterministik çıktı).
-func (s *Store) ListPolicies(_ context.Context, limit int) ([]adminread.PolicyRow, error) {
+func (s *Store) ListPolicies(_ context.Context, limit int, tenantID string) ([]adminread.PolicyRow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	assigned := map[string]int{}
 	for _, d := range s.devices {
-		if d.policyID != "" {
+		// db ile aynı: kiracıya bağlı çağıranın sayımı yalnız kendi kiracısının cihazlarını sayar.
+		if d.policyID != "" && (tenantID == "" || d.tenant == tenantID) {
 			assigned[d.policyID]++
 		}
 	}
 	out := make([]adminread.PolicyRow, 0, len(s.policies))
 	for _, p := range s.policies {
+		// db ile aynı: kiracıya bağlı çağıran yalnız kendi kiracısının + paylaşımlı politikaları görür.
+		if tenantID != "" && p.tenant != "" && p.tenant != tenantID {
+			continue
+		}
 		out = append(out, adminread.PolicyRow{
-			ID: p.id, Name: p.name, Version: p.version,
+			ID: p.id, Name: p.name, Version: p.version, TenantID: p.tenant,
 			RuleCount: len(p.rules), DeviceCount: assigned[p.id],
 		})
 	}

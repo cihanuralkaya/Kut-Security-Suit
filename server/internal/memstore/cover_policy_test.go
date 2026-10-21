@@ -29,7 +29,7 @@ func TestPolicyLifecycle(t *testing.T) {
 	s := New()
 	dev := enrollDevice(t, s)
 
-	pid, err := s.CreatePolicy(ctx, "Kısıt", "v1")
+	pid, err := s.CreatePolicy(ctx, "Kısıt", "v1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestBumpPolicyVersion(t *testing.T) {
 	ctx := context.Background()
 	s := New()
 	dev := enrollDevice(t, s)
-	pid, _ := s.CreatePolicy(ctx, "P", "v1")
+	pid, _ := s.CreatePolicy(ctx, "P", "v1", "")
 	if err := s.AssignPolicy(ctx, dev, pid); err != nil {
 		t.Fatal(err)
 	}

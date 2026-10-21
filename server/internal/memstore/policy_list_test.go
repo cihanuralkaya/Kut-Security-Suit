@@ -15,7 +15,7 @@ func TestListPoliciesCountsAndOrder(t *testing.T) {
 	s := New()
 
 	// "B-Politika": 2 kural, 0 atanmış cihaz.
-	bID, err := s.CreatePolicy(ctx, "B-Politika", "v1")
+	bID, err := s.CreatePolicy(ctx, "B-Politika", "v1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestListPoliciesCountsAndOrder(t *testing.T) {
 	}
 
 	// "A-Politika": 1 kural, 2 atanmış cihaz.
-	aID, err := s.CreatePolicy(ctx, "A-Politika", "v1")
+	aID, err := s.CreatePolicy(ctx, "A-Politika", "v1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestListPoliciesCountsAndOrder(t *testing.T) {
 		}
 	}
 
-	rows, err := s.ListPolicies(ctx, 0)
+	rows, err := s.ListPolicies(ctx, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestListPoliciesCountsAndOrder(t *testing.T) {
 	}
 
 	// limit uygulanmalı.
-	if got, _ := s.ListPolicies(ctx, 1); len(got) != 1 || got[0].Name != "A-Politika" {
+	if got, _ := s.ListPolicies(ctx, 1, ""); len(got) != 1 || got[0].Name != "A-Politika" {
 		t.Fatalf("limit=1 yalnız A-Politika dönmeliydi: %+v", got)
 	}
 }

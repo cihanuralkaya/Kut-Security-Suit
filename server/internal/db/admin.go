@@ -284,25 +284,38 @@ func (s *Store) VerifyAuditChain(ctx context.Context) error {
 	return rows.Err()
 }
 
-// CreatePolicy, yeni bir politika oluşturur ve id'sini döner.
-func (s *Store) CreatePolicy(ctx context.Context, name, version string) (string, error) {
-	const q = `INSERT INTO policies (name, version) VALUES ($1, $2) RETURNING id::text`
+// CreatePolicy, yeni bir politika oluşturur ve id'sini döner. tenantID politikanın sahibi
+// kiracıdır ("" = platform/paylaşımlı).
+func (s *Store) CreatePolicy(ctx context.Context, name, version, tenantID string) (string, error) {
+	const q = `INSERT INTO policies (name, version, tenant_id) VALUES ($1, $2, $3) RETURNING id::text`
 	var id string
-	if err := s.pool.QueryRow(ctx, q, name, version).Scan(&id); err != nil {
+	if err := s.pool.QueryRow(ctx, q, name, version, tenantID).Scan(&id); err != nil {
 		return "", fmt.Errorf("db: politika oluşturma: %w", err)
 	}
 	return id, nil
 }
 
-// AssignPolicy, bir politikayı cihaza atar (idempotent).
+// AssignPolicy, bir politikayı cihaza atar (idempotent). Derinlemesine savunma: atama
+// SQL'i de politikanın platform/paylaşımlı ya da CİHAZIN kiracısına ait olmasını şart koşar;
+// aksi halde (ya da cihaz/politika yoksa) satır eklenmez ve ErrForbidden döner — servis
+// katmanı hatası bir kiracının politikasını başka kiracının cihazına bağlayamaz.
 func (s *Store) AssignPolicy(ctx context.Context, deviceID, policyID string) error {
+	if !validUUID(deviceID) || !validUUID(policyID) {
+		return admin.ErrForbidden
+	}
 	const q = `
 		INSERT INTO device_policies (device_id, policy_id)
-		VALUES ($1, $2)
-		ON CONFLICT (device_id, policy_id) DO NOTHING`
-	_, err := s.pool.Exec(ctx, q, deviceID, policyID)
+		SELECT d.id, p.id
+		  FROM devices d, policies p
+		 WHERE d.id = $1::uuid AND p.id = $2::uuid
+		   AND (p.tenant_id = '' OR p.tenant_id = COALESCE(NULLIF(d.tenant_id, ''), 'default'))
+		ON CONFLICT (device_id, policy_id) DO UPDATE SET policy_id = EXCLUDED.policy_id`
+	ct, err := s.pool.Exec(ctx, q, deviceID, policyID)
 	if err != nil {
 		return fmt.Errorf("db: politika atama: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return admin.ErrForbidden
 	}
 	return nil
 }

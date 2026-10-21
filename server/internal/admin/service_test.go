@@ -36,6 +36,7 @@ type memStore struct {
 	eventCases      map[string][2]string         // eventID -> {assignee, note} (vaka)
 	pendWipes       map[string]string            // deviceID -> requestedBy (çift-kontrol WIPE)
 	cmdParams       map[string]map[string]string // cmdType -> son params
+	polTenants      map[string]string            // policyID -> sahip kiracı ("" = paylaşımlı)
 	nextPolID       int
 	nextAdmID       int
 }
@@ -177,12 +178,24 @@ func (m *memStore) WriteAudit(_ context.Context, adminID, action, targetType, ta
 	m.audits = append(m.audits, audit{adminID, action, targetType, targetID})
 	return nil
 }
-func (m *memStore) CreatePolicy(_ context.Context, name, version string) (string, error) {
+func (m *memStore) CreatePolicy(_ context.Context, name, version, tenantID string) (string, error) {
 	m.nextPolID++
 	id := "pol-" + string(rune('0'+m.nextPolID))
 	m.policies[id] = name
 	m.versions[id] = version
+	if m.polTenants == nil {
+		m.polTenants = map[string]string{}
+	}
+	m.polTenants[id] = tenantID
 	return id, nil
+}
+
+// PolicyTenant: db gibi — oluşturulmuş politikanın sahibi; yoksa found=false.
+func (m *memStore) PolicyTenant(_ context.Context, policyID string) (string, bool, error) {
+	if _, ok := m.policies[policyID]; !ok {
+		return "", false, nil
+	}
+	return m.polTenants[policyID], true, nil
 }
 func (m *memStore) AssignPolicy(_ context.Context, deviceID, policyID string) error {
 	m.assigned[deviceID] = policyID
@@ -754,10 +767,10 @@ func TestCreatePolicyRequiresAdmin(t *testing.T) {
 	store.roles["admin1"] = RoleAdmin
 	svc, _ := newService(t, store)
 
-	if _, err := svc.CreatePolicy(context.Background(), "op1", "P", "v1"); err != ErrForbidden {
+	if _, err := svc.CreatePolicy(context.Background(), "op1", "P", "v1", ""); err != ErrForbidden {
 		t.Fatalf("OPERATOR politika oluşturamamalı, dönen: %v", err)
 	}
-	id, err := svc.CreatePolicy(context.Background(), "admin1", "Mesai Politikası", "v1")
+	id, err := svc.CreatePolicy(context.Background(), "admin1", "Mesai Politikası", "v1", "")
 	if err != nil || id == "" {
 		t.Fatalf("ADMIN politika oluşturabilmeli: %v", err)
 	}
@@ -772,7 +785,7 @@ func TestAddPolicyRuleRBACAndPush(t *testing.T) {
 	svc.SetPublisher(pub)
 
 	// Bir politika oluştur ve iki cihaza ata.
-	id, err := store.CreatePolicy(context.Background(), "Mesai", "v1")
+	id, err := store.CreatePolicy(context.Background(), "Mesai", "v1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1125,6 +1138,7 @@ func TestScopeGuardG04(t *testing.T) {
 	base := func() (*Service, *memStore) {
 		store := newMemStore()
 		store.roles["admin1"] = RoleAdmin
+		_, _ = store.CreatePolicy(ctx, "P", "v1", "") // pol-1
 		svc, _ := newService(t, store)
 		return svc, store
 	}

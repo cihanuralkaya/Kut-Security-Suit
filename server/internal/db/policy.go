@@ -13,17 +13,22 @@ import (
 	"kut.corp/suite/server/internal/adminread"
 )
 
-// ListPolicies, tüm politikaları kural + atanmış cihaz sayımlarıyla, ada göre
-// sıralı listeler.
-func (s *Store) ListPolicies(ctx context.Context, limit int) ([]adminread.PolicyRow, error) {
+// ListPolicies, politikaları kural + atanmış cihaz sayımlarıyla, ada göre sıralı listeler.
+// tenantID boş değilse yalnız o kiracının VE platform/paylaşımlı (tenant_id = ”) politikalar
+// döner; cihaz sayısı yalnız o kiracının cihazlarını sayar (paylaşımlı politikada başka
+// kiracıların cihaz sayısı sızmaz). Boş tenantID = platform admini (hepsi).
+func (s *Store) ListPolicies(ctx context.Context, limit int, tenantID string) ([]adminread.PolicyRow, error) {
 	const q = `
-		SELECT p.id::text, p.name, p.version,
+		SELECT p.id::text, p.name, p.version, p.tenant_id,
 		       (SELECT COUNT(*) FROM policy_rules pr   WHERE pr.policy_id = p.id),
-		       (SELECT COUNT(*) FROM device_policies dp WHERE dp.policy_id = p.id)
+		       (SELECT COUNT(*) FROM device_policies dp
+		          JOIN devices d ON d.id = dp.device_id
+		         WHERE dp.policy_id = p.id AND ($2 = '' OR d.tenant_id = $2))
 		  FROM policies p
+		 WHERE ($2 = '' OR p.tenant_id = '' OR p.tenant_id = $2)
 		 ORDER BY p.name, p.created_at
 		 LIMIT $1`
-	rows, err := s.pool.Query(ctx, q, limit)
+	rows, err := s.pool.Query(ctx, q, limit, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: politika listesi: %w", err)
 	}
@@ -32,7 +37,7 @@ func (s *Store) ListPolicies(ctx context.Context, limit int) ([]adminread.Policy
 	var out []adminread.PolicyRow
 	for rows.Next() {
 		var p adminread.PolicyRow
-		if err := rows.Scan(&p.ID, &p.Name, &p.Version, &p.RuleCount, &p.DeviceCount); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Version, &p.TenantID, &p.RuleCount, &p.DeviceCount); err != nil {
 			return nil, fmt.Errorf("db: politika okuma: %w", err)
 		}
 		out = append(out, p)
@@ -47,7 +52,9 @@ func (s *Store) CurrentPolicy(ctx context.Context, deviceID string) (*kutv1.Poli
 		SELECT p.id::text, p.version
 		  FROM device_policies dp
 		  JOIN policies p ON p.id = dp.policy_id
+		  JOIN devices  d ON d.id = dp.device_id
 		 WHERE dp.device_id = $1 AND p.is_active
+		   AND (p.tenant_id = '' OR p.tenant_id = COALESCE(NULLIF(d.tenant_id, ''), 'default'))
 		 ORDER BY p.updated_at DESC
 		 LIMIT 1`
 	var policyID, version string
@@ -201,4 +208,21 @@ func ruleTypeToProto(t string) kutv1.PolicyRule_RuleType {
 	default:
 		return kutv1.PolicyRule_RULE_TYPE_UNSPECIFIED
 	}
+}
+
+// PolicyTenant, politikanın sahibi kiracıyı döner ("" = platform/paylaşımlı). Politika yoksa
+// (ya da id geçerli uuid değilse) found=false, hata yok — çağıran fail-closed reddeder.
+func (s *Store) PolicyTenant(ctx context.Context, policyID string) (string, bool, error) {
+	if !validUUID(policyID) {
+		return "", false, nil
+	}
+	var t string
+	err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM policies WHERE id = $1::uuid`, policyID).Scan(&t)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("db: politika kiracısı: %w", err)
+	}
+	return t, true, nil
 }

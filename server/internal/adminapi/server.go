@@ -1280,11 +1280,15 @@ func (s *Server) handleCreatePolicy(w http.ResponseWriter, r *http.Request, admi
 	var req struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
+		// TenantID yalnız PLATFORM admini için anlamlıdır (belirli bir kiracının politikası;
+		// boş = paylaşımlı). Kiracıya bağlı admin için servis katmanı sunucu-tarafı kiracısını
+		// kullanır; farklı bir değer 403'tür (istemci kiracı seçemez).
+		TenantID string `json:"tenant_id"`
 	}
 	if !decode(w, r, &req) {
 		return
 	}
-	id, err := s.adminSvc.CreatePolicy(r.Context(), adminID, req.Name, req.Version)
+	id, err := s.adminSvc.CreatePolicy(r.Context(), adminID, req.Name, req.Version, req.TenantID)
 	if respondErr(w, err) {
 		return
 	}
@@ -2507,8 +2511,14 @@ func (s *Server) handleDeviceDetail(w http.ResponseWriter, r *http.Request, admi
 	writeJSON(w, http.StatusOK, map[string]any{"device_detail": detail})
 }
 
-func (s *Server) handleListPolicies(w http.ResponseWriter, r *http.Request, _ string) {
-	policies, err := s.reader.Policies(r.Context(), intParam(r, "limit"))
+func (s *Server) handleListPolicies(w http.ResponseWriter, r *http.Request, adminID string) {
+	// Z4a-04: politikalar kiracı sahibi taşır; kiracıya bağlı çağıran yalnız kendi kiracısının
+	// ve platform/paylaşımlı politikaları görür (kiracı SUNUCU-TARAFI çözülür).
+	tenant, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	policies, err := s.reader.Policies(r.Context(), intParam(r, "limit"), tenant)
 	if respondErr(w, err) {
 		return
 	}
