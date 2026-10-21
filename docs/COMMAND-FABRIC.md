@@ -224,7 +224,7 @@ go test ./cmdenvelope -run TestGoldenVectors_BytePinned -update   # YALNIZ bilin
 ```
 
 Üretici `cmdenvelope/internal/vectors` altındadır. Fuzz hedefleri: `FuzzParseCanonicalV2`,
-`FuzzParseParams`, `FuzzParseStatement`, `FuzzVerifyV2` (`scripts/fuzz.sh`).
+`FuzzParseParams`, `FuzzParseStatement`, `FuzzVerifyV2`, `FuzzApplyStatement` (`scripts/fuzz.sh`).
 
 ## 8. Bu dilimin kapsamı
 

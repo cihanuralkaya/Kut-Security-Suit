@@ -2,6 +2,7 @@ package cmdenvelope
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"testing"
 	"time"
 )
@@ -116,6 +117,68 @@ func FuzzVerifyV2(f *testing.F) {
 		}
 		if len(v.KeyIDs) == 0 || !VerifySignature(tPub("cmdA"), msg, e.Signature) {
 			t.Fatal("imzasız/yanlış imzalı zarf kabul edildi")
+		}
+	})
+}
+
+// FuzzApplyStatement: rastgele epoch/eşik/imzacı kümeleriyle ApplyStatement panik atmaz ve
+// kabul edilen zincir halkası bağımsız yeniden sayımla da eşiği sağlar.
+func FuzzApplyStatement(f *testing.F) {
+	f.Add(uint64(2), uint32(2), uint8(0b0011), false)
+	f.Add(uint64(9), uint32(1), uint8(0b0001), true)
+	f.Add(uint64(1), uint32(0), uint8(0), false)
+	f.Add(uint64(3), uint32(3), uint8(0b10111), true)
+	names := []string{"root1", "root2", "root3", "cmdA", "evil"}
+	g := Statement{Epoch: 1, RootThreshold: 2, IssuedAtNS: tBase,
+		Keys: []KeyEntry{tRoot("root1"), tRoot("root2"), tRoot("root3"), tCmd("cmdA", tBase, tCmdEnd)}}
+	for _, s := range []string{"root1", "root2"} {
+		g, _ = SignStatement(tKey(s), g)
+	}
+	f.Fuzz(func(t *testing.T, epoch uint64, threshold uint32, mask uint8, pinFirst bool) {
+		st := Statement{Epoch: epoch, RootThreshold: threshold, IssuedAtNS: tBase + int64(time.Hour),
+			Keys: []KeyEntry{tRoot("root1"), tRoot("root2"), tRoot("root3"), tCmd("cmdA", tBase, tCmdEnd)}}
+		if st.Validate() != nil {
+			return
+		}
+		var signers []string
+		for i, n := range names {
+			if mask&(1<<i) != 0 {
+				st, _ = SignStatement(tKey(n), st)
+				signers = append(signers, n)
+			}
+		}
+		var pins []ed25519.PublicKey
+		if pinFirst {
+			pins = tPins("root1")
+		}
+		acc, err := ApplyStatement(&g, st, pins, tAt())
+		if err != nil {
+			return
+		}
+		if acc.Statement.Epoch <= g.Epoch {
+			t.Fatalf("epoch geriledi/aynı kaldı: %d <= %d", acc.Statement.Epoch, g.Epoch)
+		}
+		rootSigners := 0
+		pinSigned := false
+		for _, s := range signers {
+			if s == "root1" || s == "root2" || s == "root3" {
+				rootSigners++
+			}
+			if pinFirst && s == "root1" {
+				pinSigned = true
+			}
+		}
+		switch acc.Mode {
+		case AcceptPin:
+			if !pinSigned {
+				t.Fatal("pin imzası olmadan AcceptPin")
+			}
+		case AcceptChain:
+			if epoch != g.Epoch+1 || rootSigners < int(g.RootThreshold) {
+				t.Fatalf("zincir halkası kuralları ihlal edildi: epoch=%d kök imzası=%d", epoch, rootSigners)
+			}
+		default:
+			t.Fatalf("yerel durum varken beklenmeyen mod %q", acc.Mode)
 		}
 	})
 }

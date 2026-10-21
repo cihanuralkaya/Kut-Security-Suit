@@ -28,6 +28,7 @@ TARGETS=(
   "./cmdenvelope/:FuzzParseParams"
   "./cmdenvelope/:FuzzParseStatement"
   "./cmdenvelope/:FuzzVerifyV2"
+  "./cmdenvelope/:FuzzApplyStatement"
 )
 
 fail=0
