@@ -125,15 +125,104 @@ func TestListAdminsTenantScoped(t *testing.T) {
 	}
 }
 
-// Rol sınırı: kiracılı admin, kendi rolünün üstünde rol veremez (rank kontrolü).
-func TestSetAdminRoleCannotExceedCallerRole(t *testing.T) {
+// S-1: ADMIN eşiği require() ile zaten kapalıdır (ADMIN en üst rütbe), bu yüzden eski
+// "rol çağıranı aşamaz" kontrolü ölü koddu. Anlamlı korumalar: (a) kiracılı ADMIN, başka
+// kiracıdaki/platformdaki hiç kimseye ADMIN veremez; (b) kapsamındaki SON etkin ADMIN
+// kendini düşüremez/pasifleştiremez (kiracı yönetimsiz kalmasın).
+func TestTenantAdminCannotGrantAdminOutsideOwnTenant(t *testing.T) {
 	ctx := context.Background()
 	svc, store := wallFixture(t)
-	// ADMIN eşiği require() ile zaten kapalıdır; rank kontrolü ayrıca doğrulanır:
-	// çağıranın rolü (store) düşük görünürse verilebilecek rol de onu aşamaz.
-	store.roles["acme-adm"] = RoleOperator
-	if err := svc.SetAdminRole(ctx, "acme-adm", "acme-viewer", RoleAdmin); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("yetersiz rolle rol verilemez: %v", err)
+	store.roles["globex-viewer"] = RoleViewer
+	store.admins["globex-viewer"] = &adminEntry{email: "gv@x", role: RoleViewer, tenant: "globex", active: true}
+
+	// NEGATIF: başka kiracıdaki kullanıcıya ADMIN verilemez.
+	if err := svc.SetAdminRole(ctx, "acme-adm", "globex-viewer", RoleAdmin); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("çapraz-kiracı ADMIN verme reddedilmeli: %v", err)
+	}
+	if store.admins["globex-viewer"].role != RoleViewer {
+		t.Fatal("reddedilen çağrı rolü DEĞİŞTİRMEMELİ")
+	}
+	// NEGATIF: platform admin satırına da dokunamaz (zaten ADMIN olsa bile).
+	if err := svc.SetAdminRole(ctx, "acme-adm", "plat", RoleAdmin); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("kiracılı admin platform adminine rol veremez: %v", err)
+	}
+	// POZITIF: kendi kiracısında ADMIN verebilir.
+	if err := svc.SetAdminRole(ctx, "acme-adm", "acme-op", RoleAdmin); err != nil {
+		t.Fatalf("kendi kiracısında ADMIN verme geçmeli: %v", err)
+	}
+	if store.admins["acme-op"].role != RoleAdmin {
+		t.Fatal("rol güncellenmeliydi")
+	}
+}
+
+func TestLastAdminCannotSelfDemoteOrDeactivate(t *testing.T) {
+	ctx := context.Background()
+	svc, store := wallFixture(t)
+	n := len(store.audits)
+
+	// acme-adm, acme kiracısının TEK etkin ADMIN'i: kendini düşüremez.
+	for _, r := range []Role{RoleOperator, RoleViewer} {
+		if err := svc.SetAdminRole(ctx, "acme-adm", "acme-adm", r); !errors.Is(err, ErrLastAdmin) || !errors.Is(err, ErrForbidden) {
+			t.Fatalf("son ADMIN kendini %s'e düşüremez (ErrLastAdmin/403): %v", r, err)
+		}
+	}
+	if store.admins["acme-adm"].role != RoleAdmin || store.roles["acme-adm"] != RoleAdmin {
+		t.Fatal("reddedilen düşürme rolü DEĞİŞTİRMEMELİ")
+	}
+	if err := svc.DeactivateAdmin(ctx, "acme-adm", "acme-adm"); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("son ADMIN kendini pasifleştiremez: %v", err)
+	}
+	if !store.admins["acme-adm"].active {
+		t.Fatal("reddedilen pasifleştirme durumu DEĞİŞTİRMEMELİ")
+	}
+	if len(store.audits) != n {
+		t.Fatalf("reddedilen çağrılar audit yazmamalı: %+v", store.audits[n:])
+	}
+	// ADMIN → ADMIN (no-op) engellenmez.
+	if err := svc.SetAdminRole(ctx, "acme-adm", "acme-adm", RoleAdmin); err != nil {
+		t.Fatalf("rolü aynı bırakmak engellenmemeli: %v", err)
+	}
+
+	// Diğer kiracının ADMIN'i (globex-adm) ve platform adminleri acme için SAYILMAZ.
+	// Etkin olmayan ikinci bir ADMIN de sayılmaz.
+	store.roles["acme-old"] = RoleAdmin
+	store.admins["acme-old"] = &adminEntry{email: "old@x", role: RoleAdmin, tenant: "acme", active: false}
+	if err := svc.SetAdminRole(ctx, "acme-adm", "acme-adm", RoleViewer); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("pasif ADMIN 'başka admin' sayılmamalı: %v", err)
+	}
+
+	// Başka bir etkin ADMIN varsa kendini düşürebilir.
+	if err := svc.SetAdminRole(ctx, "acme-adm", "acme-op", RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetAdminRole(ctx, "acme-adm", "acme-adm", RoleViewer); err != nil {
+		t.Fatalf("ikinci etkin ADMIN varken kendini düşürmek geçmeli: %v", err)
+	}
+	if store.admins["acme-adm"].role != RoleViewer {
+		t.Fatal("rol düşürülmeliydi")
+	}
+	// Artık acme-op tek etkin ADMIN: o da kendini pasifleştiremez.
+	if err := svc.DeactivateAdmin(ctx, "acme-op", "acme-op"); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("yeni son ADMIN kendini pasifleştiremez: %v", err)
+	}
+}
+
+// Platform kapsamı: tek platform ADMIN'i, kiracılı ADMIN'ler var olsa da kendini düşüremez;
+// ikinci bir platform ADMIN'i varsa düşürebilir.
+func TestLastPlatformAdminCannotSelfDemote(t *testing.T) {
+	ctx := context.Background()
+	svc, store := wallFixture(t)
+
+	if err := svc.SetAdminRole(ctx, "plat", "plat", RoleViewer); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("tek platform ADMIN'i kendini düşüremez (kiracılı ADMIN'ler sayılmaz): %v", err)
+	}
+	if err := svc.DeactivateAdmin(ctx, "plat", "plat"); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("tek platform ADMIN'i kendini pasifleştiremez: %v", err)
+	}
+	store.roles["plat2"] = RoleAdmin
+	store.admins["plat2"] = &adminEntry{email: "plat2@x", role: RoleAdmin, tenant: "", active: true}
+	if err := svc.SetAdminRole(ctx, "plat", "plat", RoleViewer); err != nil {
+		t.Fatalf("ikinci platform ADMIN'i varken düşürmek geçmeli: %v", err)
 	}
 }
 
@@ -306,8 +395,8 @@ func TestMFAReenrollCodeIsSingleUse(t *testing.T) {
 	if _, _, err := svc.BeginMFAEnrollment(ctx, "acme-op", code); err != nil {
 		t.Fatalf("geçerli kod kabul edilmeli: %v", err)
 	}
-	// Yeniden kayıt etkinliği sıfırladı; saldırgan aynı (eski sırra ait) kodu tekrar kullanmak
-	// isterse, MFA artık etkin değil → ilk-kayıt yolu; ancak adım tüketimi korunur:
+	// Yeniden kayıt artık etkin sırrı DEĞİŞTİRMEZ (yeni sır bekleyen); saldırgan aynı kodu tekrar kullanmak
+	// isterse adım tüketimi (anti-replay) yine reddeder:
 	store.admins["acme-op"].mfaSecret = "JBSWY3DPEHPK3PXP"
 	store.admins["acme-op"].mfaEnrolled = true
 	if _, _, err := svc.BeginMFAEnrollment(ctx, "acme-op", code); !errors.Is(err, ErrForbidden) {

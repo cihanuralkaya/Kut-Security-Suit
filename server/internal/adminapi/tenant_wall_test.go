@@ -365,3 +365,31 @@ func TestMFAReenrollNeedsCodeHTTP(t *testing.T) {
 		t.Fatal("MFA_REENROLL_BEGIN audit satırı yazılmalıydı")
 	}
 }
+
+// S-1 (HTTP): kiracının SON etkin ADMIN'i kendini düşüremez/pasifleştiremez (403); ikinci bir
+// ADMIN varsa düşürebilir. Platform admini ve diğer kiracıların ADMIN'leri sayılmaz.
+func TestLastTenantAdminSelfDemotionDeniedHTTP(t *testing.T) {
+	ts, store := wallServer(t)
+	_ = wallAdmin(t, ts, store, "plat-adm", admin.RoleAdmin, "")
+	acme := wallAdmin(t, ts, store, "acme-adm", admin.RoleAdmin, "acme")
+	_ = wallAdmin(t, ts, store, "globex-adm", admin.RoleAdmin, "globex")
+
+	if code, _ := post(t, ts.URL+"/api/admins/acme-adm/role", acme, map[string]string{"role": "VIEWER"}); code != http.StatusForbidden {
+		t.Fatalf("son ADMIN kendini düşüremez (403): %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/admins/acme-adm/deactivate", acme, map[string]string{}); code != http.StatusForbidden {
+		t.Fatalf("son ADMIN kendini pasifleştiremez (403): %d", code)
+	}
+	if info := store.adminInfos["acme-adm"]; !info.Active || info.Role != admin.RoleAdmin {
+		t.Fatalf("reddedilen çağrılar DEĞİŞTİRMEMELİ: %+v", info)
+	}
+
+	// İkinci bir kiracı ADMIN'i eklenince kendini düşürebilir.
+	code, nb := post(t, ts.URL+"/api/admins", acme, map[string]string{"email": "b@acme", "password": "parola12", "role": "ADMIN"})
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("ikinci ADMIN oluşturma: %d %v", code, nb)
+	}
+	if code, _ := post(t, ts.URL+"/api/admins/acme-adm/role", acme, map[string]string{"role": "VIEWER"}); code != http.StatusOK {
+		t.Fatalf("ikinci ADMIN varken düşürmek geçmeli: %d", code)
+	}
+}
