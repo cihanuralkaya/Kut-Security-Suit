@@ -779,3 +779,23 @@ func TestEveryKnownTypeSignsAndVerifies(t *testing.T) {
 		t.Fatal("W2'de gereken imza sayısı 1 olmalı")
 	}
 }
+
+func TestFamily(t *testing.T) {
+	if Family(TypeQuarantine) != FamilyIsolation || Family(TypeUnquarantine) != FamilyIsolation {
+		t.Fatal("QUARANTINE ve UNQUARANTINE aynı ailede olmalı")
+	}
+	seen := map[string]string{}
+	for _, s := range All() {
+		f := Family(s.Name)
+		if f == "" {
+			t.Errorf("%s ailesiz", s.Name)
+		}
+		if prev, dup := seen[f]; dup && f != FamilyIsolation {
+			t.Errorf("%s ve %s aynı ailede (%s)", prev, s.Name, f)
+		}
+		seen[f] = s.Name
+	}
+	if Family("") != "" || Family("quarantine") != "" || Family("REBOOT") != "" {
+		t.Fatal("bilinmeyen tip ailesiz (\"\") olmalı")
+	}
+}
