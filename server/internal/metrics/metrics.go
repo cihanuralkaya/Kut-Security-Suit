@@ -45,6 +45,7 @@ var (
 	loginLockouts    atomic.Int64 // kaba-kuvvet kilidi tetiklemeleri (admin girişi)
 	scopeDenied      atomic.Int64 // scope/ROE tarafından ENGELLENEN yüksek-etkili op (§4)
 	scopeWouldDeny   atomic.Int64 // enforce KAPALIYKEN engellenecekti (danışma/tuning)
+	cmdWouldDeny     atomic.Int64 // komut düzlemi AUDIT modunda engellenecekti (danışma)
 	auditWriteFail   atomic.Int64 // denetim izi (tamper-evident) yazımı BAŞARISIZ — non-repudiation uyarısı
 	eventsDuplicate  atomic.Int64 // yineleme-tespitiyle düşürülen olaylar (§6)
 	eventsDeferred   atomic.Int64 // yazılamayıp ölü-mektup kuyruğuna alınan olaylar (§6 DLQ)
@@ -121,6 +122,7 @@ func Counters() map[string]int64 {
 		"login_lockouts":      loginLockouts.Load(),
 		"scope_denied":        scopeDenied.Load(),
 		"scope_would_deny":    scopeWouldDeny.Load(),
+		"cmd_would_deny":      cmdWouldDeny.Load(),
 		"audit_write_fail":    auditWriteFail.Load(),
 		"events_duplicate":    eventsDuplicate.Load(),
 		"events_deferred":     eventsDeferred.Load(),
@@ -225,6 +227,10 @@ func IncScopeDenied() { scopeDenied.Add(1) }
 // IncScopeWouldDeny, enforce KAPALIYKEN scope/ROE'nin engelleyeceği (ama izin verilen)
 // operasyon sayacını artırır — operatörün politika ayarı (tuning) için danışma sinyali.
 func IncScopeWouldDeny() { scopeWouldDeny.Add(1) }
+
+// IncCommandPlaneWouldDeny, komut düzleminin AUDIT modunda (KUT_SCOPE_ENFORCE kapalı) scope/ROE
+// kararının RED olacağı ama izin verilen komut sayacını artırır (danışma sinyali).
+func IncCommandPlaneWouldDeny() { cmdWouldDeny.Add(1) }
 
 // IncAuditWriteFailure, tamper-evident denetim izine bir kayıt YAZILAMADIĞINDA artırılır
 // (non-repudiation açığı sinyali — güvenlik operasyonu audit kaydı olmadan gerçekleşti).
@@ -418,6 +424,10 @@ func Write(w io.Writer, s Snapshot) {
 	fmt.Fprintf(w, "# HELP kut_scope_would_deny_total Enforce kapalıyken scope/ROE'nin engelleyeceği operasyonlar (danışma).\n")
 	fmt.Fprintf(w, "# TYPE kut_scope_would_deny_total counter\n")
 	fmt.Fprintf(w, "kut_scope_would_deny_total %d\n", scopeWouldDeny.Load())
+
+	fmt.Fprintf(w, "# HELP kut_command_plane_would_deny_total Komut düzlemi audit modunda scope/ROE reddedecekti ama izin verilen komutlar (danışma).\n")
+	fmt.Fprintf(w, "# TYPE kut_command_plane_would_deny_total counter\n")
+	fmt.Fprintf(w, "kut_command_plane_would_deny_total %d\n", cmdWouldDeny.Load())
 
 	fmt.Fprintf(w, "# HELP kut_audit_write_fail_total Tamper-evident denetim izi yazımı başarısızlıkları (non-repudiation uyarısı).\n")
 	fmt.Fprintf(w, "# TYPE kut_audit_write_fail_total counter\n")

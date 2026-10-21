@@ -3,19 +3,23 @@ package commandplane
 import (
 	"errors"
 	"time"
+
+	"kut.corp/suite/cmdenvelope"
 )
 
 // CommandType defines the available command types.
 type CommandType string
 
 const (
-	TypeQuarantine      CommandType = "QUARANTINE"
-	TypeUnquarantine    CommandType = "UNQUARANTINE"
-	TypeLock            CommandType = "LOCK"
-	TypeRestart         CommandType = "RESTART"
-	TypeWipe            CommandType = "WIPE"
-	TypeRunSignedScript CommandType = "RUN_SIGNED_SCRIPT"
-	TypeCollectFile     CommandType = "COLLECT_FILE"
+	TypeQuarantine         CommandType = cmdenvelope.TypeQuarantine
+	TypeUnquarantine       CommandType = cmdenvelope.TypeUnquarantine
+	TypeLock               CommandType = cmdenvelope.TypeLock
+	TypeRestart            CommandType = cmdenvelope.TypeRestart
+	TypeWipe               CommandType = cmdenvelope.TypeWipe
+	TypeRunSignedScript    CommandType = cmdenvelope.TypeRunSignedScript
+	TypeCollectFile        CommandType = cmdenvelope.TypeCollectFile
+	TypeCollectDiagnostics CommandType = cmdenvelope.TypeCollectDiagnostics
+	TypeUninstall          CommandType = cmdenvelope.TypeUninstall
 )
 
 // CommandState represents the current state of a command.
@@ -61,11 +65,16 @@ func (r *CommandRequest) Validate() error {
 		return errors.New("missing issued by")
 	}
 
-	// WIPE komutu vb. komutlarin dogrulanmasi.
-	switch r.Type {
-	case TypeQuarantine, TypeUnquarantine, TypeLock, TypeRestart, TypeWipe, TypeRunSignedScript, TypeCollectFile:
-		return nil
-	default:
+	// Tip, paylaşılan komut tablosunda (cmdenvelope) kayıtlı olmalı; bilinmeyen tip
+	// fail-closed reddedilir.
+	if _, ok := Spec(r.Type); !ok {
 		return errors.New("invalid command type")
 	}
+	return nil
+}
+
+// Spec, komut tipinin paylaşılan tablodaki tanımını döner (sınıf, rol, scope eşlemesi,
+// korumalılık). Kayıtsız tip için ok=false — çağıran REDDETMELİDİR.
+func Spec(t CommandType) (cmdenvelope.Spec, bool) {
+	return cmdenvelope.Lookup(string(t))
 }
