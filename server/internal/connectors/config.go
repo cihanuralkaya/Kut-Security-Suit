@@ -2,12 +2,14 @@ package connectors
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"kut.corp/suite/server/internal/connector"
+	"kut.corp/suite/server/internal/logingest"
 	"kut.corp/suite/server/internal/tenant"
 )
 
@@ -111,4 +113,29 @@ func BuildAll(cfgs []SourceConfig) (*connector.Registry, error) {
 		}
 	}
 	return reg, nil
+}
+
+// ErrTenantRequired, KUT_TENANT_ENFORCE=1 iken kiracısı yapılandırılmamış bir bağlayıcının
+// reddedildiğini bildirir (INV-044: eksik kiracı → DENY; HTTP ingest'in kiracısız token'ı
+// 403 ile reddetmesiyle AYNI fail-closed davranış).
+var ErrTenantRequired = errors.New("connectors: kiracı zorunlu (KUT_TENANT_ENFORCE=1): bağlayıcıya açık bir \"tenant\" verin")
+
+// Binding, bir bağlayıcının sunucu-tarafı çözülmüş kiracı bağıdır.
+type Binding struct {
+	Tenant   string // olayları damgalanan kiracı (kanonik)
+	IDTenant string // cihaz kimliğini ad-alanlayan kiracı; boş → kimlik DEĞİŞMEZ (bkz. logingest.SourceIDTenant)
+}
+
+// ResolveBinding, bağlayıcının kiracı bağını çözer. enforce açıkken kiracısız bağlayıcı
+// ErrTenantRequired ile REDDEDİLİR (dağıtım kiracısına sessizce düşmez); kapalıyken kiracısız
+// bağlayıcı dağıtım kiracısıyla damgalanır ve W1b-2 öncesi cihaz kimliğini korur.
+func (c SourceConfig) ResolveBinding(deployDefault string, enforce bool) (Binding, error) {
+	if enforce && strings.TrimSpace(c.Tenant) == "" {
+		return Binding{}, fmt.Errorf("%w: %q", ErrTenantRequired, c.Name)
+	}
+	tn, err := c.ResolveTenant(deployDefault)
+	if err != nil {
+		return Binding{}, err
+	}
+	return Binding{Tenant: tn, IDTenant: logingest.SourceIDTenant(c.Tenant, deployDefault)}, nil
 }

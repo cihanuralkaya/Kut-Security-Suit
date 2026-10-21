@@ -11,14 +11,15 @@ import (
 type SaveFunc func(ctx context.Context, deviceID string, evs []model.Event) (uint64, error)
 
 // StampTenant, bir bağlayıcının ürettiği olayları SUNUCU-TARAFI bilinen kiracıyla damgalar
-// (Z3-02): TenantID ezilir (kaynak verisi kiracı seçemez) ve cihaz kimliği kiracıya
-// ad-alanlanır (iki kiracının aynı kaynak adı çökmez; varsayılan kiracıda kimlik değişmez).
+// (Z3-02): TenantID ezilir (kaynak verisi kiracı seçemez). Cihaz kimliği idTenant'a göre
+// ad-alanlanır (iki kiracının aynı kaynak adı çökmez); idTenant boşsa kimlik DEĞİŞMEZ
+// (kiracısız/dağıtım-kiracılı bağlayıcılar eski kimliğini korur; bkz. logingest.SourceIDTenant).
 // Girdi dilimini yerinde değiştirir ve aynısını döner.
-func StampTenant(evs []model.Event, tenantID string) []model.Event {
+func StampTenant(evs []model.Event, tenantID, idTenant string) []model.Event {
 	for i := range evs {
 		evs[i].TenantID = tenantID
 		if evs[i].DeviceID != "" {
-			evs[i].DeviceID = logingest.TenantDeviceID(tenantID, evs[i].DeviceID)
+			evs[i].DeviceID = logingest.TenantDeviceID(idTenant, evs[i].DeviceID)
 		}
 	}
 	return evs
@@ -32,9 +33,9 @@ func StampTenant(evs []model.Event, tenantID string) []model.Event {
 // TODO(W3): bağlayıcı olayları henüz paylaşılan tespit hattından (ProcessEvent) GEÇMEZ —
 // yalnız kaydedilir. Hatta bağlanması W3 dalgasının işidir; bu sink kiracıyı doğru
 // damgalar ki o dalgada olaylar zaten kiracı-atıflı olsun.
-func NewTenantSink(ctx context.Context, tenantID string, isDup func(*model.Event) bool, save SaveFunc, onErr func(deviceID string, err error)) func([]model.Event) {
+func NewTenantSink(ctx context.Context, tenantID, idTenant string, isDup func(*model.Event) bool, save SaveFunc, onErr func(deviceID string, err error)) func([]model.Event) {
 	return func(evs []model.Event) {
-		StampTenant(evs, tenantID)
+		StampTenant(evs, tenantID, idTenant)
 		byDev := map[string][]model.Event{}
 		for i := range evs {
 			if isDup != nil && isDup(&evs[i]) {

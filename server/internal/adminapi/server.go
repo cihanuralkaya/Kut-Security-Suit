@@ -999,6 +999,10 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	// EventID pencere içinde tekrar geliyorsa olay düşürülür (retransmit/çift-gönderim).
 	byDevice := map[string][]model.Event{}
 	duplicates := 0
+	// Cihaz kimliği ad-alanı: YALNIZ açıkça kiracıya bağlı token (dağıtım kiracısından farklı)
+	// için. Legacy/kiracısız token dağıtım kiracısıyla damgalanır ama eski kimliği korur
+	// (KUT_TENANT_ID=acme dağıtımında mevcut kaynakların geçmişi bölünmez).
+	idTenant := logingest.SourceIDTenant(tokenTenant, s.tenantID)
 	for _, rec := range records {
 		ev := rec.Event
 		// Kiracı damgası SaveEvents'ten ve EventID türetmesinden ÖNCE: olay kalıcı kayda
@@ -1006,7 +1010,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		// ve cihaz kimliği kiracıya ad-alanlanır → aynı kaynak adını kullanan iki kiracı
 		// AYRI cihaz/eşik/korelatör durumuna sahip olur. Normalizer'ın (ya da istemcinin)
 		// verdiği her kiracı değeri EZİLİR.
-		devID := logingest.TenantDeviceID(evTenant, rec.DeviceID)
+		devID := logingest.TenantDeviceID(idTenant, rec.DeviceID)
 		ev.TenantID = evTenant
 		ev.DeviceID = devID
 		if s.ingestDedup != nil {

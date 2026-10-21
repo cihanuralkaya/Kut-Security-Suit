@@ -981,29 +981,33 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 			// Her bağlayıcı KENDİ yapılandırılmış kiracısıyla (yoksa dağıtımın varsayılan
 			// kiracısı) damgalanır — kaydetmeden ÖNCE (Z3-02). Kiracı operatör
 			// yapılandırmasından gelir, kaynak verisinden değil.
-			tenants := map[string]string{}
+			tenants := map[string]connectors.Binding{}
 			for _, c := range cfgs {
-				tn, terr := c.ResolveTenant(cfg.TenantID)
+				// KUT_TENANT_ENFORCE=1: kiracısız bağlayıcı REDDEDİLİR (HTTP ingest'in kiracısız
+				// token'ı reddetmesiyle aynı fail-closed, INV-044); kapalıyken dağıtım kiracısı.
+				bd, terr := c.ResolveBinding(cfg.TenantID, cfg.TenantEnforce)
 				if terr != nil {
-					log.Printf("connector %q atlandı: %v", c.Name, terr)
+					log.Printf("connector %q atlandı (ÇALIŞTIRILMIYOR): %v", c.Name, terr)
 					continue
 				}
-				tenants[c.Name] = tn
+				tenants[c.Name] = bd
 			}
 			isDup := func(e *model.Event) bool { return seen.Duplicate(e.EnsureID()) }
+			started := 0
 			for _, c := range reg.List() {
-				tn, ok := tenants[c.Name()]
+				bd, ok := tenants[c.Name()]
 				if !ok {
 					continue // geçersiz kiracı: fail-closed, bağlayıcı çalıştırılmaz
 				}
-				sink := connectors.NewTenantSink(ctx, tn, isDup, backend.SaveEvents, func(dev string, serr error) {
+				sink := connectors.NewTenantSink(ctx, bd.Tenant, bd.IDTenant, isDup, backend.SaveEvents, func(dev string, serr error) {
 					log.Printf("connector olay yazımı hatası (%s): %v", dev, serr)
 				})
 				runner := connector.NewRunner(c, intervals[c.Name()], sink).
 					OnError(func(name string, err error) { log.Printf("connector %q hata: %v", name, err) })
 				go runner.Start(ctx, nil)
+				started++
 			}
-			log.Printf("%d connector kaynağı ETKİN (§29/§30)", len(reg.List()))
+			log.Printf("%d connector kaynağı ETKİN, %d atlandı (§29/§30)", started, len(reg.List())-started)
 		}
 	}
 	// ABAC (§35): KUT_ABAC_FILE ayarlıysa öznitelik-tabanlı erişim politikaları
