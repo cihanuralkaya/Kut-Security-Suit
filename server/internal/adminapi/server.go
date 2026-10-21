@@ -112,7 +112,7 @@ type Server struct {
 	gateway        *authz.Gateway                 // §4 merkezi Action Authorization Gateway (blast-radius + rate-limit)
 	graph          *entitygraph.Graph             // varlık/tehdit grafı (salt-okunur pivot uçları; nil → uç kapalı)
 	cases          casemgmt.Store                 // SOC vaka yönetimi (varsayılan bellek-içi; SetCaseStore ile DB destekli)
-	seqModel       *aibrain.SeqModel              // süreç-zinciri sekans nadirlik modeli (salt-okunur skor sorgusu; nil → uç kapalı)
+	seqModel       *aibrain.SeqModels             // kiracı-bölümlü süreç-zinciri sekans nadirlik modeli (salt-okunur skor sorgusu; nil → uç kapalı)
 	agentSec       *aisec.Service                 // agentic tehdit savunması (salt-okunur bulgu uçları; nil → uç kapalı)
 	brain          *aibrain.Brain                 // SOC AI brain (fail-open; dış AI yoksa deterministik yola döner)
 	investigator   *aiprovider.InvestigationAgent // otonom soruşturma ajanı (salt-okunur/advisory; nil → uç kapalı)
@@ -372,7 +372,21 @@ func (s *Server) SetRequireVerifyOnClose(on bool) { s.reqVerifyClose = on }
 
 // SetSeqModel, süreç-zinciri sekans nadirlik modelini bağlar (ajan olay hattı canlı
 // öğrenir; bu uç salt-okunur skor sorgular). nil → /api/hunt/sequence-score kapalı.
-func (s *Server) SetSeqModel(m *aibrain.SeqModel) { s.seqModel = m }
+func (s *Server) SetSeqModel(m *aibrain.SeqModels) { s.seqModel = m }
+
+// seqTenant, sekans taban çizgisinin hangi kiracı bölümünden okunacağını SUNUCU-TARAFI çözer:
+// kiracılı çağıran kendi bölümü (istek değeri yok sayılır); platform admini doğrulanmış açık
+// kiracı, yoksa dağıtımın kiracısı (taban çizgileri birleştirilemez → "hepsi" yoktur).
+func (s *Server) seqTenant(ctx context.Context, adminID, requested string) (string, error) {
+	t, all, err := s.readScope(ctx, adminID, requested)
+	if err != nil {
+		return "", err
+	}
+	if all {
+		return s.caseTenant(), nil
+	}
+	return t, nil
+}
 
 // SetAgentSec, agentic tehdit savunması analiz servisini bağlar (Agent Causality Graph;
 // salt-okunur bulgu uçları — ajan telemetrisi besler). nil → /api/agentsec uçları kapalı.
@@ -1877,7 +1891,7 @@ func (s *Server) handleAIDetectionDraft(w http.ResponseWriter, r *http.Request, 
 // değiştirmez, hiçbir aksiyon yürütmez. FAIL-OPEN: AI yoksa/başarısızsa sonuç, verilen
 // sinyallerin deterministik füzyonuyla BİREBİR aynıdır (ai_available:false). AI sinyalleri
 // (ai_sequence/ai_graph) sonuçta ayrı katkı olarak görünür → nihai skora etkisi denetlenebilir.
-func (s *Server) handleAIRisk(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleAIRisk(w http.ResponseWriter, r *http.Request, adminID string) {
 	var req struct {
 		Signals []struct {
 			Name   string  `json:"name"`
@@ -1901,7 +1915,11 @@ func (s *Server) handleAIRisk(w http.ResponseWriter, r *http.Request, _ string) 
 	}
 	var seq *aibrain.SequenceInput
 	if len(req.Sequence) > 0 {
-		seq = &aibrain.SequenceInput{Tokens: req.Sequence}
+		st, serr := s.seqTenant(r.Context(), adminID, r.URL.Query().Get("tenant"))
+		if respondErr(w, serr) {
+			return
+		}
+		seq = &aibrain.SequenceInput{Tokens: req.Sequence, Tenant: st} // taban çizgisi çağıranın kiracısından
 	}
 	var graph *aibrain.GraphInput
 	if req.Graph != nil {
@@ -1929,7 +1947,7 @@ func (s *Server) handleAIRisk(w http.ResponseWriter, r *http.Request, _ string) 
 // göre nadirlik skorunu döner — salt-okunur tehdit-avı. Model canlı PROCESS
 // olaylarından PASİF öğrenir; bu uç yalnız SORGULAR (taban çizgisini değiştirmez).
 // Model bağlı değilse 404.
-func (s *Server) handleSequenceScore(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleSequenceScore(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.seqModel == nil {
 		writeErr(w, http.StatusNotFound, "sekans modeli etkin değil")
 		return
@@ -1945,7 +1963,11 @@ func (s *Server) handleSequenceScore(w http.ResponseWriter, r *http.Request, _ s
 			tokens = append(tokens, t)
 		}
 	}
-	sc := s.seqModel.Score(tokens)
+	st, serr := s.seqTenant(r.Context(), adminID, r.URL.Query().Get("tenant"))
+	if respondErr(w, serr) {
+		return
+	}
+	sc := s.seqModel.Score(st, tokens)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"score": sc.Score, "rationale": sc.Rationale, "source": sc.Source, "tokens": tokens,
 	})

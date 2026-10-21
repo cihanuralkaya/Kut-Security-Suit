@@ -610,9 +610,9 @@ func TestAgentSecTelemetryEndpoint(t *testing.T) {
 // modele öğretilen ortamda görülmemiş bir süreç geçişi yüksek nadirlik skorlanır.
 func TestSequenceScoreEndpoint(t *testing.T) {
 	srv, store := newServer(t)
-	m := aibrain.NewSeqModel()
+	m := aibrain.NewSeqModels()
 	for i := 0; i < 5; i++ {
-		m.Observe([]string{"explorer.exe", "cmd.exe"}) // taban çizgisi
+		m.Observe("default", []string{"explorer.exe", "cmd.exe"}) // taban çizgisi
 	}
 	srv.SetSeqModel(m)
 	ts := httptest.NewServer(srv.Handler())

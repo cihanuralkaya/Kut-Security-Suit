@@ -58,6 +58,7 @@ var (
 	graphDropped      atomic.Int64 // entitygraph: tavan/uzunluk/çapraz-kiracı nedeniyle reddedilen gözlem
 	graphEvicted      atomic.Int64 // entitygraph: kiracı tavanı aşılınca LRU ile atılan kenar
 	graphPruned       atomic.Int64 // entitygraph: TTL süpürmesiyle atılan kenar
+	graphFeedDropped  atomic.Int64 // besleyici: aşırı uzun dizge / derin zincir nedeniyle grafa girmeyen gözlem
 	graphEdges        atomic.Int64 // gauge: toplam kenar
 	graphNodes        atomic.Int64 // gauge: toplam düğüm
 	seqDropped        atomic.Int64 // sekans modeli: tavan/uzunluk nedeniyle öğrenilmeyen geçiş
@@ -180,6 +181,9 @@ func SetSeqModelStats(dropped, evicted, pruned, sources int64) {
 	seqPruned.Store(pruned)
 	seqSources.Store(sources)
 }
+
+// AddGraphFeedDropped, graf besleyicisinin (uzunluk/derinlik tavanı nedeniyle) atladığı gözlemleri sayar.
+func AddGraphFeedDropped(n int) { graphFeedDropped.Add(int64(n)) }
 
 // AddAgentSecDropped, aisec grafının tavan nedeniyle reddettiği düğüm/kenar sayısını artırır.
 func AddAgentSecDropped(n int) { agentSecDropped.Add(int64(n)) }
@@ -353,6 +357,9 @@ func Write(w io.Writer, s Snapshot) {
 	fmt.Fprintf(w, "# HELP kut_graph_dropped_total Varlık grafı: tavan/uzunluk/çapraz-kiracı nedeniyle reddedilen gözlemler.\n")
 	fmt.Fprintf(w, "# TYPE kut_graph_dropped_total counter\n")
 	fmt.Fprintf(w, "kut_graph_dropped_total %d\n", graphDropped.Load())
+	fmt.Fprintf(w, "# HELP kut_graph_feed_dropped_total Graf besleyicisi: aşırı uzun dizge / derin parent_chain nedeniyle atlanan gözlemler.\n")
+	fmt.Fprintf(w, "# TYPE kut_graph_feed_dropped_total counter\n")
+	fmt.Fprintf(w, "kut_graph_feed_dropped_total %d\n", graphFeedDropped.Load())
 	fmt.Fprintf(w, "# HELP kut_graph_evicted_total Varlık grafı: kiracı tavanı aşılınca LRU ile atılan kenarlar.\n")
 	fmt.Fprintf(w, "# TYPE kut_graph_evicted_total counter\n")
 	fmt.Fprintf(w, "kut_graph_evicted_total %d\n", graphEvicted.Load())

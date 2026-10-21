@@ -10,6 +10,7 @@
 package entitygraph
 
 import (
+	"container/list"
 	"sort"
 	"sync"
 	"time"
@@ -62,6 +63,11 @@ type Edge struct {
 	FirstSeen time.Time
 	LastSeen  time.Time
 	Count     int
+
+	// Dahili: sunucu-saatiyle son gözlem anı (TTL süpürmesi için; LastSeen cihaz-kaynaklı olay
+	// zamanıdır ve ileri tarihli olay kenarı kalıcı sabitleyebilirdi) ve kiracı LRU listesindeki yeri.
+	seen time.Time
+	elem *list.Element
 }
 
 type edgeKey struct {
@@ -69,28 +75,101 @@ type edgeKey struct {
 	rel Relation
 }
 
-// Graph, tek bir kiracının varlık grafıdır (çağıran kiracı-kapsamını yönetir).
-// Eşzamanlı kullanım için güvenlidir.
+// Limits, grafın SERT bellek tavanlarıdır (Z3-03 / Z5-18). Girdi (cihaz-kontrollü alan adı,
+// IP, süreç adı) sınırsız çeşitlilikte olabileceğinden graf büyümesi kiracı BAŞINA tavanlıdır:
+// bir kiracı/cihaz yalnız KENDİ kovasını doldurur ve eskiden-yeniye (LRU) kenar tahliyesi
+// yalnız o kiracının kenarlarını etkiler. Sıfır/negatif alan varsayılanı alır.
+type Limits struct {
+	MaxEdgesPerTenant int // kiracı başına kenar tavanı
+	MaxNodesPerTenant int // kiracı başına (en az bir kenara bağlı) düğüm tavanı
+	MaxIDLen          int // düğüm kimliği azami uzunluğu (bayt); aşan gözlem reddedilir
+}
+
+// DefaultLimits, makul üretim varsayılanlarını döner.
+func DefaultLimits() Limits {
+	return Limits{MaxEdgesPerTenant: 100_000, MaxNodesPerTenant: 100_000, MaxIDLen: 256}
+}
+
+func (l Limits) normalized() Limits {
+	d := DefaultLimits()
+	if l.MaxEdgesPerTenant <= 0 {
+		l.MaxEdgesPerTenant = d.MaxEdgesPerTenant
+	}
+	if l.MaxNodesPerTenant <= 0 {
+		l.MaxNodesPerTenant = d.MaxNodesPerTenant
+	}
+	if l.MaxIDLen <= 0 {
+		l.MaxIDLen = d.MaxIDLen
+	}
+	return l
+}
+
+// Stats, grafın anlık boyutu ve kümülatif sayaçlarıdır (/metrics için).
+type Stats struct {
+	Edges   int
+	Nodes   int
+	Dropped int64 // tavan/uzunluk/çapraz-kiracı nedeniyle reddedilen gözlemler
+	Evicted int64 // kiracı tavanı aşılınca LRU ile atılan kenarlar
+	Pruned  int64 // TTL süpürmesiyle atılan kenarlar
+}
+
+// maxEvictPerObserve, tek bir yeni-kenar kabulünde yapılabilecek azami LRU tahliyesidir
+// (kötü niyetli girdinin tek gözlemle uzun tahliye döngüsü yaratmasını sınırlar); aşılırsa
+// gözlem reddedilir (fail-closed).
+const maxEvictPerObserve = 8
+
+// Graph, varlık grafıdır (düğümler kiracı etiketlidir; kiracı sınırı Node.Tenant ile sağlanır).
+// Eşzamanlı kullanım için güvenlidir; bellek kiracı başına Limits ile tavanlıdır.
 type Graph struct {
 	mu   sync.RWMutex
 	out  map[Node]map[edgeKey]*Edge // ileri komşuluk
 	in   map[Node]map[edgeKey]*Edge // ters komşuluk (geri sorgular)
 	now  func() time.Time
 	size int
+
+	lim      Limits
+	lru      map[string]*list.List // kiracı → kenar listesi (ön = en son gözlenen)
+	deg      map[Node]int          // düğüme bağlı kenar sayısı (giren+çıkan)
+	tenNodes map[string]int        // kiracı → düğüm sayısı (deg>0)
+
+	dropped, evicted, pruned int64
 }
 
-// New, boş bir graf oluşturur.
+// New, boş bir graf oluşturur (varsayılan Limits ile).
 func New() *Graph {
 	return &Graph{
-		out: map[Node]map[edgeKey]*Edge{},
-		in:  map[Node]map[edgeKey]*Edge{},
-		now: time.Now,
+		out:      map[Node]map[edgeKey]*Edge{},
+		in:       map[Node]map[edgeKey]*Edge{},
+		now:      time.Now,
+		lim:      DefaultLimits(),
+		lru:      map[string]*list.List{},
+		deg:      map[Node]int{},
+		tenNodes: map[string]int{},
 	}
+}
+
+// SetLimits, tavanları ayarlar (başlangıçta, trafik başlamadan önce çağrılır). Sıfır alan
+// varsayılana döner. Mevcut kenarlar hemen tahliye edilmez; yeni kabullerde uygulanır.
+func (g *Graph) SetLimits(l Limits) {
+	g.mu.Lock()
+	g.lim = l.normalized()
+	g.mu.Unlock()
+}
+
+// Stats, anlık boyut ve kümülatif sayaçları döner.
+func (g *Graph) Stats() Stats {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return Stats{Edges: g.size, Nodes: len(g.deg), Dropped: g.dropped, Evicted: g.evicted, Pruned: g.pruned}
 }
 
 // Observe, from→to (rel) ilişkisini kaydeder veya var olanı günceller (LastSeen,
 // Count). ts sıfırsa şimdiki zaman kullanılır. Aynı kenarın tekrar gözlemi yeni
 // düğüm/kenar YARATMAZ; sayaç ve son-görülme güncellenir (idempotent üst-yazım).
+//
+// Sınırlar (Z3-03 / Z5-18): uçları farklı kiracılara ait kenar (kiracı sınırını geçemez), aşırı
+// uzun kimlik ya da tavan yüzünden yer açılamayan kenar REDDEDİLİR (sayılır). Yeni kenar
+// kiracı tavanını aşacaksa o kiracının en eski-gözlenen kenarı (LRU) tahliye edilir.
 func (g *Graph) Observe(from, to Node, rel Relation, ts time.Time) {
 	if ts.IsZero() {
 		ts = g.now()
@@ -98,12 +177,20 @@ func (g *Graph) Observe(from, to Node, rel Relation, ts time.Time) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	fk := edgeKey{to: to, rel: rel}
-	if g.out[from] == nil {
-		g.out[from] = map[edgeKey]*Edge{}
+	if from.Tenant != to.Tenant || len(from.ID) > g.lim.MaxIDLen || len(to.ID) > g.lim.MaxIDLen {
+		g.dropped++
+		return
 	}
+	fk := edgeKey{to: to, rel: rel}
 	e := g.out[from][fk]
 	if e == nil {
+		if !g.admit(from, to) {
+			g.dropped++
+			return
+		}
+		if g.out[from] == nil {
+			g.out[from] = map[edgeKey]*Edge{}
+		}
 		e = &Edge{From: from, To: to, Rel: rel, FirstSeen: ts, LastSeen: ts, Count: 0}
 		g.out[from][fk] = e
 		bk := edgeKey{to: from, rel: rel}
@@ -112,7 +199,13 @@ func (g *Graph) Observe(from, to Node, rel Relation, ts time.Time) {
 		}
 		g.in[to][bk] = e // ters yönde AYNI kenar örneği (paylaşımlı)
 		g.size++
+		g.addDeg(from)
+		g.addDeg(to)
+		e.elem = g.tenantList(from.Tenant).PushFront(e)
+	} else {
+		g.tenantList(from.Tenant).MoveToFront(e.elem)
 	}
+	e.seen = g.now()
 	e.Count++
 	if ts.After(e.LastSeen) {
 		e.LastSeen = ts
@@ -120,6 +213,90 @@ func (g *Graph) Observe(from, to Node, rel Relation, ts time.Time) {
 	if ts.Before(e.FirstSeen) {
 		e.FirstSeen = ts
 	}
+}
+
+// tenantList, kiracının LRU listesini döner (yoksa oluşturur). Kilit altında çağrılır.
+func (g *Graph) tenantList(tenant string) *list.List {
+	l := g.lru[tenant]
+	if l == nil {
+		l = list.New()
+		g.lru[tenant] = l
+	}
+	return l
+}
+
+func (g *Graph) addDeg(n Node) {
+	if g.deg[n] == 0 {
+		g.tenNodes[n.Tenant]++
+	}
+	g.deg[n]++
+}
+
+func (g *Graph) decDeg(n Node) {
+	g.deg[n]--
+	if g.deg[n] <= 0 {
+		delete(g.deg, n)
+		if g.tenNodes[n.Tenant]--; g.tenNodes[n.Tenant] <= 0 {
+			delete(g.tenNodes, n.Tenant)
+		}
+	}
+}
+
+// admit, from→to YENİ kenarı için kiracı kovasında yer açar (gerekirse LRU tahliyesiyle).
+// Yer açılamazsa false (fail-closed). Kilit altında çağrılır.
+func (g *Graph) admit(from, to Node) bool {
+	t := from.Tenant
+	l := g.tenantList(t)
+	fits := func() bool {
+		newNodes := 0
+		if g.deg[from] == 0 {
+			newNodes++
+		}
+		if to != from && g.deg[to] == 0 {
+			newNodes++
+		}
+		return l.Len() < g.lim.MaxEdgesPerTenant && g.tenNodes[t]+newNodes <= g.lim.MaxNodesPerTenant
+	}
+	for i := 0; i < maxEvictPerObserve; i++ {
+		if fits() {
+			return true
+		}
+		back := l.Back()
+		if back == nil {
+			break
+		}
+		g.removeEdge(back.Value.(*Edge))
+		g.evicted++
+	}
+	return fits()
+}
+
+// removeEdge, kenarı tüm yapılardan çıkarır (komşuluklar, LRU, düğüm sayaçları). Kilit altında.
+func (g *Graph) removeEdge(e *Edge) {
+	if m := g.out[e.From]; m != nil {
+		delete(m, edgeKey{to: e.To, rel: e.Rel})
+		if len(m) == 0 {
+			delete(g.out, e.From)
+		}
+	}
+	if m := g.in[e.To]; m != nil {
+		delete(m, edgeKey{to: e.From, rel: e.Rel})
+		if len(m) == 0 {
+			delete(g.in, e.To)
+		}
+	}
+	if e.elem != nil {
+		if l := g.lru[e.From.Tenant]; l != nil {
+			l.Remove(e.elem)
+			if l.Len() == 0 {
+				delete(g.lru, e.From.Tenant)
+			}
+		}
+		e.elem = nil
+	}
+	g.size--
+	g.decDeg(e.From)
+	g.decDeg(e.To)
 }
 
 // Size, benzersiz kenar sayısını döner.
@@ -291,23 +468,34 @@ func (g *Graph) Reachable(start Node, maxDepth int) []Node {
 // Prune, LastSeen'i before'dan eski olan kenarları kaldırır (bellek/gürültü
 // yönetimi). Kaldırılan kenar sayısını döner.
 func (g *Graph) Prune(before time.Time) int {
+	return g.removeWhere(func(e *Edge) bool { return e.LastSeen.Before(before) })
+}
+
+// Sweep, TTL süpürmesidir: hem olay-zamanı (LastSeen) hem SUNUCU-saatiyle son gözlem anı
+// (seen) cutoff'tan eski kenarları kaldırır. Sunucu saati koşulu, ileri tarihli (cihaz-kontrollü)
+// olay zamanıyla bir kenarın süresiz sabitlenmesini engeller. app'in periyodik bakım döngüsü
+// bunu çağırır (Prune'un üretimde çağıranı yoktu → graf yalnız büyüyordu).
+func (g *Graph) Sweep(cutoff time.Time) int {
+	return g.removeWhere(func(e *Edge) bool { return e.LastSeen.Before(cutoff) || e.seen.Before(cutoff) })
+}
+
+// removeWhere, koşulu sağlayan kenarları kaldırır ve Pruned sayacını artırır.
+func (g *Graph) removeWhere(pred func(*Edge) bool) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	removed := 0
-	for from, m := range g.out {
-		for k, e := range m {
-			if e.LastSeen.Before(before) {
-				delete(m, k)
-				delete(g.in[e.To], edgeKey{to: from, rel: e.Rel})
-				removed++
-				g.size--
+	var victims []*Edge
+	for _, m := range g.out {
+		for _, e := range m {
+			if pred(e) {
+				victims = append(victims, e)
 			}
 		}
-		if len(m) == 0 {
-			delete(g.out, from)
-		}
 	}
-	return removed
+	for _, e := range victims {
+		g.removeEdge(e)
+	}
+	g.pruned += int64(len(victims))
+	return len(victims)
 }
 
 // NodesByKindFor, belirtilen türdeki düğümlerden YALNIZ verilen kiracıya ait olanları döner

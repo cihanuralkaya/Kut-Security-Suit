@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"kut.corp/suite/server/internal/admin"
+	"kut.corp/suite/server/internal/aibrain"
 	"kut.corp/suite/server/internal/aiprovider"
 	"kut.corp/suite/server/internal/aisec"
 	"kut.corp/suite/server/internal/entitygraph"
@@ -279,5 +280,44 @@ func TestReportAndActivityOmitProcessCountersForTenant(t *testing.T) {
 	_, actP := getJSON(t, ts.URL+"/api/activity", plat)
 	if c, _ := actP["counters"].(map[string]any); len(c) == 0 {
 		t.Fatalf("platform activity sayaç taşımalı: %v", actP)
+	}
+}
+
+// Z5-18: /api/hunt/sequence-score çağıranın KİRACI taban çizgisini kullanır; kiracılı çağıran
+// başka kiracının taban çizgisini seçemez (?tenant= yok sayılır); platform admini seçebilir.
+func TestSequenceScoreTenantBaselines(t *testing.T) {
+	srv, store := newServer(t)
+	m := aibrain.NewSeqModels()
+	for i := 0; i < 10; i++ {
+		m.Observe("acme", []string{"explorer.exe", "cmd.exe"})
+	}
+	srv.SetSeqModel(m)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	acme := wallAdmin(t, ts, store, "acme-v", admin.RoleViewer, "acme")
+	globex := wallAdmin(t, ts, store, "globex-v", admin.RoleViewer, "globex")
+	plat := wallAdmin(t, ts, store, "plat-v", admin.RoleViewer, "")
+
+	score := func(tok, q string) float64 {
+		code, out := getJSON(t, ts.URL+"/api/hunt/sequence-score?tokens=explorer.exe,cmd.exe"+q, tok)
+		if code != 200 {
+			t.Fatalf("sequence-score %d", code)
+		}
+		return out["score"].(float64)
+	}
+	if s := score(acme, ""); s != 0 {
+		t.Fatalf("acme kendi taban çizgisinde sıradan: %v", s)
+	}
+	if s := score(globex, ""); s != 100 {
+		t.Fatalf("globex acme taban çizgisini görmemeli: %v", s)
+	}
+	if s := score(globex, "&tenant=acme"); s != 100 {
+		t.Fatalf("globex ?tenant=acme ile başka taban çizgisini seçememeli: %v", s)
+	}
+	if s := score(plat, "&tenant=acme"); s != 0 {
+		t.Fatalf("platform açık kiracı seçebilmeli: %v", s)
+	}
+	if code, _ := getJSON(t, ts.URL+"/api/hunt/sequence-score?tokens=a,b&tenant=Bad%20T!", plat); code != http.StatusBadRequest {
+		t.Fatalf("geçersiz tenant 400: %d", code)
 	}
 }

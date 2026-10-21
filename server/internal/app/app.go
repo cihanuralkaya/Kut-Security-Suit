@@ -364,11 +364,22 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	// Varlık/tehdit grafı: ajan olaylarından (DNS→alan, bağlantı→IP) cihaz-merkezli
 	// kenarlar beslenir; aynı örnek admin API'ye salt-okunur pivot uçları için verilir.
 	entGraph := entitygraph.New()
+	// Ajan-kontrollü dizgelerden beslendiği için graf kiracı başına SERT tavanlıdır (Z3-03/Z5-18);
+	// KUT_GRAPH_MAX_EDGES / KUT_GRAPH_MAX_NODES (kiracı başına) ile ayarlanır, 0/boş = varsayılan.
+	entGraph.SetLimits(entitygraph.Limits{
+		MaxEdgesPerTenant: atoiEnv("KUT_GRAPH_MAX_EDGES"),
+		MaxNodesPerTenant: atoiEnv("KUT_GRAPH_MAX_NODES"),
+	})
 	agentHandler.SetEntityGraph(entGraph)
 	// Süreç-zinciri sekans nadirlik modeli: ajan hattı canlı öğrenir, admin API
 	// salt-okunur skorlar (aynı paylaşımlı örnek). aibrain P4.1 — deterministik.
-	seqModel := aibrain.NewSeqModel()
+	seqModel := aibrain.NewSeqModels() // kiracı başına ayrı, sınırlı taban çizgisi
+	seqModel.SetLimits(aibrain.SeqLimits{MaxSources: atoiEnv("KUT_SEQMODEL_MAX_SOURCES")})
 	agentHandler.SetSeqModel(seqModel)
+	// TTL süpürmesi: KUT_GRAPH_TTL (varsayılan 720h = 30 gün) kadar gözlenmeyen kenar/kaynaklar
+	// atılır (Graph.Prune'un üretimde çağıranı yoktu). KUT_GRAPH_SWEEP_INTERVAL varsayılan 10dk.
+	runBoundedStateMaintenance(ctx, entGraph, seqModel,
+		getdurEnv("KUT_GRAPH_TTL", 720*time.Hour), getdurEnv("KUT_GRAPH_SWEEP_INTERVAL", 10*time.Minute))
 	// Paylaşımlı SOC vaka deposu: korelasyon incident'leri otomatik vaka açar
 	// (incidentcase dekoratörü) ve admin API aynı depoyu sunar (/api/cases). DB
 	// modunda kalıcı (cases tablosu, write-through), demo modunda bellek-içi.
@@ -763,7 +774,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		socBrain = aibrain.New(aibrain.NewHTTPProvider(aiURL, os.Getenv("KUT_AI_KEY"), os.Getenv("KUT_AI_MODEL"), 0), 0)
 		log.Printf("SOC AI brain: dış sağlayıcı bağlı (%s)", aiURL)
 	} else {
-		socBrain = aibrain.New(aibrain.NewLocalProviderWithSeq(seqModel), 0) // yerel deterministik varsayılan
+		socBrain = aibrain.New(aibrain.NewLocalProviderWithSeqs(seqModel), 0) // yerel deterministik varsayılan
 	}
 	adminAPI.SetBrain(socBrain) // salt-öneri triyaj (/api/ai/triage; fail-open)
 	// Otonom soruşturma ajanı (G1 aktivasyon — sanctioned ince-adaptör deseni): SIFIR-AĞ
