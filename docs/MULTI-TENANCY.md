@@ -158,12 +158,20 @@ enrollment token isteği kiracı göndermez (kiracı sunucuda çözülür).
    `sed -n '/^-- BEGIN W1B1-UPGRADE/,/^-- END W1B1-UPGRADE/p' db/schema.sql | psql "$KUT_DATABASE_URL"`.
    Blok önce yeni `uq_devices_tenant_mac` indeksini oluşturur, SONRA eski küresel
    `devices_mac_address_bidx_key` kısıtını düşürür; `policies.tenant_id` sütununu ekler.
+   **Kilit**: indeks `CONCURRENTLY` DEĞİL kurulur;
+   build boyunca `devices` üzerinde SHARE kilidi tutulur ve cihaz yazmaları (enroll, heartbeat,
+   etiket) bekler. Bakım penceresinde uygulayın. Ardından aşağıdaki "Yükseltme sonrası doğrulama"
+   sorgusunu çalıştırın (kısıt farklı adlıysa DROP sessizce no-op olur).
 2. Yeni ikiliyi AYNI bakım penceresinde dağıtın: eski ikili `ON CONFLICT (mac_address_bidx)`
    kullandığından kısıt düşünce cihaz kaydı (enroll) çalışmaz; yeni ikili ise `policies.tenant_id`
-   sütununu bekler. İki adım arası yalnız enroll/politika uçları etkilenir.
+   sütununu bekler. **İkili/şema uyumsuzluğu** (yeni ikili + eski şema ya da eski ikili + yeni şema)
+   yalnız enroll/politika YÖNETİM uçlarını değil, AJANIN politika çekimini de bozar (akış
+   `Internal` döner). İki adım arasını mümkün olduğunca kısa tutun.
 3. Geri alma: `ALTER TABLE devices ADD CONSTRAINT devices_mac_address_bidx_key UNIQUE
    (mac_address_bidx)` yalnız farklı kiracılarda aynı MAC'li satır YOKSA başarılır; önce mükerrerleri
-   çözün.
+   çözün. **Geri alma fiilen tek yönlüdür**: yükseltmeden sonra bir kiracı başka kiracıyla aynı MAC'i
+   kaydettiyse geri alma bu cihaz satırlarından birinin SİLİNMESİNİ gerektirir. `uq_devices_tenant_mac`
+   indeksi geri almada bırakılabilir (zararsız, daha zayıf).
 4. İsteğe bağlı, tek seferlik backfill (geçmiş satırları yeni temsile çevirir; tekrar çalıştırılabilir,
    bir transaction içinde uygulayın). Yeni yazımlar zaten doğru kiracıyı taşır; bu yalnız eski
    satırlar içindir:
@@ -202,6 +210,94 @@ SELECT dp.device_id, dp.policy_id, d.tenant_id AS cihaz_kiracisi, p.tenant_id AS
 
    Bu atamalar ajana ZATEN itilmez (politika çekimi kiracı eşleşmesi arar); satırları temizlemek
    için `DELETE FROM device_policies` ile ilgili çiftleri silin.
+
+## W1b-2 — Kiracı Duvarı III: telemetri, analizörler, AI ve graf
+
+- **HTTP `/api/ingest` kiracıya bağlıdır (Z3-01 / Z4a-15)**: yönetilen ingest token'ları
+  OLUŞTURULURKEN bir kiracıya bağlanır (`POST /api/tokens {"scope":"ingest","tenant":"acme"}`;
+  yalnız platform admini; kiracı `tenant.Normalize` ile doğrulanır; yalnız `ingest` kapsamı
+  kiracıya bağlanabilir, `metrics` bağlanamaz). Olaylar `EventID` türetmesi, yineleme tespiti ve
+  `SaveEvents`'ten ÖNCE token'ın kiracısıyla damgalanır; istek başlığı/gövdesi/query'si kiracı
+  SEÇEMEZ. Kaynak "cihaz" kimliği kiracıya ad-alanlanır (`logingest.TenantDeviceID`): iki kiracı
+  aynı kaynak adını (`fw1`) kullansa da AYRI cihaz/eşik/korelatör durumuna sahiptir. Varsayılan
+  kiracı süreklilik için eski kimliği korur.
+  - `KUT_TENANT_ENFORCE=1` iken kiracıya bağlı OLMAYAN token (statik `KUT_INGEST_TOKEN` dahil)
+    `403` alır ve kiracısız ingest token'ı üretilemez (INV-044: eksik kiracı → DENY).
+  - **Legacy**: zorlama KAPALIYKEN kiracısız token'lar (statik env token ve W1b-2 öncesi üretilmiş
+    yönetilen token'lar) olayları dağıtımın varsayılan kiracısıyla (`KUT_TENANT_ID`, boşsa `default`)
+    damgalar. Çok-kiracılı kurulumda bu token'ları kiracıya bağlı yenileriyle değiştirin.
+- **Connector olayları** her connector'ın yapılandırılmış kiracısıyla (`"tenant"` alanı;
+  boşsa dağıtım varsayılanı) kaydetmeden önce damgalanır; geçersiz kiracı başlangıçta hata verir.
+  Connector olayları henüz paylaşılan tespit hattından GEÇMEZ (W3 dalgasının işi).
+- **Sunucu-taraflı analizörler** (beacon, yanal hareket, DNS tüneli, kaba-kuvvet, zincir) bulguyu
+  CİHAZIN kiracısıyla yazar: önce cihaz kaydı, kayıtsız ingest kaynakları için cihazın kendi
+  olaylarındaki sunucu-damgalı kiracı, son olarak (yalnız zorlama kapalıyken) dağıtım varsayılanı.
+  Çözülemezse bulgu atlanır (`kut_analyzer_skipped_total`). `Details` her zaman geçerli JSON'dur
+  (`encoding/json`); "uyarıldı" bayrağı yalnız BAŞARILI kayıttan sonra set edilir. Bilinen sınır
+  (Z2-05, W3): analizörler okuma başına 1000 satırlık pencereyle çalışır.
+- **SSE bildirimleri**: heartbeat / oto-karantina cihaz bildirimleri cihazın kiracısına atfedilir;
+  kiracı çözülemezse (zorlama açıkken) yayınlanmaz.
+- **agentsec grafı kiracı başına bölümlüdür (Z5-02 / Z4a-05)**: `/api/agentsec/{findings,
+  canonical,events}` ve imzalı telemetri sunucu-tarafı çözülmüş kiracının bölümünü okur/yazar.
+  Kiracılı çağıran yalnız kendi bölümüne erişir (`?tenant=` yok sayılır); platform admini tüm
+  bölümleri (bulgular `tenant` etiketli) ya da doğrulanmış `?tenant=` ile tek bölümü okur; yazımı
+  platform bölümüne (`""`) ya da açık kiracıya yapar. Bölüm başına düğüm/kenar tavanı, 256 bayt
+  kimlik sınırı, istek başına 1000 düğüm / 2000 kenar sınırı.
+- **AI avı kiracı-kapsamlıdır (Z5-03)**: `/api/ai/hunt` yalnız çağıranın kiracısının graf
+  düğümlerini tarar (`HuntScope`); platform admini tümünü ya da gövdede `tenant` ile tek kiracıyı
+  görür. `entitygraph.NodesByKindFor` tam kiracı eşleşmesidir (boş kiracı "hepsi" DEĞİLDİR).
+- **Raporlar (Z5-15)**: süreç-geneli sayaçlar (tespit/alarm/bastırılan/IoC) kiracıya bağlı raporlarda
+  ve kiracılı `GET /api/activity` yanıtında YOKTUR (`counters_omitted: true`); yalnız platform
+  görür. Zamanlanmış raporda zorlama açıkken de çıkarılır.
+- **Sınırlı bellek (Z3-03 / Z5-18)**: ajan-kontrollü dizgelerden beslenen varlık grafı kiracı
+  başına tavanlıdır (`KUT_GRAPH_MAX_EDGES`, `KUT_GRAPH_MAX_NODES`; varsayılan 100k) ve tavan aşılınca
+  YALNIZ ihlal eden kiracının en eski-gözlenen kenarı atılır (LRU). Besleyici 256 bayttan uzun
+  dizgeleri atar ve en çok 32 `parent_chain` girdisi işler. Sekans modeli kiracı BAŞINA ayrı ve
+  sınırlıdır (`KUT_SEQMODEL_MAX_SOURCES`). Bakım döngüsü `KUT_GRAPH_TTL` (varsayılan 720h) kadar
+  gözlenmeyen kenar/kaynakları atar (`KUT_GRAPH_SWEEP_INTERVAL`, varsayılan 10dk). `/metrics`:
+  `kut_graph_{dropped,feed_dropped,evicted,pruned}_total`, `kut_graph_size{kind}`,
+  `kut_seqmodel_{dropped,evicted}_total`, `kut_seqmodel_sources`, `kut_agentsec_dropped_total`.
+  Sekans skoru uçları (`/api/hunt/sequence-score`, `/api/ai/risk`) çağıranın kiracı taban
+  çizgisini kullanır; platform admini `?tenant=` seçer, yoksa dağıtım kiracısı.
+- **Otomatik vaka (Z5-19)**: cihaz kiracısı çözülemezse vaka AÇILMAZ (incident yine açılır;
+  `kut_incident_case_total{result}`); `default` kovasına düşülmez. Boş kiracı kanonik `default`
+  kiracısıdır, zorlama açıkken atlanır.
+
+### Mevcut kurulumlar için yükseltme (W1b-2)
+
+1. Şema bloğunu uygulayın (idempotent; taze kurulumda no-op):
+   `sed -n '/^-- BEGIN W1B2-UPGRADE/,/^-- END W1B2-UPGRADE/p' db/schema.sql | psql "$KUT_DATABASE_URL"`.
+   Blok yalnız `tokens.tenant_id` sütununu ekler (tablo kilidi çok kısa; mevcut token'lar `''` =
+   kiracısız/legacy kalır).
+2. Yeni ikiliyi dağıtın. Yeni ikili `tokens.tenant_id` bekler: şemadan ÖNCE dağıtılırsa yönetilen
+   token doğrulaması (`/api/ingest`, `/metrics`) başarısız olur; şema yeni sütunu eklediğinden eski
+   ikili çalışmaya devam eder (geri uyumlu) — bu yüzden ÖNCE şema, SONRA ikili.
+3. Kiracı başına ingest token'ı üretin ve kaynakları ona taşıyın; bittiğinde `KUT_TENANT_ENFORCE=1`
+   ile kiracısız token'ları kapatın. Geri alma: ikiliyi eskisiyle değiştirmek yeterlidir (sütun
+   zararsız kalır).
+
+## Yükseltme sonrası doğrulama (W1b-1 küresel MAC kısıtı)
+
+`DROP CONSTRAINT IF EXISTS devices_mac_address_bidx_key` kısıt FARKLI bir adla varsa sessizce hiçbir
+şey yapmaz; küresel tekillik bu durumda sinyalsiz sürerdi. Yükseltmeden sonra adı ne olursa olsun
+`mac_address_bidx` üzerindeki tek-sütunlu UNIQUE kısıt/indeks sayısının **0** olduğunu doğrulayın:
+
+```sql
+SELECT (SELECT count(*) FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+          JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY (c.conkey)
+         WHERE t.relname = 'devices' AND c.contype = 'u'
+           AND array_length(c.conkey, 1) = 1 AND a.attname = 'mac_address_bidx')
+     + (SELECT count(*) FROM pg_index i
+          JOIN pg_class t ON t.oid = i.indrelid
+          JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0]
+         WHERE t.relname = 'devices' AND i.indisunique AND i.indnatts = 1
+           AND a.attname = 'mac_address_bidx') AS kalan_kuresel_tekillik;
+-- beklenen: 0
+```
+
+Sonuç 0 değilse kalan kısıtı `\d devices` ile bulup düşürün (`ALTER TABLE devices DROP CONSTRAINT <ad>`),
+aksi halde per-kiracı MAC (S-3) yalnız yarım etkilidir.
 
 ## Değişmezler
 
