@@ -97,6 +97,7 @@ type adminEntry struct {
 	active      bool
 	mfaSecret   string
 	mfaEnrolled bool
+	mfaPending  string
 	mfaLastStep int64
 }
 
@@ -234,8 +235,7 @@ func (m *memStore) SetAdminRole(_ context.Context, id string, role Role) error {
 }
 func (m *memStore) SetPendingMFASecret(_ context.Context, id, secret string) error {
 	if a, ok := m.admins[id]; ok {
-		a.mfaSecret = secret
-		a.mfaEnrolled = false
+		a.mfaPending = secret
 	}
 	return nil
 }
@@ -245,8 +245,16 @@ func (m *memStore) LookupMFA(_ context.Context, id string) (string, bool, error)
 	}
 	return "", false, nil
 }
+func (m *memStore) LookupPendingMFA(_ context.Context, id string) (string, error) {
+	if a, ok := m.admins[id]; ok {
+		return a.mfaPending, nil
+	}
+	return "", nil
+}
 func (m *memStore) ActivateMFA(_ context.Context, id string) error {
-	if a, ok := m.admins[id]; ok && a.mfaSecret != "" {
+	if a, ok := m.admins[id]; ok && a.mfaPending != "" {
+		a.mfaSecret = a.mfaPending
+		a.mfaPending = ""
 		a.mfaEnrolled = true
 	}
 	return nil
@@ -264,6 +272,7 @@ func (m *memStore) ConsumeTOTPStep(_ context.Context, id string, step int64) (bo
 func (m *memStore) DisableMFA(_ context.Context, id string) error {
 	if a, ok := m.admins[id]; ok {
 		a.mfaSecret = ""
+		a.mfaPending = ""
 		a.mfaEnrolled = false
 	}
 	return nil

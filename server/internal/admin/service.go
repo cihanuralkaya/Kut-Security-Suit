@@ -132,15 +132,20 @@ type Store interface {
 	// YALNIZ o kiracının yöneticileri döner (platform adminleri dahil DEĞİL); boş →
 	// tüm yöneticiler (yalnız platform admini çağırır — service katmanı zorunlu kılar).
 	ListAdmins(ctx context.Context, tenantID string) ([]AdminInfo, error)
-	// SetPendingMFASecret, yöneticinin TOTP sırrını (henüz etkin değil) saklar.
-	// Depo sırrı at-rest şifreler (db katmanı); mfa_enrolled false kalır.
+	// SetPendingMFASecret, yöneticinin YENİ TOTP sırrını BEKLEYEN olarak saklar (at-rest
+	// şifreli). Etkin sır ve mfa_enrolled DEĞİŞMEZ: yeniden kayıtta mevcut MFA, yeni sır
+	// ActivateMFA ile etkinleşene dek aynen zorunlu kalır.
 	SetPendingMFASecret(ctx context.Context, adminID, secret string) error
-	// LookupMFA, yöneticinin TOTP sırrını ve etkin (enrolled) durumunu döner.
+	// LookupMFA, yöneticinin ETKİN TOTP sırrını ve etkin (enrolled) durumunu döner
+	// (bekleyen sırrı DÖNMEZ — giriş/devre dışı bırakma yalnız etkin sırra karşı doğrulanır).
 	// Sır yoksa ("", false, nil) döner.
 	LookupMFA(ctx context.Context, adminID string) (secret string, enrolled bool, err error)
-	// ActivateMFA, bekleyen TOTP sırrını etkinleştirir (mfa_enrolled=true).
+	// LookupPendingMFA, bekleyen (etkinleştirilmemiş) TOTP sırrını döner; yoksa ("", nil).
+	LookupPendingMFA(ctx context.Context, adminID string) (secret string, err error)
+	// ActivateMFA, bekleyen sırrı ATOMİK olarak etkin sır yapar (mfa_enrolled=true; eski
+	// sır geçersizleşir). Bekleyen sır yoksa hiçbir şey değişmez.
 	ActivateMFA(ctx context.Context, adminID string) error
-	// DisableMFA, TOTP sırrını siler ve MFA'yı kapatır.
+	// DisableMFA, etkin ve bekleyen TOTP sırrını siler ve MFA'yı kapatır.
 	DisableMFA(ctx context.Context, adminID string) error
 	// ConsumeTOTPStep, TOTP tek-kullanım (anti-replay) zorlamasıdır: verilen adım sayacını
 	// (VerifyTOTPStep'ten) yöneticinin son kabul edilen adımından BÜYÜKSE atomik olarak
@@ -404,7 +409,11 @@ func (s *Service) RevokeEnrollmentToken(ctx context.Context, adminID, tokenID st
 // ZORUNLUDUR: aksi halde çalınmış/uzun ömürlü bir oturum, kodsuz /mfa/enroll ile MFA'yı
 // sessizce kapatabilirdi (DisableMFA kod ister, enroll istemiyordu). Kod, ActivateMFA/
 // DisableMFA ile aynı anti-replay (ConsumeTOTPStep) yoluyla tüketilir. İlk kayıtta
-// (MFA etkin değil) kod gerekmez. Her başlatma denetim izine yazılır.
+// (MFA etkin değil) kod gerekmez. Yeni sır BEKLEYEN olarak ayrı saklanır; mevcut sır ve
+// etkin durum, yeni sır ActivateMFA ile (YENİ sırdan geçerli kodla) etkinleşene dek
+// DEĞİŞMEZ — böylece yeniden kayıt penceresinde giriş MFA'yı zorunlu kılmaya, DisableMFA
+// ise mevcut sırdan kod istemeye devam eder; terk edilen yeniden kayıt MFA'yı kapatmaz.
+// Her başlatma denetim izine yazılır.
 func (s *Service) BeginMFAEnrollment(ctx context.Context, adminID, currentCode string) (secret, uri string, err error) {
 	if err := s.require(ctx, adminID, RoleViewer); err != nil {
 		return "", "", err
@@ -442,13 +451,14 @@ func (s *Service) BeginMFAEnrollment(ctx context.Context, adminID, currentCode s
 	return secret, uri, nil
 }
 
-// ActivateMFA, bekleyen TOTP sırrını yalnız geçerli bir kod ile etkinleştirir
-// (kullanıcının authenticator'ı doğru kurduğunu kanıtlar). Doğrulama izi yazılır.
+// ActivateMFA, BEKLEYEN TOTP sırrını yalnız o (YENİ) sırdan üretilmiş geçerli bir kod ile
+// etkinleştirir (kullanıcının authenticator'ını doğru kurduğunu kanıtlar); depoda atomik
+// takas yapılır: yeni sır etkin olur, eski sır GEÇERSİZLEŞİR. Doğrulama izi yazılır.
 func (s *Service) ActivateMFA(ctx context.Context, adminID, code string) error {
 	if err := s.require(ctx, adminID, RoleViewer); err != nil {
 		return err
 	}
-	secret, _, err := s.store.LookupMFA(ctx, adminID)
+	secret, err := s.store.LookupPendingMFA(ctx, adminID)
 	if err != nil {
 		return err
 	}

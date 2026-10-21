@@ -59,6 +59,7 @@ type adminRec struct{ id, hash string }
 
 type mfaRec struct {
 	secret   string
+	pending  string
 	enrolled bool
 	lastStep int64
 }
@@ -263,7 +264,12 @@ func (m *memStore) ensureMFA() {
 }
 func (m *memStore) SetPendingMFASecret(_ context.Context, id, secret string) error {
 	m.ensureMFA()
-	m.mfa[id] = &mfaRec{secret: secret, enrolled: false}
+	r, ok := m.mfa[id]
+	if !ok {
+		r = &mfaRec{}
+		m.mfa[id] = r
+	}
+	r.pending = secret // etkin sır/enrolled DEĞİŞMEZ (yeniden kayıtta MFA açık kalır)
 	return nil
 }
 func (m *memStore) LookupMFA(_ context.Context, id string) (string, bool, error) {
@@ -273,9 +279,18 @@ func (m *memStore) LookupMFA(_ context.Context, id string) (string, bool, error)
 	}
 	return "", false, nil
 }
+func (m *memStore) LookupPendingMFA(_ context.Context, id string) (string, error) {
+	m.ensureMFA()
+	if r, ok := m.mfa[id]; ok {
+		return r.pending, nil
+	}
+	return "", nil
+}
 func (m *memStore) ActivateMFA(_ context.Context, id string) error {
 	m.ensureMFA()
-	if r, ok := m.mfa[id]; ok && r.secret != "" {
+	if r, ok := m.mfa[id]; ok && r.pending != "" {
+		r.secret = r.pending
+		r.pending = ""
 		r.enrolled = true
 	}
 	return nil
@@ -1536,4 +1551,55 @@ func (m *memStore) AppendCustody(_ context.Context, evidenceID string, e evidenc
 	}
 	m.custody[evidenceID] = append(m.custody[evidenceID], e)
 	return nil
+}
+
+// S-7 (HTTP): yeniden kayıt BAŞARILI olduktan sonra, yeni sır etkinleştirilene dek MFA
+// zorunluluğu sürer — kodsuz giriş token vermez, keyfi kodla disable reddedilir ve MFA
+// durumu (etkin sır + enrolled) değişmez.
+func TestMFAReenrollPendingWindowStaysEnforced(t *testing.T) {
+	ts, store := setup(t)
+	defer ts.Close()
+	addAdmin(t, store, "op1", "op@x", "secret", admin.RoleOperator)
+
+	const oldSecret = "JBSWY3DPEHPK3PXP"
+	store.ensureMFA()
+	store.mfa["op1"] = &mfaRec{secret: oldSecret, enrolled: true}
+
+	// Mevcut kodla giriş → oturum.
+	otp, _ := security.TOTPAt(oldSecret, time.Now())
+	_, lb := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret", "code": otp})
+	token := lb["token"]
+	if token == "" {
+		t.Fatal("geçerli kodla giriş token vermeliydi")
+	}
+
+	// Yeniden kayıt (sonraki adımdan geçerli mevcut kod) → 200 + yeni sır.
+	otp2, _ := security.TOTPAt(oldSecret, time.Now().Add(30*time.Second))
+	code, eb := post(t, ts.URL+"/api/mfa/enroll", token, map[string]string{"code": otp2})
+	if code != http.StatusOK || eb["secret"] == "" || eb["secret"] == oldSecret {
+		t.Fatalf("yeniden kayıt başarısız: %d %v", code, eb)
+	}
+
+	// Bekleyen pencerede MFA hâlâ açık: eski sır etkin, enrolled=true, yeni sır bekleyen.
+	r := store.mfa["op1"]
+	if !r.enrolled || r.secret != oldSecret || r.pending != eb["secret"] {
+		t.Fatalf("bekleyen pencerede etkin MFA korunmalı: %+v", r)
+	}
+	// Kodsuz giriş token VERMEMELİ.
+	_, nb := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret"})
+	if nb["token"] != "" {
+		t.Fatal("bekleyen pencerede kodsuz giriş token vermemeliydi")
+	}
+	// Yeni (bekleyen) sırdan gelen kodla giriş de reddedilir (henüz etkin değil).
+	pend, _ := security.TOTPAt(eb["secret"], time.Now())
+	if c, _ := post(t, ts.URL+"/api/login", "", map[string]string{"email": "op@x", "password": "secret", "code": pend}); c != http.StatusUnauthorized {
+		t.Fatalf("bekleyen sırdan kod ile giriş 401 dönmeliydi, %d", c)
+	}
+	// Keyfi kodla disable reddedilir ve MFA açık kalır.
+	if c, _ := post(t, ts.URL+"/api/mfa/disable", token, map[string]string{"code": "000000"}); c == http.StatusOK {
+		t.Fatal("keyfi kodla disable başarılı olmamalıydı")
+	}
+	if !store.mfa["op1"].enrolled || store.mfa["op1"].secret != oldSecret {
+		t.Fatal("reddedilen disable MFA'yı kapatmamalıydı")
+	}
 }

@@ -41,7 +41,7 @@ func TestMFAEnrollmentLifecycle(t *testing.T) {
 	if secret == "" || !strings.HasPrefix(uri, "otpauth://") {
 		t.Fatalf("sır+otpauth URI dönmeliydi: secret=%q uri=%q", secret, uri)
 	}
-	if store.admins[id].mfaSecret != secret || store.admins[id].mfaEnrolled {
+	if store.admins[id].mfaPending != secret || store.admins[id].mfaSecret != "" || store.admins[id].mfaEnrolled {
 		t.Fatalf("sır bekleyen olarak saklanmalıydı: %+v", store.admins[id])
 	}
 
@@ -106,7 +106,7 @@ func TestDisableMFAPendingOnly(t *testing.T) {
 	if err := svc.DisableMFA(ctx, id, ""); err != nil {
 		t.Fatalf("bekleyen sır kod olmadan temizlenmeli: %v", err)
 	}
-	if store.admins[id].mfaSecret != "" {
+	if store.admins[id].mfaPending != "" {
 		t.Fatal("bekleyen sır temizlenmeliydi")
 	}
 	if hasAudit(store.audits, "MFA_DISABLED", "admin", id) {

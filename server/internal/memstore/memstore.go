@@ -107,7 +107,8 @@ type adminRec struct {
 	active                  bool
 	mfaSecret               string // TOTP sırrı (bellek-içi demo; db katmanı şifreler)
 	mfaEnrolled             bool
-	mfaLastStep             int64 // en son kabul edilen TOTP adım sayacı (tek-kullanım/anti-replay)
+	mfaPending              string // yeniden kayıtta bekleyen sır (etkinleşene dek mfaSecret/mfaEnrolled değişmez)
+	mfaLastStep             int64  // en son kabul edilen TOTP adım sayacı (tek-kullanım/anti-replay)
 }
 
 type auditRec struct {
@@ -851,18 +852,18 @@ func (s *Store) ListAdmins(_ context.Context, tenantID string) ([]admin.AdminInf
 	return out, nil
 }
 
-// SetPendingMFASecret, yöneticinin TOTP sırrını saklar (henüz etkin değil).
+// SetPendingMFASecret, yeni TOTP sırrını BEKLEYEN olarak saklar; etkin sır ve etkin
+// durum (mfaSecret/mfaEnrolled) değişmez (db katmanıyla aynı: yeniden kayıtta MFA açık kalır).
 func (s *Store) SetPendingMFASecret(_ context.Context, adminID, secret string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if a, ok := s.adminsByID[adminID]; ok {
-		a.mfaSecret = secret
-		a.mfaEnrolled = false
+		a.mfaPending = secret
 	}
 	return nil
 }
 
-// LookupMFA, TOTP sırrını ve etkin durumunu döner.
+// LookupMFA, ETKİN TOTP sırrını ve etkin durumunu döner.
 func (s *Store) LookupMFA(_ context.Context, adminID string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -872,22 +873,36 @@ func (s *Store) LookupMFA(_ context.Context, adminID string) (string, bool, erro
 	return "", false, nil
 }
 
-// ActivateMFA, bekleyen sırrı etkinleştirir.
+// LookupPendingMFA, bekleyen (etkinleştirilmemiş) TOTP sırrını döner; yoksa "".
+func (s *Store) LookupPendingMFA(_ context.Context, adminID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if a, ok := s.adminsByID[adminID]; ok {
+		return a.mfaPending, nil
+	}
+	return "", nil
+}
+
+// ActivateMFA, bekleyen sırrı atomik olarak etkin sır yapar (eski sır geçersizleşir).
+// Bekleyen sır yoksa hiçbir şey değişmez.
 func (s *Store) ActivateMFA(_ context.Context, adminID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if a, ok := s.adminsByID[adminID]; ok && a.mfaSecret != "" {
+	if a, ok := s.adminsByID[adminID]; ok && a.mfaPending != "" {
+		a.mfaSecret = a.mfaPending
+		a.mfaPending = ""
 		a.mfaEnrolled = true
 	}
 	return nil
 }
 
-// DisableMFA, sırrı temizler ve MFA'yı kapatır.
+// DisableMFA, etkin ve bekleyen sırrı temizler ve MFA'yı kapatır.
 func (s *Store) DisableMFA(_ context.Context, adminID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if a, ok := s.adminsByID[adminID]; ok {
 		a.mfaSecret = ""
+		a.mfaPending = ""
 		a.mfaEnrolled = false
 	}
 	return nil
