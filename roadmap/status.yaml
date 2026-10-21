@@ -1,0 +1,436 @@
+# roadmap/status.yaml - single source of truth (the program controller reads and writes this file)
+# Seeded from status.seed.yaml and updated by the crosswalk against origin/main 46fc98c (2026-10-22).
+# States: planned > claimed > implemented > verified > done | blocked | dropped.
+# "done" needs CI evidence (invariant 10). "claimed" with evidence = partial work merged, see the comment.
+# Unchanged packages use one flow-style line each; flow and block style are the same schema.
+schema: kut-roadmap/v1
+defaults: {state: planned, evidence: {pr: null, ci_run: null, tests: [], artifacts: []}}
+packages:
+  - {id: WP-AI-001, tier: NOW, state: planned, effort_ag: 0.5, title: "Mock'u üretimden çıkar ve AI durumunu dürüst raporla", depends_on: [], gates: []}
+  - {id: WP-AI-002, tier: NOW, state: planned, effort_ag: 1.0, title: "AI uçlarına RBAC + rate-limit", depends_on: [], gates: []}
+  - {id: WP-AI-003, tier: NOW, state: planned, effort_ag: 2.0, title: "Tek egress noktası + DLP/SecretBroker zorunluluğu", depends_on: [], gates: []}
+  - {id: WP-AI-004, tier: NOW, state: planned, effort_ag: 1.0, title: "`services/ai` sertleştirme → `services/ai-worker`", depends_on: [], gates: []}
+  - {id: WP-AI-006, tier: NOW, state: planned, effort_ag: 0.5, title: "AI talepçisi için 'asla onaysız aksiyon'", depends_on: [], gates: []}
+  - {id: WP-CP-000, tier: NOW, state: planned, effort_ag: 1.5, title: "Geliştirme ortamı (compose + devcontainer)", depends_on: [], gates: []}
+  - {id: WP-CP-001, tier: NOW, state: planned, effort_ag: 2.0, title: "Migration çerçevesi (goose) + rol modeli", depends_on: [], gates: []}
+  - {id: WP-CP-002a, tier: NOW, state: planned, effort_ag: 2.0, title: "RLS altyapısı: `withTenant` + iki havuz + CI rolü", depends_on: [WP-CP-001], gates: []}   # derived: section 5 critical path (goose then RLS)
+  - id: WP-CP-002b
+    tier: NOW
+    state: claimed   # partial: tenant-column normalization slices merged (policies.tenant_id, tokens.tenant_id, per-tenant MAC unique index, event_ack/incidents tenant writes, legacy empty tenant == default). Remaining: RLS table coverage (policies, tokens, enrollment tokens, admins have no policy), tenant_id type/NOT NULL normalization (event_ack is TEXT), backfill, goose migration.
+    effort_ag: 2.0
+    title: "RLS tablo kapsamı ve kiracı sütunu normalizasyonu"
+    depends_on: [WP-CP-002a]   # derived: section 5 critical path
+    gates: [G2]
+    evidence:
+      pr: 4
+      ci_run: 39638351788
+      tests: [TestPGMACSquatCannotBlockOtherTenant, TestPGUpgradeBlockIdempotent, TestPGPolicyTenantOwnership, TestPGEventAckWritesEventTenant, TestPGOpenIncidentWritesDeviceTenant, TestPGIngestTokenTenantBinding, TestPGLegacyEmptyTenantDeviceReenrollsUnderDefault]
+      artifacts: ["PR#2 merge c654c8f main-push CI run 39594304285", "PR#3 merge 89542e0 main-push CI run 39600267586", "PR#4 merge 1b83614 main-push CI run 39638351788"]
+  - {id: WP-CP-002c, tier: NOW, state: planned, effort_ag: 2.5, title: "Sorguların `withTenant`'a taşınması + memstore paritesi", depends_on: [WP-CP-002b], gates: []}   # derived: section 5 critical path
+  - {id: WP-CP-003, tier: NOW, state: planned, effort_ag: 0.5, title: "Sıkı kiracı modu varsayılan", depends_on: [], gates: []}
+  - id: WP-CP-004
+    tier: NOW
+    state: claimed   # partial: slice W2-S1 merged (shared command-type table, Protected() covers all types, Z2-02 scope fix). Remaining: D1 DSSE envelope (PR#6 open, being reworked), signed_body persisted in DB, signed command_id == DB id, CommandVerifier bound in production, multi-signature approvals, delivery over proto, agent-side enforcement (WP-EP-002).
+    effort_ag: 3.0
+    title: "İmzalı komut zarfının kalıcılığı ve taşınması — sunucu"
+    depends_on: [WP-PM-025]   # derived: roadmap section 5 critical path (decision sprint D1 first)
+    gates: [G2, G3]
+    evidence:
+      pr: 5
+      ci_run: 39643713951
+      tests: [TestProtectedCoversEveryKnownType, TestSpecTableInvariants, TestDriftGuard_ProtoEnum, TestDriftGuard_DBSchema, TestAgentProtectedSetMatchesServerTable, TestAgentSwitchDrift, TestCommandAuthorizer_EveryTableTypeClassified, TestEnforce_QuarantineThenUnquarantine, TestServiceTablesAgree]
+      artifacts: ["PR#5 merge 46fc98c main-push CI run 39643713951", "PR#6 (W2-S2 wire freeze) open, not merged"]
+  - {id: WP-CP-004b, tier: NOW, state: planned, effort_ag: 2, title: "Sunucu tarafı PolicyBundle imzası + monoton policy_seq", depends_on: [], gates: []}
+  - {id: WP-CP-005, tier: NOW, state: planned, effort_ag: 3.0, title: "Dört-göz sertleştirme + onaylayıcı imzaları", depends_on: [], gates: []}
+  - id: WP-CP-006
+    tier: NOW
+    state: claimed   # partial: tenant-level enrollment binding merged (token pinned to tenant, revoke gate, no cross-tenant re-home, status kept, per-tenant MAC key). Remaining: same-tenant MAC takeover with a valid token, device identity bound to its certificate/key (identity unification), tenant binding delivered to the agent (proto fields are in PR#6), token burned before tenant check.
+    effort_ag: 2.0
+    title: "Enrollment kimlik bağlama"
+    depends_on: []
+    gates: [G2]
+    evidence:
+      pr: 3
+      ci_run: 39600267586
+      tests: [TestPGEnrollTenantWallAndStatusKept, TestPGTokenTenantAndAdminListScoped, TestPGLegacyEmptyTenantDeviceReenrollsUnderDefault, TestPGMACSquatCannotBlockOtherTenant, TestEnrollCannotRehomeDeviceAcrossTenants]
+      artifacts: ["PR#2 merge c654c8f main-push CI run 39594304285", "PR#3 merge 89542e0 main-push CI run 39600267586"]
+  - {id: WP-CP-007, tier: NOW, state: planned, effort_ag: 1.0, title: "Login DoS", depends_on: [], gates: []}
+  - {id: WP-CP-008, tier: NOW, state: planned, effort_ag: 1.5, title: "Güvenli varsayılan kurulum", depends_on: [], gates: []}
+  - {id: WP-CP-009, tier: NOW, state: planned, effort_ag: 1.5, title: "Komut yaşam döngüsü kalıcılığı; upload ve sonucun komuta bağlanması", depends_on: [], gates: []}
+  - {id: WP-CP-009b, tier: NOW, state: planned, effort_ag: 1, title: "COLLECT_FILE sunucu allow-list + hassas yol için ADMIN + gerekçe", depends_on: [], gates: []}
+  - id: WP-CP-010
+    tier: NOW
+    state: claimed   # partial: revocation enforced on every TLS handshake incl. resumed sessions (VerifyConnection) and revocation list primed synchronously at start (fail-closed). Remaining: 60 s poll window and no max-staleness bound, established streams are not closed on revoke.
+    effort_ag: 2.0
+    title: "Açık bağlantılarda iptal"
+    depends_on: []
+    gates: []
+    evidence:
+      pr: 2
+      ci_run: 39594304285
+      tests: [TestRevokedCertRejectedOnResumedSession, TestResumedSessionBypassWithoutVerifyConnection, TestVerifyConnection]
+      artifacts: ["PR#2 merge c654c8f main-push CI run 39594304285"]
+  - id: WP-CP-012
+    tier: NOW
+    state: claimed   # partial: tenantless/unscoped endpoints closed (enrollment token issue, admin management, API tokens, tags, policies, forensics listings, ingest, AI hunt, agentsec, reports) with negative tests. Remaining: route metadata registry (MinRole/TenantScoped/Audit per route) and a test that enumerates every route; aggregate endpoints not re-verified (Z4a-08).
+    effort_ag: 1.0
+    title: "Kiracı kapsamsız uçlar + route meta testi"
+    depends_on: []
+    gates: []
+    evidence:
+      pr: 4
+      ci_run: 39638351788
+      tests: [TestPolicyTenantWallHTTP, TestTenantInputValidatedAtBoundaries, TestAdminTenantUnknownOrInactiveFailsClosed, TestAIHuntTenantScopedHTTP, TestPGWritesCarryTenantPredicate, TestPGIngestTokenTenantBinding]
+      artifacts: ["PR#2 merge c654c8f main-push CI run 39594304285", "PR#3 merge 89542e0 main-push CI run 39600267586", "PR#4 merge 1b83614 main-push CI run 39638351788"]
+  - {id: WP-CP-015, tier: NOW, state: planned, effort_ag: 3.0, title: "Oturumlar: sid + kısa ömür + HttpOnly çerez + CSRF", depends_on: [], gates: []}
+  - {id: WP-CP-019, tier: NOW, state: planned, effort_ag: 3.0, title: "Sır sağlayıcı zinciri", depends_on: [], gates: []}
+  - {id: WP-CP-020, tier: NOW, state: planned, effort_ag: 2.0, title: "Audit zinciri HMAC + imzalı checkpoint + artefakt değişmezliği", depends_on: [], gates: []}
+  - {id: WP-CP-021, tier: NOW, state: planned, effort_ag: 3.0, title: "memstore ↔ PG sözleşme testleri", depends_on: [], gates: []}
+  - {id: WP-CP-024, tier: NOW, state: planned, effort_ag: 1.0, title: "ADR paketi (kontrol düzlemi kararları)", depends_on: [], gates: []}
+  - {id: WP-CP-028, tier: NOW, state: planned, effort_ag: 2, title: "kutctl support-bundle --redact + pilot sağlık izleme", depends_on: [], gates: []}
+  - {id: WP-CP-061, tier: NOW, state: planned, effort_ag: 2.0, title: "Lite tek ikili paketleme", depends_on: [], gates: []}
+  - {id: WP-DP-001, tier: NOW, state: planned, effort_ag: 2.0, title: "Olay kimliği ve idempotent ekleme", depends_on: [], gates: []}
+  - {id: WP-DP-002, tier: NOW, state: planned, effort_ag: 2.0, title: "Kesintisiz ack + boşluk tespiti", depends_on: [], gates: []}
+  - {id: WP-DP-003, tier: NOW, state: planned, effort_ag: 1.0, title: "EventID v2, DeviceID doldurma, partition güvenliği", depends_on: [], gates: []}
+  - {id: WP-DP-006, tier: NOW, state: planned, effort_ag: 1.0, title: "Lider seçimi ve tek ChainDetector", depends_on: [WP-CP-022], gates: []}   # register note: leader election lives in CP-022
+  - {id: WP-DP-007, tier: NOW, state: planned, effort_ag: 3.0, title: "Tespit motoru doğruluğu (gramer)", depends_on: [], gates: []}
+  - {id: WP-DP-008, tier: NOW, state: planned, effort_ag: 3.0, title: "54 yerleşik kuralı yapısal alanlara taşı + kapsama metriği", depends_on: [], gates: []}
+  - {id: WP-DP-009, tier: NOW, state: planned, effort_ag: 3.0, title: "Olay zamanı, watermark ve durum kalıcılığı (Go ara çözüm)", depends_on: [], gates: []}
+  - {id: WP-DP-010, tier: NOW, state: planned, effort_ag: 2.0, title: "Bağlayıcılar: tespit hattı, checkpoint, kalıcı dedup", depends_on: [], gates: []}
+  - {id: WP-DP-011, tier: NOW, state: planned, effort_ag: 1.0, title: "Hunting kısa vade: olay zamanı + JSONB yol filtreleri", depends_on: [], gates: []}
+  - {id: WP-DP-012, tier: NOW, state: planned, effort_ag: 3.0, title: "Ingest ile tespiti ayır", depends_on: [], gates: []}
+  - {id: WP-DP-013, tier: NOW, state: planned, effort_ag: 3, title: "Go ayrıştırıcıları: Sysmon, Windows Security, auditd (pilot için olay-güdümlü kısa yol)", depends_on: [], gates: []}
+  - {id: WP-DP-020, tier: NOW, state: planned, effort_ag: 1.0, title: "Veri düzlemi ADR seti + lisans politikası", depends_on: [], gates: []}
+  - {id: WP-DP-023, tier: NOW, state: planned, effort_ag: 2.0, title: "Veri düzlemi benchmark düzeneği", depends_on: [], gates: []}
+  - {id: WP-EP-000, tier: NOW, state: planned, effort_ag: 1.0, title: "ADR seti", depends_on: [], gates: []}
+  - id: WP-EP-001
+    tier: NOW
+    state: claimed   # in flight: PR#6 (W2-S2 wire freeze) open, not merged, head 0b965d5, PR CI run 39649499310 green. Diverges from D1 (pure Ed25519 over a custom length-prefixed layout, not DSSE PAE); being reworked. Do not merge as is: merging freezes the wire bytes.
+    effort_ag: 2.0
+    title: "Tel sözleşmesi v2 + altın vektörler"
+    depends_on: [WP-PM-025]   # derived: roadmap section 5 critical path (decision sprint D1 first)
+    gates: [G1, G3]
+    evidence:
+      pr: 6
+      ci_run: 39649499310
+      tests: [TestGoldenVectors_BytePinned, TestProtoFieldNumbersFrozen, TestN08_DomainSeparation, TestN10_EveryFieldIsCovered]
+      artifacts: ["PR#6 open (unmerged)"]
+  - {id: WP-EP-002, tier: NOW, state: planned, effort_ag: 2.0, title: "Ajan komut doğrulayıcı", depends_on: [WP-CP-004, WP-EP-001], gates: []}   # register note: BAGIMLILIK CP-004; EP-001 derived from section 5 critical path
+  - {id: WP-EP-003, tier: NOW, state: planned, effort_ag: 0.5, title: "Script'i zarfa bağla", depends_on: [], gates: []}
+  - {id: WP-EP-004, tier: NOW, state: planned, effort_ag: 1.5, title: "COLLECT_FILE sertleştirme", depends_on: [], gates: []}
+  - {id: WP-EP-005, tier: NOW, state: planned, effort_ag: 1.5, title: "İmzalı politika + şifreli LKG önbelleği", depends_on: [], gates: []}
+  - {id: WP-EP-006, tier: NOW, state: planned, effort_ag: 2.5, title: "securestore v1 (COSE_Encrypt0)", depends_on: [WP-PM-025], gates: []}   # derived: section 5 critical path (D2 decision first)
+  - {id: WP-EP-007, tier: NOW, state: planned, effort_ag: 1.5, title: "`beat()` döngüsünü parçala", depends_on: [], gates: []}
+  - {id: WP-EP-008, tier: NOW, state: planned, effort_ag: 2.5, title: "Kalıcı öncelikli kuyruk `queue.v1`", depends_on: [WP-EP-006], gates: []}   # derived: section 5 critical path (securestore then queue)
+  - {id: WP-EP-009, tier: NOW, state: planned, effort_ag: 1.0, title: "Config kurcalama koruması", depends_on: [], gates: []}
+  - {id: WP-EP-010, tier: NOW, state: planned, effort_ag: 0.5, title: "Mutlak exec yolları", depends_on: [], gates: []}
+  - {id: WP-EP-011, tier: NOW, state: planned, effort_ag: 1.0, title: "Windows ACL + kurulum düzeltmesi", depends_on: [], gates: []}
+  - {id: WP-EP-015, tier: NOW, state: planned, effort_ag: 2.0, title: "OTA ajan tarafı v2 + A/B + sağlık kapısı (Go)", depends_on: [], gates: []}
+  - {id: WP-EP-017, tier: NOW, state: planned, effort_ag: 2.0, title: "Windows SCM servisi + tek örnek", depends_on: [], gates: []}
+  - {id: WP-EP-018, tier: NOW, state: planned, effort_ag: 2.0, title: "Windows süreç zenginleştirme", depends_on: [], gates: []}
+  - {id: WP-EP-019, tier: NOW, state: planned, effort_ag: 2.0, title: "Karantina kalıcı ve doğru (kısa vade)", depends_on: [], gates: []}
+  - {id: WP-EP-021, tier: NOW, state: planned, effort_ag: 1.0, title: "Bellek sızıntıları ve gürültü", depends_on: [], gates: []}
+  - {id: WP-EP-023, tier: NOW, state: planned, effort_ag: 2.0, title: "Ajan tarafı maskeleme", depends_on: [], gates: []}
+  - {id: WP-EP-025, tier: NOW, state: planned, effort_ag: 1.5, title: "Uç noktada aydınlatma bildirimi (kurulum + metin sürümü değişince) + audit", depends_on: [], gates: []}
+  - {id: WP-EP-026, tier: NOW, state: planned, effort_ag: 3, title: "Ajan kurulum paketleri: MSI (Windows servis) + deb/rpm (systemd)", depends_on: [], gates: []}
+  - {id: WP-EP-030, tier: NOW, state: planned, effort_ag: 2.0, title: "Platformlar arası CI matrisi", depends_on: [], gates: []}
+  - {id: WP-EP-032, tier: NOW, state: planned, effort_ag: 1.5, title: "Ajan proto v2", depends_on: [], gates: []}
+  - {id: WP-EP-100, tier: NOW, state: planned, effort_ag: 2.0, title: "Yayın test kapıları (ajan)", depends_on: [], gates: []}
+  - {id: WP-EP-101, tier: NOW, state: planned, effort_ag: 0.5, title: "Politika tek doğruluk kaynağı (ajan)", depends_on: [], gates: []}
+  - {id: WP-PM-001, tier: NOW, state: planned, effort_ag: 1, title: "AI geliştirme yönetişimi", depends_on: [], gates: []}
+  - {id: WP-PM-002, tier: NOW, state: planned, effort_ag: 1, title: "İzinler + sandbox", depends_on: [], gates: []}
+  - {id: WP-PM-003, tier: NOW, state: planned, effort_ag: 2.5, title: "Hook betikleri + testleri", depends_on: [], gates: []}
+  - {id: WP-PM-004, tier: NOW, state: planned, effort_ag: 2.5, title: "Alt ajanlar", depends_on: [], gates: []}
+  - {id: WP-PM-005, tier: NOW, state: planned, effort_ag: 1, title: "Skill'ler", depends_on: [], gates: []}
+  - {id: WP-PM-006, tier: NOW, state: planned, effort_ag: 1, title: "GitHub kapıları + bot", depends_on: [], gates: []}
+  - {id: WP-PM-007, tier: NOW, state: planned, effort_ag: 1, title: "Issue/PR şablonları", depends_on: [], gates: []}
+  - {id: WP-PM-008, tier: NOW, state: planned, effort_ag: 2.5, title: "`status.yaml` + `roadmapcheck`", depends_on: [], gates: []}
+  - {id: WP-PM-009, tier: NOW, state: planned, effort_ag: 1, title: "STATUS.md üretimi", depends_on: [], gates: []}
+  - {id: WP-PM-010, tier: NOW, state: planned, effort_ag: 1, title: "Kök Taskfile", depends_on: [], gates: []}
+  - {id: WP-PM-013, tier: NOW, state: planned, effort_ag: 2.5, title: "Diller arası test vektörleri", depends_on: [], gates: []}
+  - {id: WP-PM-014, tier: NOW, state: planned, effort_ag: 2.5, title: "Yol filtreli CI matrisi", depends_on: [], gates: []}
+  - {id: WP-PM-015, tier: NOW, state: planned, effort_ag: 2.5, title: "Lisans politikası + tarayıcılar + SBOM", depends_on: [], gates: []}
+  - {id: WP-PM-017, tier: NOW, state: planned, effort_ag: 1, title: "Maliyet telemetrisi", depends_on: [], gates: []}
+  - {id: WP-PM-018, tier: NOW, state: planned, effort_ag: 1, title: "Risk kaydı + karar günlüğü", depends_on: [], gates: []}
+  - {id: WP-PM-019, tier: NOW, state: planned, effort_ag: 0.5, title: "Uzun tedarik süreli işler", depends_on: [], gates: []}
+  - id: WP-PM-020
+    tier: NOW
+    state: dropped   # deleted in the register; superseded by WP-SEC-010..018 (release gates)
+    effort_ag: 2.5
+    title: "Yayın yönetişimi (SEC ile)"
+    depends_on: []
+    gates: []
+  - {id: WP-PM-021, tier: NOW, state: planned, effort_ag: 2.5, title: "Ajan 'altın görev' regresyonu", depends_on: [], gates: []}
+  - {id: WP-PM-024, tier: NOW, state: planned, effort_ag: 1, title: "Worktree ve ortam izolasyonu", depends_on: [], gates: []}
+  - {id: WP-PM-025, tier: NOW, state: planned, effort_ag: 3, title: "Karar sprinti: zarf v2, OpenAPI, migration, yerleşim, ID/ADR kaydı, AI PEP dili, Sigma crate, lisans politikası, GA dil seti", depends_on: [], gates: [G0]}
+  - {id: WP-PM-026, tier: NOW, state: planned, effort_ag: 4, title: "Otonom Program Kontrolcüsü (roadmapctl + conductor döngüsü + bağımsız doğrulayıcı + kaçış kuralları)", depends_on: [], gates: []}
+  - {id: WP-PM-027, tier: NOW, state: planned, effort_ag: 3, title: "Zorunlu CI bütünlük işleri: test-integrity, red-on-base, mutasyon, deps-allowlist, PR boyutu, agent-file-allowlist, security-defaults golden", depends_on: [], gates: []}
+  - {id: WP-PM-028, tier: NOW, state: planned, effort_ag: 1.5, title: "Ajan izolasyonu: managed settings, ayrı OS kullanıcısı/devcontainer, dar allow listesi, genişletilmiş denyRead/denyWrite, gh api deny, model ID pin", depends_on: [], gates: []}
+  - {id: WP-SEC-001, tier: NOW, state: planned, effort_ag: 2.0, title: "Birleşik tehdit modeli", depends_on: [], gates: []}
+  - {id: WP-SEC-002, tier: NOW, state: planned, effort_ag: 1.5, title: "Bulgu kaydı ve zafiyet yönetimi süreci", depends_on: [], gates: []}
+  - {id: WP-SEC-003, tier: NOW, state: planned, effort_ag: 1.0, title: "CVD politikası, security.txt, advisory süreci ve CRA-uyumlu PSIRT", depends_on: [], gates: []}
+  - {id: WP-SEC-004, tier: NOW, state: planned, effort_ag: 1.5, title: "Depo gerçeği ve unwired-package kapısı", depends_on: [], gates: []}
+  - {id: WP-SEC-005, tier: NOW, state: planned, effort_ag: 2.0, title: "ADR hijyeni ve TEST_PLAN.md", depends_on: [], gates: []}
+  - {id: WP-SEC-006, tier: NOW, state: planned, effort_ag: 1, title: "Kripto tasarım incelemesi (DSSE zarf, COSE securestore, policywire, TUF) - G3", depends_on: [], gates: [G3]}
+  - {id: WP-SEC-010, tier: NOW, state: planned, effort_ag: 1.0, title: "Workflow sertleştirme", depends_on: [], gates: []}
+  - {id: WP-SEC-011, tier: NOW, state: planned, effort_ag: 1.0, title: "Yayını CI'a bağla ve korumalı environment kur", depends_on: [], gates: []}
+  - {id: WP-SEC-012, tier: NOW, state: planned, effort_ag: 1.5, title: "Yeniden üretilebilir build", depends_on: [], gates: []}
+  - {id: WP-SEC-013, tier: NOW, state: planned, effort_ag: 2.0, title: "SLSA Build L3 provenance ve Sigstore imzası", depends_on: [], gates: []}
+  - {id: WP-SEC-014, tier: NOW, state: planned, effort_ag: 1.0, title: "İmzalı SBOM", depends_on: [], gates: []}
+  - {id: WP-SEC-015, tier: NOW, state: planned, effort_ag: 2.0, title: "SAST: CodeQL ve sürücü statik analizi", depends_on: [], gates: []}
+  - {id: WP-SEC-016, tier: NOW, state: planned, effort_ag: 1.5, title: "Bağımlılık politikası", depends_on: [], gates: []}
+  - {id: WP-SEC-018, tier: NOW, state: planned, effort_ag: 3.0, title: "Yayın test kapıları (ikili AND)", depends_on: [], gates: []}
+  - {id: WP-SEC-019, tier: NOW, state: planned, effort_ag: 2.0, title: "Platform kod imzalama", depends_on: [], gates: []}
+  - {id: WP-SEC-022, tier: NOW, state: planned, effort_ag: 2.0, title: "Sunucu tarafı OTA düzeltmeleri ve TUF entegrasyonu", depends_on: [], gates: []}
+  - {id: WP-SEC-022a, tier: NOW, state: planned, effort_ag: 1, title: "OTA release_seq sıralaması (published_at yerine) + UNIQUE düzeltmesi", depends_on: [], gates: []}
+  - {id: WP-SEC-030, tier: NOW, state: planned, effort_ag: 3.0, title: "Laboratuvar altyapısı", depends_on: [], gates: []}
+  - {id: WP-SEC-031, tier: NOW, state: planned, effort_ag: 3.0, title: "Atomic Red Team düzeneği ve kapsam raporu", depends_on: [], gates: []}
+  - {id: WP-SEC-033, tier: NOW, state: planned, effort_ag: 4.0, title: "FP külliyatı ve tespit regresyonu", depends_on: [WP-SEC-030], gates: []}   # derived: section 5 critical path (lab then FP corpus)
+  - {id: WP-SEC-035, tier: NOW, state: planned, effort_ag: 3.0, title: "Kıyas düzeneği", depends_on: [], gates: []}
+  - {id: WP-SEC-040, tier: NOW, state: planned, effort_ag: 1.0, title: "ADR-0041 hukuki sebep ve LIA", depends_on: [], gates: [G9]}
+  - {id: WP-SEC-041, tier: NOW, state: planned, effort_ag: 1.5, title: "DPIA şablonu ve KUT referans DPIA'sı", depends_on: [WP-SEC-040], gates: [G9]}   # derived: section 5 critical path (legal basis then DPIA)
+  - {id: WP-SEC-042, tier: NOW, state: planned, effort_ag: 1.5, title: "Tam aydınlatma ve uç noktada gösterim", depends_on: [], gates: []}
+  - {id: WP-SEC-043, tier: NOW, state: planned, effort_ag: 2.5, title: "Veri kataloğu ve saklama sınıfları", depends_on: [], gates: []}
+  - {id: WP-SEC-045, tier: NOW, state: planned, effort_ag: 2.0, title: "Yurt dışı aktarım kapısı (KVKK m.9, 7499 sonrası)", depends_on: [], gates: [G9]}
+  - {id: WP-SEC-047, tier: NOW, state: planned, effort_ag: 1.0, title: "VERBİS, 5651 ve ihlal bildirimi rehberi (müşteri tarafı)", depends_on: [], gates: []}
+  - {id: WP-SEC-049, tier: NOW, state: planned, effort_ag: 3, title: "Uçtan uca track-arası test paketi (enroll->komut->olay->tespit->vaka)", depends_on: [], gates: []}
+  - {id: WP-SEC-050, tier: NOW, state: planned, effort_ag: 1, title: "Pilot runbook'ları (kurulum, yükseltme, geri alma, olay müdahalesi)", depends_on: [], gates: []}
+  - {id: WP-UX-000, tier: NOW, state: planned, effort_ag: 1.0, title: "Eski konsol için test düzeneği", depends_on: [], gates: []}
+  - {id: WP-UX-001, tier: NOW, state: planned, effort_ag: 0.5, title: "Kaçırma düzeltmeleri", depends_on: [], gates: []}
+  - {id: WP-UX-002, tier: NOW, state: planned, effort_ag: 1.0, title: "RBAC görünürlüğü ve rol değişikliği onayı", depends_on: [], gates: []}
+  - {id: WP-UX-003, tier: NOW, state: planned, effort_ag: 1.5, title: "Legacy ConfirmActionDialog", depends_on: [], gates: []}
+  - {id: WP-UX-004, tier: NOW, state: planned, effort_ag: 0.5, title: "Açılış yüklemeleri, deviceName önbelleği, CSS token temizliği", depends_on: [], gates: []}
+  - {id: WP-UX-005, tier: NOW, state: planned, effort_ag: 1.0, title: "Hedefli SSE ve odak korunumu (yalnız minimum)", depends_on: [], gates: []}
+  - {id: WP-UX-006, tier: NOW, state: planned, effort_ag: 1.0, title: "Odak tuzağı, aria-activedescendant, tıklanabilir div → button", depends_on: [], gates: []}
+  - {id: WP-UX-007, tier: NOW, state: planned, effort_ag: 1.0, title: "i18n çıkarımı (eski konsol için minimum)", depends_on: [], gates: []}
+  - {id: WP-AI-005, tier: GA, state: planned, effort_ag: 1.0, title: "AI tehdit modeli + ADR-0044 (AI Gateway) + ADR-0045 (veri sınıflandırma)", depends_on: [], gates: []}
+  - {id: WP-AI-010, tier: GA, state: planned, effort_ag: 3.0, title: "`aigw` sağlayıcı soyutlaması v2", depends_on: [], gates: []}
+  - {id: WP-AI-011, tier: GA, state: planned, effort_ag: 2.0, title: "Veri sınıflandırma ve model router politikası", depends_on: [], gates: []}
+  - {id: WP-AI-012, tier: GA, state: planned, effort_ag: 2.0, title: "Tool firewall'ı bağla (allowlist, tipli parametreler) + öneri akışı", depends_on: [], gates: []}
+  - {id: WP-AI-013, tier: GA, state: planned, effort_ag: 2.0, title: "Yerel çıkarım paketleme ve model registry", depends_on: [], gates: []}
+  - {id: WP-AI-014, tier: GA, state: planned, effort_ag: 2.0, title: "Audit, gözlemlenebilirlik, bütçeler", depends_on: [], gates: []}
+  - {id: WP-AI-015, tier: GA, state: planned, effort_ag: 1.0, title: "Air-gap modu", depends_on: [], gates: []}
+  - {id: WP-AI-020, tier: GA, state: planned, effort_ag: 3.0, title: "Prompt-injection savunması (bağlam derleyici)", depends_on: [], gates: []}
+  - {id: WP-AI-021, tier: GA, state: planned, effort_ag: 3.0, title: "Red-team ve eval paketi", depends_on: [], gates: []}
+  - {id: WP-AI-030, tier: GA, state: planned, effort_ag: 2.0, title: "Olay özeti", depends_on: [], gates: []}
+  - {id: WP-AI-032, tier: GA, state: planned, effort_ag: 2.0, title: "KUT-QL üretimi", depends_on: [], gates: []}
+  - {id: WP-AI-043, tier: GA, state: planned, effort_ag: 1.0, title: "Model değişim regresyonu", depends_on: [], gates: []}
+  - {id: WP-CP-011, tier: GA, state: planned, effort_ag: 3.0, title: "PKI hiyerarşisi: çevrimdışı kök, C2'de ara CA, HSM/KMS imzalayıcı", depends_on: [], gates: []}
+  - {id: WP-CP-013, tier: GA, state: planned, effort_ag: 2.5, title: "Sürümlü alan şifreleme (AAD + key-id + HKDF)", depends_on: [], gates: []}
+  - {id: WP-CP-014, tier: GA, state: planned, effort_ag: 1.0, title: "Blind index'e kiracı tuzu", depends_on: [], gates: []}
+  - {id: WP-CP-016, tier: GA, state: planned, effort_ag: 3.0, title: "Route registry + `adminapi`'nin alan paketlerine bölünmesi", depends_on: [WP-CP-002c], gates: []}   # derived: section 5 critical path (RLS then OpenAPI)
+  - {id: WP-CP-017, tier: GA, state: planned, effort_ag: 3.0, title: "OpenAPI 3.1 + `/api/me` + TS istemcisi", depends_on: [WP-CP-016], gates: []}   # derived: section 5 critical path
+  - id: WP-CP-018
+    tier: GA
+    state: dropped   # deleted in the register; superseded by WP-AI-002 and WP-AI-003
+    effort_ag: 1.0
+    title: "AI uçlarına RBAC + rate-limit + zorunlu DLP (sunucu)"
+    depends_on: []
+    gates: []
+  - {id: WP-CP-022, tier: GA, state: planned, effort_ag: 2.0, title: "Lider seçimi bağlantısı (PG LeaseStore + fencing)", depends_on: [], gates: []}
+  - {id: WP-CP-023, tier: GA, state: planned, effort_ag: 2.0, title: "Kontrol tablolarının bölümlenmesi ve saklama", depends_on: [], gates: []}
+  - {id: WP-CP-025, tier: GA, state: planned, effort_ag: 2.5, title: "API sorgu temelleri", depends_on: [], gates: []}
+  - {id: WP-CP-026, tier: GA, state: planned, effort_ag: 3, title: "Artefaktlar BYTEA -> S3 API + Object Lock (WORM); PG'de yalnız meta/hash", depends_on: [], gates: []}
+  - {id: WP-CP-027, tier: GA, state: planned, effort_ag: 1.5, title: "Konu bazlı SSE /api/stream (hedefli invalidation)", depends_on: [], gates: []}
+  - {id: WP-CP-030, tier: GA, state: planned, effort_ag: 3.0, title: "Rol tabanlı süreç topolojisi + ayrı havuzlar", depends_on: [], gates: []}
+  - {id: WP-CP-031, tier: GA, state: planned, effort_ag: 4.0, title: "Command gateway + bidi `StreamCommands`", depends_on: [], gates: []}
+  - {id: WP-CP-032, tier: GA, state: planned, effort_ag: 1.5, title: "Enroll gateway ayrımı", depends_on: [], gates: []}
+  - {id: WP-CP-033, tier: GA, state: planned, effort_ag: 1.0, title: "Telemetry gateway: kimlik, kiracı bağlama ve kota arayüzü", depends_on: [], gates: []}
+  - {id: WP-CP-034, tier: GA, state: planned, effort_ag: 2.5, title: "Kotalar ve gürültülü komşu", depends_on: [], gates: []}
+  - {id: WP-CP-035, tier: GA, state: planned, effort_ag: 2.0, title: "OpenTelemetry", depends_on: [], gates: []}
+  - {id: WP-CP-036, tier: GA, state: planned, effort_ag: 2.5, title: "`kut-signer`: amaç başına anahtar + KMS/HSM + rotasyon", depends_on: [], gates: []}
+  - {id: WP-CP-040, tier: GA, state: planned, effort_ag: 3.0, title: "OIDC login (RP, auth code + PKCE)", depends_on: [], gates: []}
+  - {id: WP-CP-041, tier: GA, state: planned, effort_ag: 2.5, title: "SAML 2.0 SP", depends_on: [], gates: []}
+  - {id: WP-CP-043, tier: GA, state: planned, effort_ag: 3.0, title: "WebAuthn step-up + komut özetine bağlı onay", depends_on: [], gates: []}
+  - {id: WP-CP-044, tier: GA, state: planned, effort_ag: 3.0, title: "RBAC v2 (izin kataloğu + özel roller)", depends_on: [], gates: []}
+  - {id: WP-CP-047, tier: GA, state: planned, effort_ag: 2.5, title: "Yönetici güncelleme politikası", depends_on: [], gates: []}
+  - {id: WP-CP-050, tier: GA, state: planned, effort_ag: 3.0, title: "Finding modeli + urgency + birleşik kuyruk", depends_on: [], gates: []}
+  - {id: WP-CP-051, tier: GA, state: planned, effort_ag: 3.0, title: "Vaka servisi v2", depends_on: [], gates: []}
+  - {id: WP-CP-056, tier: GA, state: planned, effort_ag: 2.0, title: "Bildirim servisi (outbox)", depends_on: [], gates: []}
+  - {id: WP-CP-057, tier: GA, state: planned, effort_ag: 3.0, title: "Rapor motoru: Typst → imzalı PDF", depends_on: [], gates: []}
+  - {id: WP-CP-060, tier: GA, state: planned, effort_ag: 4.0, title: "Helm chart (Enterprise)", depends_on: [], gates: []}
+  - {id: WP-CP-062, tier: GA, state: planned, effort_ag: 3.0, title: "Air-gap paketi", depends_on: [], gates: []}
+  - {id: WP-CP-063, tier: GA, state: planned, effort_ag: 3.0, title: "Kontrol düzlemi HA/DR", depends_on: [], gates: []}
+  - {id: WP-DP-004, tier: GA, state: planned, effort_ag: 3.0, title: "Enterprise bus düzeltmesi", depends_on: [], gates: []}
+  - {id: WP-DP-005, tier: GA, state: planned, effort_ag: 1.0, title: "ClickHouse dedup tablosu (geçiş)", depends_on: [], gates: []}
+  - {id: WP-DP-021, tier: GA, state: planned, effort_ag: 2.0, title: "Envelope proto v2 + Go/Rust altın vektörler", depends_on: [], gates: []}
+  - {id: WP-DP-022, tier: GA, state: planned, effort_ag: 3.0, title: "OCSF kod üreteci", depends_on: [], gates: []}
+  - {id: WP-DP-024, tier: GA, state: planned, effort_ag: 1.0, title: "Rust workspace ve tedarik zinciri", depends_on: [], gates: []}
+  - {id: WP-DP-030, tier: GA, state: planned, effort_ag: 3.0, title: "LogBus trait + Lite WAL + Kafka implementasyonu", depends_on: [], gates: []}
+  - {id: WP-DP-031, tier: GA, state: planned, effort_ag: 2.0, title: "Gateway → bus köprüsü", depends_on: [], gates: []}
+  - {id: WP-DP-032, tier: GA, state: planned, effort_ag: 3.0, title: "Syslog alıcısı", depends_on: [], gates: []}
+  - {id: WP-DP-033, tier: GA, state: planned, effort_ag: 3.0, title: "HEC-uyumlu HTTP + OTLP logs", depends_on: [], gates: []}
+  - {id: WP-DP-034, tier: GA, state: planned, effort_ag: 3.0, title: "Source Pack formatı ve SDK", depends_on: [], gates: []}
+  - {id: WP-DP-035, tier: GA, state: planned, effort_ag: 3.0, title: "Normalizer motoru + DLQ + ham saklama", depends_on: [], gates: []}
+  - {id: WP-DP-036, tier: GA, state: planned, effort_ag: 3.0, title: "İlk 10 source pack", depends_on: [], gates: []}
+  - {id: WP-DP-038, tier: GA, state: planned, effort_ag: 2.0, title: "Zenginleştirme aşaması", depends_on: [], gates: []}
+  - {id: WP-DP-039, tier: GA, state: planned, effort_ag: 3.0, title: "Bulut/SaaS pull bağlayıcı çerçevesi", depends_on: [], gates: []}
+  - {id: WP-DP-041, tier: GA, state: planned, effort_ag: 3.0, title: "M365 Management API, Entra sign-in (Graph), Okta System Log", depends_on: [], gates: []}
+  - {id: WP-DP-042, tier: GA, state: planned, effort_ag: 3.0, title: "Pipeline işleme (filter/mask/sample/route)", depends_on: [], gates: []}
+  - {id: WP-DP-050, tier: GA, state: planned, effort_ag: 3.0, title: "ClickHouse şeması v1 + şema göç aracı", depends_on: [], gates: []}
+  - {id: WP-DP-051, tier: GA, state: planned, effort_ag: 2.0, title: "kut-dp ClickHouse sink'i", depends_on: [], gates: []}
+  - {id: WP-DP-052, tier: GA, state: planned, effort_ag: 2.0, title: "ClickHouse kiracı zorlaması", depends_on: [], gates: []}
+  - {id: WP-DP-053, tier: GA, state: planned, effort_ag: 3.0, title: "KUT-QL v1 ayrıştırıcı, AST ve semantik analiz", depends_on: [], gates: []}
+  - {id: WP-DP-054, tier: GA, state: planned, effort_ag: 3.0, title: "KUT-QL planlayıcı + ClickHouse lehçesi + bütçe", depends_on: [], gates: []}
+  - {id: WP-DP-055, tier: GA, state: planned, effort_ag: 3.0, title: "DuckDB ve PG-legacy lehçeleri + lehçeler arası uyum paketi", depends_on: [], gates: []}
+  - {id: WP-DP-056, tier: GA, state: planned, effort_ag: 3.0, title: "Query API", depends_on: [], gates: []}
+  - {id: WP-DP-057, tier: GA, state: planned, effort_ag: 3.0, title: "PostgreSQL → ClickHouse olay deposu taşıması", depends_on: [], gates: []}
+  - {id: WP-DP-058, tier: GA, state: planned, effort_ag: 3.0, title: "Lite sıcak depo: DuckDB + Parquet", depends_on: [], gates: []}
+  - {id: WP-DP-060, tier: GA, state: planned, effort_ag: 2.0, title: "Sigma motoru bake-off'u", depends_on: [], gates: []}
+  - {id: WP-DP-061, tier: GA, state: planned, effort_ag: 3.0, title: "kut-detect çekirdeği", depends_on: [], gates: []}
+  - {id: WP-DP-062, tier: GA, state: planned, effort_ag: 3.0, title: "Korelasyon motoru", depends_on: [], gates: []}
+  - {id: WP-DP-064, tier: GA, state: planned, effort_ag: 2.0, title: "Tespit çıktısı, bastırma, gölge mod", depends_on: [], gates: []}
+  - {id: WP-DP-065, tier: GA, state: planned, effort_ag: 3.0, title: "İçerik hattı: imzalı kural paketleri + yaşam döngüsü", depends_on: [], gates: []}
+  - {id: WP-DP-066, tier: GA, state: planned, effort_ag: 2.0, title: "Regresyon koşucusu (FX-PROOF-02 bağımlılığı)", depends_on: [], gates: []}
+  - {id: WP-DP-067, tier: GA, state: planned, effort_ag: 2.0, title: "SigmaHQ kapsamı ve ATT&CK katmanı", depends_on: [], gates: []}
+  - {id: WP-DP-068, tier: GA, state: planned, effort_ag: 2.0, title: "Akış içi IoC eşleyici", depends_on: [], gates: []}
+  - {id: WP-DP-069, tier: GA, state: planned, effort_ag: 10, title: "Detection content programı: >=300 test edilmiş kural (sürekli)", depends_on: [], gates: []}
+  - {id: WP-DP-070, tier: GA, state: planned, effort_ag: 3.0, title: "Varlık ve kimlik çerçevesi", depends_on: [], gates: []}
+  - {id: WP-DP-071, tier: GA, state: planned, effort_ag: 3.0, title: "Lookup, referans set ve map", depends_on: [], gates: []}
+  - {id: WP-DP-072, tier: GA, state: planned, effort_ag: 3.0, title: "Risk tabanlı alarm (RBA)", depends_on: [], gates: []}
+  - {id: WP-DP-073, tier: GA, state: planned, effort_ag: 3.0, title: "Zamanlanmış aramalar ve alarmlar", depends_on: [], gates: []}
+  - {id: WP-DP-074, tier: GA, state: planned, effort_ag: 3.0, title: "TI platformu", depends_on: [], gates: []}
+  - {id: WP-DP-078, tier: GA, state: planned, effort_ag: 2, title: "Yazılım envanteri -> OSV/NVD CVE eşleme", depends_on: [], gates: []}
+  - {id: WP-DP-084, tier: GA, state: planned, effort_ag: 3.0, title: "Paketleme: Helm, Lite compose, air-gap paketi", depends_on: [], gates: []}
+  - {id: WP-DP-085, tier: GA, state: planned, effort_ag: 1.0, title: "PG olay deposunun emekliye ayrılması", depends_on: [], gates: []}
+  - {id: WP-DP-090, tier: GA, state: planned, effort_ag: 1.0, title: "AI ve UX veri arayüzleri", depends_on: [], gates: []}
+  - {id: WP-EP-012, tier: GA, state: planned, effort_ag: 2.0, title: "Sürücü port yetkilendirmesi", depends_on: [WP-EP-013], gates: []}   # derived: section 5 critical path (driver chain)
+  - {id: WP-EP-013, tier: GA, state: planned, effort_ag: 1.5, title: "Sürücü PID tablosu, yollar, bellek güvenliği, `/INTEGRITYCHECK`", depends_on: [], gates: []}
+  - {id: WP-EP-014, tier: GA, state: planned, effort_ag: 2.0, title: "Sürücü kaldırma koruması + kapsam + tamper akışı", depends_on: [WP-EP-013], gates: []}   # derived: section 5 critical path (driver chain)
+  - {id: WP-EP-016, tier: GA, state: planned, effort_ag: 2.5, title: "Go TUF istemcisi", depends_on: [], gates: []}
+  - {id: WP-EP-020, tier: GA, state: planned, effort_ag: 2.5, title: "Script sandbox", depends_on: [], gates: []}
+  - {id: WP-EP-022, tier: GA, state: planned, effort_ag: 3.0, title: "Donanıma bağlı cihaz anahtarı (Go)", depends_on: [], gates: []}
+  - {id: WP-EP-024, tier: GA, state: planned, effort_ag: 2, title: "Go ajanında StreamCommands (bidi) istemcisi, heartbeat yedek yolu", depends_on: [], gates: []}
+  - {id: WP-EP-031, tier: GA, state: planned, effort_ag: 1.5, title: "Go↔Rust ortak vektör koşucusu", depends_on: [], gates: []}
+  - {id: WP-EP-040, tier: GA, state: planned, effort_ag: 1.5, title: "Cargo workspace + tedarik zinciri kapıları", depends_on: [], gates: []}
+  - {id: WP-EP-041, tier: GA, state: planned, effort_ag: 1.5, title: "kut-wire (Rust)", depends_on: [], gates: []}
+  - {id: WP-EP-042, tier: GA, state: planned, effort_ag: 2.0, title: "kut-store (Rust securestore)", depends_on: [], gates: []}
+  - {id: WP-EP-043, tier: GA, state: planned, effort_ag: 2.0, title: "kut-queue (Rust)", depends_on: [], gates: []}
+  - {id: WP-EP-044, tier: GA, state: planned, effort_ag: 3.0, title: "kut-uplink", depends_on: [], gates: []}
+  - {id: WP-EP-045, tier: GA, state: planned, effort_ag: 2.5, title: "kut-verify", depends_on: [], gates: []}
+  - {id: WP-EP-046, tier: GA, state: planned, effort_ag: 3.0, title: "kut-ident", depends_on: [], gates: []}
+  - {id: WP-EP-047, tier: GA, state: planned, effort_ag: 3.0, title: "Strangler ekleme noktası: yerel toplayıcı IPC", depends_on: [], gates: []}
+  - {id: WP-EP-048, tier: GA, state: planned, effort_ag: 3.0, title: "Yanıt yürütücüsünü Rust'a taşı", depends_on: [], gates: []}
+  - {id: WP-EP-049, tier: GA, state: planned, effort_ag: 3.0, title: "kut-supervisor", depends_on: [], gates: []}
+  - {id: WP-EP-050, tier: GA, state: planned, effort_ag: 2.0, title: "Kaynak bütçeleri", depends_on: [], gates: []}
+  - {id: WP-EP-051, tier: GA, state: planned, effort_ag: 2.0, title: "Çevrimdışı dayanıklılık", depends_on: [], gates: []}
+  - {id: WP-EP-060, tier: GA, state: planned, effort_ag: 3.0, title: "Windows ETW tüketici (Rust)", depends_on: [], gates: []}
+  - {id: WP-EP-061, tier: GA, state: planned, effort_ag: 3.0, title: "Sürücü callback'leri (Audit)", depends_on: [WP-EP-012, WP-EP-014], gates: []}   # derived: section 5 critical path (driver chain)
+  - {id: WP-EP-062, tier: GA, state: planned, effort_ag: 2.0, title: "Windows süreç ağacı ve önbellekler", depends_on: [], gates: []}
+  - {id: WP-EP-063, tier: GA, state: planned, effort_ag: 1.5, title: "Sürücü imzalama ve HLK hattı", depends_on: [WP-EP-061], gates: []}   # derived: section 5 critical path (driver chain)
+  - {id: WP-EP-064, tier: GA, state: planned, effort_ag: 1.5, title: "Spike/ADR: eBPF araç zinciri", depends_on: [], gates: []}
+  - {id: WP-EP-065a, tier: GA, state: planned, effort_ag: 3.0, title: "eBPF süreç sensörü", depends_on: [], gates: []}
+  - {id: WP-EP-065b, tier: GA, state: planned, effort_ag: 2.5, title: "eBPF ağ sensörü", depends_on: [], gates: []}
+  - {id: WP-EP-065c, tier: GA, state: planned, effort_ag: 2.5, title: "eBPF dosya + kurcalama sensörü", depends_on: [], gates: []}
+  - {id: WP-EP-066, tier: GA, state: planned, effort_ag: 2.5, title: "fanotify + /proc fallback", depends_on: [], gates: []}
+  - {id: WP-EP-069, tier: GA, state: planned, effort_ag: 2.0, title: "Gerçek zamanlı FIM + who-data", depends_on: [], gates: []}
+  - {id: WP-EP-070, tier: GA, state: planned, effort_ag: 3.0, title: "Ajan log iletici modülü", depends_on: [], gates: []}
+  - {id: WP-EP-071, tier: GA, state: planned, effort_ag: 1.0, title: "Ağ 5-tuple + Community ID", depends_on: [], gates: []}
+  - {id: WP-EP-072, tier: GA, state: planned, effort_ag: 2.0, title: "Varlık ve kimlik beslemesi", depends_on: [], gates: []}
+  - {id: WP-EP-080a, tier: GA, state: planned, effort_ag: 3.0, title: "kut-sigma derleyici (build-time/sunucu)", depends_on: [], gates: []}
+  - {id: WP-EP-080b, tier: GA, state: planned, effort_ag: 2.5, title: "kut-sigma değerlendirici", depends_on: [], gates: []}
+  - {id: WP-EP-081, tier: GA, state: planned, effort_ag: 3.0, title: "Ajan tespit çalışma zamanı + halka", depends_on: [WP-SEC-025], gates: []}   # derived: section 5 critical path
+  - {id: WP-EP-083, tier: GA, state: planned, effort_ag: 3.0, title: "Yanıt eylemleri v2", depends_on: [], gates: []}
+  - {id: WP-EP-084, tier: GA, state: planned, effort_ag: 2.5, title: "Windows WFP izolasyonu", depends_on: [], gates: []}
+  - {id: WP-EP-085, tier: GA, state: planned, effort_ag: 2.0, title: "Linux nftables izolasyonu", depends_on: [], gates: []}
+  - {id: WP-EP-099, tier: GA, state: planned, effort_ag: 3.0, title: "Kanıt laboratuvarı (ajan tarafı)", depends_on: [WP-SEC-030, WP-SEC-031], gates: []}   # register note: lab is SEC-030/031
+  - {id: WP-PM-011, tier: GA, state: planned, effort_ag: 2.5, title: "Polyglot iskelet", depends_on: [], gates: []}
+  - {id: WP-PM-012, tier: GA, state: planned, effort_ag: 2.5, title: "Sözleşme-önce üretim", depends_on: [], gates: []}
+  - {id: WP-PM-016, tier: GA, state: planned, effort_ag: 2.5, title: "Headless otomasyon", depends_on: [], gates: []}
+  - {id: WP-PM-022, tier: GA, state: planned, effort_ag: 1, title: "Katkı dokümanları", depends_on: [], gates: []}
+  - {id: WP-PM-023, tier: GA, state: planned, effort_ag: 1, title: "Çeyreklik yol haritası incelemesi", depends_on: [], gates: []}
+  - {id: WP-PM-029, tier: GA, state: planned, effort_ag: 5, title: "GA-lean kararı: 5 AG sınırlı Rust kut-core spike + ADR", depends_on: [], gates: []}
+  - {id: WP-SEC-017, tier: GA, state: planned, effort_ag: 0.5, title: "OpenSSF Scorecard ve Best Practices", depends_on: [], gates: []}
+  - {id: WP-SEC-020, tier: GA, state: planned, effort_ag: 1.5, title: "TUF depo tasarımı (ADR-0043)", depends_on: [], gates: []}
+  - {id: WP-SEC-021, tier: GA, state: planned, effort_ag: 2.0, title: "Anahtar töreni ve runbook (TUF root + PKI kök CA + OTA/komut imza anahtarları)", depends_on: [], gates: []}
+  - {id: WP-SEC-023, tier: GA, state: planned, effort_ag: 2.0, title: "TUF saldırı ve uygunluk testleri", depends_on: [], gates: []}
+  - {id: WP-SEC-024, tier: GA, state: planned, effort_ag: 3.0, title: "İmzalı içerik paketleri", depends_on: [WP-SEC-033], gates: []}   # derived: section 5 critical path
+  - {id: WP-SEC-025, tier: GA, state: planned, effort_ag: 4.0, title: "Halka dağıtımı ve otomatik durdurma (OTA ve içerik)", depends_on: [WP-SEC-024], gates: []}   # derived: section 5 critical path
+  - {id: WP-SEC-026, tier: GA, state: planned, effort_ag: 3.0, title: "Promotion gate", depends_on: [], gates: []}
+  - {id: WP-SEC-027, tier: GA, state: planned, effort_ag: 0.5, title: "Yönetici güncelleme politikası", depends_on: [], gates: []}
+  - {id: WP-SEC-032, tier: GA, state: planned, effort_ag: 2.0, title: "Caldera tam zincir emülasyonu", depends_on: [], gates: []}
+  - {id: WP-SEC-034, tier: GA, state: planned, effort_ag: 2.0, title: "Verify kalıcılığını tamamla ve chaos'u birleştir", depends_on: [], gates: []}
+  - {id: WP-SEC-036, tier: GA, state: planned, effort_ag: 2.5, title: "Fuzzing genişletme", depends_on: [], gates: []}
+  - {id: WP-SEC-037, tier: GA, state: planned, effort_ag: 1.0, title: "Pentest, red-team takvimi ve bug bounty", depends_on: [], gates: []}
+  - {id: WP-SEC-044, tier: GA, state: planned, effort_ag: 1.0, title: "Ajan tarafı minimizasyon (spesifikasyon ve test; uygulama EP'de)", depends_on: [], gates: []}
+  - {id: WP-SEC-046, tier: GA, state: planned, effort_ag: 2.0, title: "İlgili kişi hakları operasyonu", depends_on: [], gates: []}
+  - {id: WP-SEC-048, tier: GA, state: planned, effort_ag: 2.0, title: "CRA hazırlığı (AB'de ticari dağıtım varsa)", depends_on: [], gates: []}
+  - {id: WP-SEC-051, tier: GA, state: planned, effort_ag: 2, title: "Kaos senaryoları: AI sağlayıcı arızası, kötü niyetli kiracı, ele geçirilmiş ajan", depends_on: [], gates: []}
+  - {id: WP-UX-010, tier: GA, state: planned, effort_ag: 2.0, title: "ADR-0043 'Web konsol yığını' + iskelet", depends_on: [], gates: []}
+  - {id: WP-UX-011, tier: GA, state: planned, effort_ag: 1.5, title: "Tipli API istemcisi", depends_on: [WP-CP-017], gates: []}   # derived: section 5 critical path (OpenAPI then console)
+  - {id: WP-UX-012, tier: GA, state: planned, effort_ag: 3.0, title: "Uygulama kabuğu", depends_on: [], gates: []}
+  - {id: WP-UX-013, tier: GA, state: planned, effort_ag: 1.0, title: "i18n tam (TR/EN)", depends_on: [], gates: []}
+  - {id: WP-UX-014, tier: GA, state: planned, effort_ag: 3.0, title: "Tasarım sistemi `@kut/ui`", depends_on: [], gates: []}
+  - {id: WP-UX-015, tier: GA, state: planned, effort_ag: 1.0, title: "RBAC-farkında UI", depends_on: [], gates: []}
+  - {id: WP-UX-016, tier: GA, state: planned, effort_ag: 1.5, title: "CI kapıları ve performans bütçeleri", depends_on: [], gates: []}
+  - {id: WP-UX-020, tier: GA, state: planned, effort_ag: 3.0, title: "Olay (Incident) kuyruğu", depends_on: [], gates: []}
+  - {id: WP-UX-021, tier: GA, state: planned, effort_ag: 3.0, title: "Olay sayfası", depends_on: [], gates: []}
+  - {id: WP-UX-022, tier: GA, state: planned, effort_ag: 3.0, title: "Cihaz sayfası", depends_on: [], gates: []}
+  - {id: WP-UX-023, tier: GA, state: planned, effort_ag: 3.0, title: "ConfirmActionDialog + Eylem Merkezi", depends_on: [], gates: []}
+  - {id: WP-UX-024, tier: GA, state: planned, effort_ag: 2.0, title: "Vakalar", depends_on: [], gates: []}
+  - {id: WP-UX-025, tier: GA, state: planned, effort_ag: 2.0, title: "Ana sayfa (SOC görünümü)", depends_on: [], gates: []}
+  - {id: WP-UX-030, tier: GA, state: planned, effort_ag: 3.0, title: "Varlık sayfaları (kullanıcı, IP, hash, süreç, domain)", depends_on: [], gates: []}
+  - {id: WP-UX-031, tier: GA, state: planned, effort_ag: 3.0, title: "Süreç ağacı / Storyline (React Flow + dagre)", depends_on: [], gates: []}
+  - {id: WP-UX-032, tier: GA, state: planned, effort_ag: 2.0, title: "Timeline (Elastic Timeline benzeri)", depends_on: [], gates: []}
+  - {id: WP-UX-033, tier: GA, state: planned, effort_ag: 2.0, title: "Graf gezgini (Cytoscape)", depends_on: [], gates: []}
+  - {id: WP-UX-034, tier: GA, state: planned, effort_ag: 3.0, title: "Hunting çalışma alanı (CodeMirror 6 + Lezer KUT-QL)", depends_on: [], gates: []}
+  - {id: WP-UX-035, tier: GA, state: planned, effort_ag: 1.0, title: "Replay ve tespit testi UI'ı", depends_on: [], gates: []}
+  - {id: WP-UX-040, tier: GA, state: planned, effort_ag: 3.0, title: "Tespit mühendisliği + MITRE ATT&CK matrisi", depends_on: [], gates: []}
+  - {id: WP-UX-042, tier: GA, state: planned, effort_ag: 2.0, title: "Raporlar & Uyum", depends_on: [], gates: []}
+  - {id: WP-UX-043, tier: GA, state: planned, effort_ag: 2.0, title: "Yönetim ekranları", depends_on: [], gates: []}
+  - {id: WP-UX-044, tier: GA, state: planned, effort_ag: 2, title: "Varlık/kimlik CRUD + CSV içe aktarma ekranı", depends_on: [], gates: []}
+  - {id: WP-UX-045, tier: GA, state: planned, effort_ag: 1.5, title: "Halka dağıtım paneli (OTA + içerik; durdur/devam/LKG)", depends_on: [], gates: []}
+  - {id: WP-UX-060, tier: GA, state: planned, effort_ag: 1.0, title: "Parite matrisi ve emeklilik", depends_on: [], gates: []}
+  - {id: WP-AI-031, tier: V2, state: planned, effort_ag: 2.0, title: "Triyaj yardımı (aibrain triage'ın yerine)", depends_on: [], gates: []}
+  - {id: WP-AI-033, tier: V2, state: planned, effort_ag: 1.5, title: "TI zenginleştirme", depends_on: [], gates: []}
+  - {id: WP-AI-040, tier: V2, state: planned, effort_ag: 3.0, title: "RAG (pgvector + RLS)", depends_on: [], gates: []}
+  - {id: WP-AI-041, tier: V2, state: planned, effort_ag: 2.0, title: "Sigma taslağı", depends_on: [], gates: []}
+  - {id: WP-AI-042, tier: V2, state: planned, effort_ag: 3.0, title: "Analist copilot", depends_on: [], gates: []}
+  - {id: WP-AI-050, tier: V2, state: planned, effort_ag: 2.0, title: "Dış sağlayıcı etkinleştirme", depends_on: [], gates: []}
+  - {id: WP-AI-051, tier: V2, state: planned, effort_ag: 1.5, title: "Maliyet ve latency panosu + sürekli red-team", depends_on: [], gates: []}
+  - {id: WP-CP-042, tier: V2, state: planned, effort_ag: 2.0, title: "SCIM 2.0 tamamlanması", depends_on: [], gates: []}
+  - {id: WP-CP-045, tier: V2, state: planned, effort_ag: 3.0, title: "MSP hiyerarşisi ve delege erişim", depends_on: [], gates: []}
+  - {id: WP-CP-046, tier: V2, state: planned, effort_ag: 1.0, title: "Paketli IdP seçeneği (Keycloak)", depends_on: [], gates: []}
+  - {id: WP-CP-048, tier: V2, state: planned, effort_ag: 3.0, title: "TPM attestation (sunucu) + kayıt alanları", depends_on: [], gates: []}
+  - {id: WP-CP-052, tier: V2, state: planned, effort_ag: 3.0, title: "Temporal temeli", depends_on: [], gates: []}
+  - {id: WP-CP-053, tier: V2, state: planned, effort_ag: 4.0, title: "Playbook DSL + 10 playbook + onay adımları", depends_on: [], gates: []}
+  - {id: WP-CP-054a/b/c, tier: V2, state: planned, effort_ag: 6.0, title: "Eylem SDK'sı + 15 entegrasyon", depends_on: [], gates: []}
+  - {id: WP-CP-055, tier: V2, state: planned, effort_ag: 2.5, title: "Zamanlanmış arama ve alarm", depends_on: [WP-DP-073], gates: []}   # register note: data model lives in DP-073
+  - {id: WP-CP-058, tier: V2, state: planned, effort_ag: 4.0, title: "Uyum paketleri: KVKK / 5651 / PCI DSS 4.0 Req.10 / ISO 27001", depends_on: [], gates: []}
+  - {id: WP-CP-064, tier: V2, state: planned, effort_ag: 3.0, title: "SPIFFE/SPIRE servis kimliği (Enterprise, opsiyonel)", depends_on: [], gates: []}
+  - {id: WP-DP-037, tier: V2, state: planned, effort_ag: 6.0, title: "Sonraki 20 pack (2 parti × 10)", depends_on: [], gates: []}
+  - {id: WP-DP-040, tier: V2, state: planned, effort_ag: 3.0, title: "CloudTrail (S3+SQS), Azure Event Hub, GCP Pub/Sub", depends_on: [], gates: []}
+  - {id: WP-DP-043, tier: V2, state: planned, effort_ag: 3.0, title: "Flow telemetrisi", depends_on: [], gates: []}
+  - {id: WP-DP-059, tier: V2, state: planned, effort_ag: 3.0, title: "Hızlandırılmış rollup'lar (M5)", depends_on: [], gates: []}
+  - {id: WP-DP-063, tier: V2, state: planned, effort_ag: 3.0, title: "Durum checkpoint'i ve HA", depends_on: [], gates: []}
+  - {id: WP-DP-075, tier: V2, state: planned, effort_ag: 2.0, title: "TI retro-match", depends_on: [], gates: []}
+  - {id: WP-DP-076, tier: V2, state: planned, effort_ag: 3.0, title: "UEBA v2 baseline'ları", depends_on: [], gates: []}
+  - {id: WP-DP-077, tier: V2, state: planned, effort_ag: 3.0, title: "Entity ve saldırı grafı depolama", depends_on: [], gates: []}
+  - {id: WP-DP-080, tier: V2, state: planned, effort_ag: 3.0, title: "Iceberg göl yazıcısı + katalog", depends_on: [], gates: []}
+  - {id: WP-DP-081, tier: V2, state: planned, effort_ag: 3.0, title: "Saklama katmanları + legal hold + bütünlük", depends_on: [], gates: []}
+  - {id: WP-DP-082, tier: V2, state: planned, effort_ag: 3.0, title: "Federated arama", depends_on: [], gates: []}
+  - {id: WP-DP-083, tier: V2, state: planned, effort_ag: 3.0, title: "Veri bileşenleri HA/DR + sağlık", depends_on: [], gates: []}
+  - {id: WP-EP-067, tier: V2, state: planned, effort_ag: 3.0, title: "macOS System Extension (ES NOTIFY)", depends_on: [], gates: []}
+  - {id: WP-EP-068, tier: V2, state: planned, effort_ag: 3.0, title: "macOS NetworkExtension", depends_on: [], gates: []}
+  - {id: WP-EP-082, tier: V2, state: planned, effort_ag: 2.5, title: "YARA-X entegrasyonu", depends_on: [], gates: []}
+  - {id: WP-EP-086, tier: V2, state: planned, effort_ag: 1.5, title: "macOS izolasyon", depends_on: [], gates: []}
+  - {id: WP-EP-087l, tier: V2, state: planned, effort_ag: 3.0, title: "Linux Prevent", depends_on: [], gates: []}
+  - {id: WP-EP-087m, tier: V2, state: planned, effort_ag: 2.5, title: "macOS Prevent", depends_on: [], gates: []}
+  - {id: WP-EP-087w, tier: V2, state: planned, effort_ag: 3.0, title: "Windows Prevent", depends_on: [], gates: []}
+  - {id: WP-EP-090a, tier: V2, state: planned, effort_ag: 3.0, title: "kut-query motoru + 10 tablo", depends_on: [], gates: []}
+  - {id: WP-EP-090b, tier: V2, state: planned, effort_ag: 3.0, title: "+20 tablo", depends_on: [], gates: []}
+  - {id: WP-EP-091, tier: V2, state: planned, effort_ag: 2.0, title: "LiveQuery + zamanlanmış paketler", depends_on: [], gates: []}
+  - {id: WP-EP-092, tier: V2, state: planned, effort_ag: 2.5, title: "Kısıtlı canlı yanıt (RTR-benzeri)", depends_on: [], gates: []}
+  - {id: WP-EP-096, tier: V2, state: planned, effort_ag: 1.0, title: "WHQL/HLK (Windows Server)", depends_on: [], gates: []}
+  - {id: WP-EP-097, tier: V2, state: planned, effort_ag: 2.5, title: "TPM anahtar attestation (ajan)", depends_on: [], gates: []}
+  - {id: WP-EP-098, tier: V2, state: planned, effort_ag: 2.0, title: "Go ajanı emekliliği", depends_on: [], gates: []}
+  - {id: WP-SEC-028, tier: V2, state: planned, effort_ag: 5, title: "KUT Hub: imzalı paket dağıtımı, sürüm uyumu, kur/kaldır", depends_on: [], gates: []}
+  - {id: WP-UX-041, tier: V2, state: planned, effort_ag: 3.0, title: "Dashboard builder", depends_on: [], gates: []}
+  - {id: WP-UX-050, tier: V2, state: planned, effort_ag: 3.0, title: "RTR-benzeri canlı yanıt", depends_on: [], gates: []}
+  - {id: WP-UX-051, tier: V2, state: planned, effort_ag: 3.0, title: "Notebook (Velociraptor/Elastic benzeri)", depends_on: [], gates: []}
+  - {id: WP-UX-052, tier: V2, state: planned, effort_ag: 2.0, title: "AI araştırma paneli", depends_on: [], gates: []}
+  - {id: WP-UX-053, tier: V2, state: planned, effort_ag: 2.0, title: "Playbook / SOAR görünümü", depends_on: [], gates: []}
+  - {id: WP-AI-052, tier: RES, state: planned, effort_ag: 10, title: "UEBA/ML işçisi (LATER)", depends_on: [], gates: []}
+  - {id: WP-CP-070, tier: RES, state: planned, effort_ag: 5.0, title: "Bölgesel hücre mimarisi", depends_on: [], gates: []}
+  - {id: WP-DP-044, tier: RES, state: planned, effort_ag: 3.0, title: "Log kaynağı otomatik keşfi (M6)", depends_on: [], gates: []}
+  - {id: WP-EP-095, tier: RES, state: planned, effort_ag: 3.0, title: "ELAM + PPL-AM + ETW-TI", depends_on: [], gates: []}
