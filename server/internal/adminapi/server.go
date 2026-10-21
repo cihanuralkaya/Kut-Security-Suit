@@ -1656,7 +1656,15 @@ func (s *Server) handleAgentSecCanonical(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if tenant == "" {
-		tenant = strings.TrimSpace(r.URL.Query().Get("tenant"))
+		// Platform admini: isteğe bağlı ?tenant= atıf filtresi sınırda doğrulanır (Z4b-08).
+		if q := strings.TrimSpace(r.URL.Query().Get("tenant")); q != "" {
+			n, nerr := normalizeTenantInput(q)
+			if nerr != nil {
+				writeErr(w, http.StatusBadRequest, "geçersiz tenant (küçük harf/rakam/tire, 1-63)")
+				return
+			}
+			tenant = n
+		}
 	}
 	evs := aisecnorm.FindingsToEvents(s.agentSec.Findings(), tenant, 0, s.now().UTC())
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -2854,7 +2862,14 @@ func (s *Server) handleMSPCreateCustomer(w http.ResponseWriter, r *http.Request,
 		writeErr(w, http.StatusBadRequest, "name ve tenant_id zorunlu")
 		return
 	}
-	c, err := s.mspStore.MSPAddCustomer(req.Name, req.TenantID)
+	// Z4b-08: kiracı kimliği sınırda doğrulanır/normalleştirilir (küçük harf, [a-z0-9-], 1-63);
+	// büyük-küçük harf varyantları ayrı müşteri olamaz, uzun değer VARCHAR(63) taşmasıyla 500 vermez.
+	normTenant, nerr := normalizeTenantInput(req.TenantID)
+	if nerr != nil {
+		writeErr(w, http.StatusBadRequest, "geçersiz tenant_id (küçük harf/rakam/tire, 1-63)")
+		return
+	}
+	c, err := s.mspStore.MSPAddCustomer(req.Name, normTenant)
 	if respondErr(w, err) {
 		return
 	}
@@ -3506,8 +3521,14 @@ func (s *Server) handleCollectFile(w http.ResponseWriter, r *http.Request, admin
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})
 }
 
-// handleListArtifacts, bir cihazdan toplanan artefaktların meta listesini döner.
+// handleListArtifacts, bir cihazdan toplanan artefaktların meta listesini döner (OPERATOR+).
+// Meta veri de adli kayıttır: uç noktadan toplanan dosya YOLLARI (kullanıcı adı/inceleme
+// kapsamı içerir), boyut ve hash — ham içerik (indirme) ve gözetim-zinciri yazımı ile aynı
+// eşik; VIEWER bunları keşfedemez.
 func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request, adminID string) {
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
+		return
+	}
 	tenant, err := s.callerTenant(r.Context(), adminID)
 	if respondErr(w, err) {
 		return
@@ -3521,7 +3542,12 @@ func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request, adm
 
 // handleDeviceEvidence, cihazın toplanan artefaktlarını kurcalamaya-dayanıklı delil
 // kayıtları (SHA-256 + gözetim-zinciri, doğrulanmış) olarak döner (§23; adli/IR zinciri).
+// OPERATOR+: zincir, delile kimin dokunduğunu (actor) ve dosya yollarını içerir; indirme/
+// gözetim-yazımı ile tek tutarlı adli eşik.
 func (s *Server) handleDeviceEvidence(w http.ResponseWriter, r *http.Request, adminID string) {
+	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
+		return
+	}
 	tenant, err := s.callerTenant(r.Context(), adminID)
 	if respondErr(w, err) {
 		return
@@ -3555,6 +3581,9 @@ func (s *Server) handleRecordCustody(w http.ResponseWriter, r *http.Request, adm
 	if respondErr(w, err) {
 		return
 	}
+	// Kalıcı gözetim yazımı yönetici denetim izine de düşer (CUSTODY_<EYLEM>): delil zinciri
+	// ile admin audit zinciri birbirini çapraz doğrular; yazımı kimin yaptığı iki yerde kalır.
+	s.adminSvc.RecordAudit(r.Context(), adminID, "CUSTODY_"+entry.Action, "artifact", r.PathValue("artifactID"))
 	writeJSON(w, http.StatusOK, map[string]any{"custody": entry})
 }
 

@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"kut.corp/suite/server/internal/admin"
+	"kut.corp/suite/server/internal/aisec"
 	"kut.corp/suite/server/internal/authtoken"
 	"kut.corp/suite/server/internal/detect"
+	"kut.corp/suite/server/internal/msp"
 	"kut.corp/suite/server/internal/security"
 )
 
@@ -499,5 +501,135 @@ func TestPolicyTenantWallHTTP(t *testing.T) {
 	}
 	if all := listIDs(plat); len(all) != 3 {
 		t.Fatalf("platform admini 3 politikayı görmeli: %v", all)
+	}
+}
+
+// W1b-1 QA: artefakt/delil LİSTELEME uçları (dosya yolları + gözetim-zinciri aktörleri) de
+// adli eşikte (OPERATOR+) olmalı; gözetim-zinciri yazımı yönetici denetim izine de düşmeli.
+func TestForensicsListingsRequireOperatorAndCustodyIsAudited(t *testing.T) {
+	ts, store := wallServer(t)
+	viewer := wallAdmin(t, ts, store, "vw", admin.RoleViewer, "")
+	op := wallAdmin(t, ts, store, "op", admin.RoleOperator, "")
+	aid, _ := store.SaveArtifact(context.Background(), "dev-1", "cmd-1", "C:/Users/bob/notes.txt", "abcd", []byte("icerik"))
+
+	// NEGATIF: VIEWER artefakt / delil listesini göremez.
+	if code := doReq(t, "GET", ts.URL+"/api/devices/dev-1/artifacts", viewer, ""); code != http.StatusForbidden {
+		t.Fatalf("VIEWER artefakt listesi 403 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/devices/dev-1/evidence", viewer, ""); code != http.StatusForbidden {
+		t.Fatalf("VIEWER delil listesi 403 olmalı: %d", code)
+	}
+	// POZITIF: OPERATOR görür.
+	if code := doReq(t, "GET", ts.URL+"/api/devices/dev-1/artifacts", op, ""); code != http.StatusOK {
+		t.Fatalf("OPERATOR artefakt listesi 200 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/devices/dev-1/evidence", op, ""); code != http.StatusOK {
+		t.Fatalf("OPERATOR delil listesi 200 olmalı: %d", code)
+	}
+
+	// NEGATIF: reddedilen (VIEWER) ve geçersiz eylemli (OPERATOR) gözetim yazımı denetim satırı BIRAKMAZ.
+	custodyURL := ts.URL + "/api/devices/dev-1/evidence/" + aid + "/custody"
+	if code, _ := post(t, custodyURL, viewer, map[string]string{"action": "ACCESSED"}); code != http.StatusForbidden {
+		t.Fatalf("VIEWER custody 403 olmalı: %d", code)
+	}
+	if code, _ := post(t, custodyURL, op, map[string]string{"action": "BOGUS"}); code != http.StatusBadRequest {
+		t.Fatalf("geçersiz eylem 400 olmalı: %d", code)
+	}
+	for _, a := range store.auditRows {
+		if strings.HasPrefix(a.Action, "CUSTODY_") {
+			t.Fatalf("başarısız gözetim yazımı denetim satırı bırakmamalı: %+v", a)
+		}
+	}
+	// POZITIF: başarılı yazım hem delil zincirine hem yönetici denetim izine düşer.
+	if code, _ := post(t, custodyURL, op, map[string]string{"action": "ACCESSED"}); code != http.StatusOK {
+		t.Fatalf("OPERATOR custody 200 olmalı: %d", code)
+	}
+	found := false
+	for _, a := range store.auditRows {
+		if a.Action == "CUSTODY_ACCESSED" && a.TargetType == "artifact" && a.TargetID == aid {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("CUSTODY_ACCESSED denetim satırı yazılmalıydı: %+v", store.auditRows)
+	}
+}
+
+// recMSP, MSPAddCustomer'a geçen kiracıyı kaydeden MSP deposudur.
+type recMSP struct {
+	fakeMSPStore
+	tenants []string
+}
+
+func (r *recMSP) MSPAddCustomer(name, tenantID string) (msp.Customer, error) {
+	r.tenants = append(r.tenants, tenantID)
+	return msp.Customer{Name: name, TenantID: tenantID}, nil
+}
+
+// Z4b-08: istekten gelen kiracı değerleri sınırda doğrulanır/normalleştirilir (MSP müşterisi,
+// yönetici oluşturma, ajan-güvenlik ?tenant= filtresi). Boş kiracı yönetici oluşturmada
+// "platform" olarak KALIR ('default'a dönüşmez).
+func TestTenantInputValidatedAtBoundaries(t *testing.T) {
+	srv, store := newServer(t)
+	srv.SetTenantID("deploy-default")
+	rec := &recMSP{}
+	srv.SetMSPStore(rec)
+	srv.SetAgentSec(aisec.NewService())
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	plat := wallAdmin(t, ts, store, "plat", admin.RoleAdmin, "")
+	acme := wallAdmin(t, ts, store, "acme-adm", admin.RoleAdmin, "acme")
+
+	// --- MSP müşterisi ---
+	if code, _ := post(t, ts.URL+"/api/msp/customers", plat, map[string]string{"name": "n", "tenant_id": "  ACME-Corp "}); code != http.StatusCreated {
+		t.Fatalf("geçerli (büyük harfli) kiracı kabul edilmeli: %d", code)
+	}
+	if len(rec.tenants) != 1 || rec.tenants[0] != "acme-corp" {
+		t.Fatalf("MSP kiracısı normalleştirilmeli: %v", rec.tenants)
+	}
+	for _, bad := range []string{"Bad Tenant!", "-lead", strings.Repeat("a", 64)} {
+		if code, _ := post(t, ts.URL+"/api/msp/customers", plat, map[string]string{"name": "n", "tenant_id": bad}); code != http.StatusBadRequest {
+			t.Fatalf("geçersiz MSP kiracısı (%q) 400 olmalı: %d", bad, code)
+		}
+	}
+	if len(rec.tenants) != 1 {
+		t.Fatalf("geçersiz kiracılar depoya ulaşmamalı: %v", rec.tenants)
+	}
+
+	// --- Yönetici oluşturma ---
+	mk := func(token, email, tn string) (int, string) {
+		code, b := post(t, ts.URL+"/api/admins", token, map[string]string{
+			"email": email, "password": "longenough1", "role": "VIEWER", "tenant_id": tn,
+		})
+		return code, b["admin_id"]
+	}
+	if code, id := mk(plat, "g1@x", "GLOBEX"); code != http.StatusOK || store.adminTen[id] != "globex" {
+		t.Fatalf("platform: kiracı normalleşmeli: %d %q", code, store.adminTen[id])
+	}
+	if code, _ := mk(plat, "bad@x", "Bad Tenant!"); code != http.StatusBadRequest {
+		t.Fatalf("platform: geçersiz kiracı 400 olmalı: %d", code)
+	}
+	if code, id := mk(plat, "p2@x", ""); code != http.StatusOK || store.adminTen[id] != "" {
+		t.Fatalf("platform: boş kiracı platform admini KALMALI: %d %q", code, store.adminTen[id])
+	}
+	// Kiracıya bağlı: kendi kiracısının büyük-harf yazımı kabul (normalleşir), başkası/başkasının büyük harfi 403.
+	if code, id := mk(acme, "a1@x", "ACME"); code != http.StatusOK || store.adminTen[id] != "acme" {
+		t.Fatalf("kiracılı: kendi kiracısı (büyük harf) kabul + normalleşmeli: %d %q", code, store.adminTen[id])
+	}
+	for _, other := range []string{"globex", "GLOBEX"} {
+		if code, _ := mk(acme, "x-"+other+"@x", other); code != http.StatusForbidden {
+			t.Fatalf("kiracılı: başka kiracı (%s) 403 olmalı: %d", other, code)
+		}
+	}
+
+	// --- Ajan-güvenlik ?tenant= (yalnız platform için anlamlı) ---
+	if code := doReq(t, "GET", ts.URL+"/api/agentsec/canonical?tenant=Bad%20Tenant!", plat, ""); code != http.StatusBadRequest {
+		t.Fatalf("platform: geçersiz ?tenant= 400 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/agentsec/canonical?tenant=ACME", plat, ""); code != http.StatusOK {
+		t.Fatalf("platform: geçerli ?tenant= 200 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/agentsec/canonical?tenant=Bad%20Tenant!", acme, ""); code != http.StatusOK {
+		t.Fatalf("kiracılı: ?tenant= zaten YOK SAYILIR (200): %d", code)
 	}
 }
