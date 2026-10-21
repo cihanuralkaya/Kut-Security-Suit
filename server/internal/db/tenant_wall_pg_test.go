@@ -727,3 +727,154 @@ func TestPGPolicyAssignLegacyEmptyTenantDevice(t *testing.T) {
 		t.Fatalf("'default' politikası legacy cihaza atanabilmeli: %v", err)
 	}
 }
+
+// pgEvent, test için doğrudan event_logs'a (2099 bölümü) kiracılı bir olay yazar.
+func pgEvent(ctx context.Context, t *testing.T, s *Store, deviceID, tenantID string) string {
+	t.Helper()
+	if _, err := s.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS event_logs_2099_01 PARTITION OF event_logs
+	    FOR VALUES FROM ('2099-01-01') TO ('2099-02-01')`); err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	err := s.pool.QueryRow(ctx, `INSERT INTO event_logs (device_id, tenant_id, category, severity, message, occurred_at, created_at)
+	    VALUES ($1::uuid, $2, 'SYSTEM', 'INFO', 'm', '2099-01-15', '2099-01-15') RETURNING id::text`, deviceID, tenantID).Scan(&id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(ctx, `DELETE FROM event_ack WHERE event_id = $1`, id)
+		_, _ = s.pool.Exec(ctx, `DELETE FROM event_logs WHERE id = $1::uuid`, id)
+	})
+	return id
+}
+
+func ackTenantOf(ctx context.Context, t *testing.T, s *Store, eventID string) string {
+	t.Helper()
+	var tn string
+	if err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM event_ack WHERE event_id = $1`, eventID).Scan(&tn); err != nil {
+		t.Fatal(err)
+	}
+	return tn
+}
+
+// Z4b-11 (PG): event_ack.tenant_id artık OLAYIN kiracısıyla yazılır (ack ve vaka yolları);
+// eski boş kiracı 'default'a kanonikleşir; önceki hatalı ('default') satır doğru kiracıyla onarılır;
+// bulunamayan/geçersiz olay 'default' alır ve mevcut satırın kiracısını bozmaz.
+func TestPGEventAckWritesEventTenant(t *testing.T) {
+	s, ctx := pgStore(t)
+	tA := uniq(t, "ta-")
+	devA, devLegacy := pgDevice(ctx, t, s, tA), pgDevice(ctx, t, s, "")
+	evA, evLegacy := pgEvent(ctx, t, s, devA, tA), pgEvent(ctx, t, s, devLegacy, "")
+
+	// POZITIF: ack olayın kiracısını yazar (artık 'default' değil).
+	if err := s.SetEventAck(ctx, evA, "", "ACKNOWLEDGED"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ackTenantOf(ctx, t, s, evA); got != tA {
+		t.Fatalf("event_ack.tenant_id olayın kiracısı %q olmalı: %q", tA, got)
+	}
+	// Vaka yolu aynı kiracıyı korur, durumu bozmaz.
+	if err := s.SetEventCase(ctx, evA, "", "analist", "not"); err != nil {
+		t.Fatal(err)
+	}
+	var st string
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(status,'') FROM event_ack WHERE event_id = $1`, evA).Scan(&st); err != nil || st != "ACKNOWLEDGED" {
+		t.Fatalf("vaka güncellemesi durumu korumalı: %q %v", st, err)
+	}
+	if got := ackTenantOf(ctx, t, s, evA); got != tA {
+		t.Fatalf("vaka sonrası kiracı korunmalı: %q", got)
+	}
+	// Vaka yolu ack'siz yeni olayda da kiracıyı yazar.
+	evB := pgEvent(ctx, t, s, devA, tA)
+	if err := s.SetEventCase(ctx, evB, "", "a", "n"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ackTenantOf(ctx, t, s, evB); got != tA {
+		t.Fatalf("SetEventCase olay kiracısını yazmalı: %q", got)
+	}
+
+	// Legacy boş kiracılı olay → kanonik 'default'.
+	if err := s.SetEventAck(ctx, evLegacy, "", "RESOLVED"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ackTenantOf(ctx, t, s, evLegacy); got != "default" {
+		t.Fatalf("legacy olay 'default' olmalı: %q", got)
+	}
+
+	// Önceki hatayı onar: yanlış ('default') yazılmış satır, yeniden ack'te olayın kiracısına döner.
+	evC := pgEvent(ctx, t, s, devA, tA)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO event_ack (event_id, tenant_id, status) VALUES ($1, 'default', 'ACKNOWLEDGED')`, evC); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetEventAck(ctx, evC, "", "RESOLVED"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ackTenantOf(ctx, t, s, evC); got != tA {
+		t.Fatalf("hatalı satır olayın kiracısıyla onarılmalı: %q", got)
+	}
+
+	// NEGATIF: bulunamayan / geçersiz olay → 'default'; mevcut satırın kiracısı bozulmaz.
+	ghost := "00000000-0000-0000-0000-0000000000aa"
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM event_ack WHERE event_id IN ($1, 'not-a-uuid')`, ghost) })
+	for _, id := range []string{ghost, "not-a-uuid"} {
+		if err := s.SetEventAck(ctx, id, "", "ACKNOWLEDGED"); err != nil {
+			t.Fatalf("bilinmeyen olay hata vermemeli (%q): %v", id, err)
+		}
+		if got := ackTenantOf(ctx, t, s, id); got != "default" {
+			t.Fatalf("bilinmeyen olay 'default' almalı (%q): %q", id, got)
+		}
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE event_ack SET tenant_id = $2 WHERE event_id = $1`, ghost, tA); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetEventAck(ctx, ghost, "", "RESOLVED"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ackTenantOf(ctx, t, s, ghost); got != tA {
+		t.Fatalf("olay bulunamayınca mevcut satırın kiracısı korunmalı: %q", got)
+	}
+}
+
+// Z4b-11 (PG): incidents.tenant_id cihazın kiracısıyla yazılır; legacy boş kiracı, cihazsız
+// incident ve bilinmeyen cihaz 'default'.
+func TestPGOpenIncidentWritesDeviceTenant(t *testing.T) {
+	s, ctx := pgStore(t)
+	tA := uniq(t, "ta-")
+	devA, devLegacy := pgDevice(ctx, t, s, tA), pgDevice(ctx, t, s, "")
+	tenantOf := func(id string) string {
+		t.Helper()
+		var tn string
+		if err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM incidents WHERE id = $1::uuid`, id).Scan(&tn); err != nil {
+			t.Fatal(err)
+		}
+		return tn
+	}
+	open := func(dev string) string {
+		t.Helper()
+		id, err := s.OpenIncident(ctx, dev, uniq(t, "k-"), "R1", "T1059", "HIGH", "msg", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM incidents WHERE id = $1::uuid`, id) })
+		return id
+	}
+	if got := tenantOf(open(devA)); got != tA {
+		t.Fatalf("incident cihazın kiracısını yazmalı: %q", got)
+	}
+	if got := tenantOf(open(devLegacy)); got != "default" {
+		t.Fatalf("legacy cihaz incident'i 'default' olmalı: %q", got)
+	}
+	if got := tenantOf(open("")); got != "default" {
+		t.Fatalf("cihazsız incident 'default' olmalı: %q", got)
+	}
+	// Okuma yolu (device→tenant join) hâlâ kiracıyı doğru süzer.
+	rows, err := s.ListIncidents(ctx, 100, tA)
+	if err != nil || len(rows) == 0 {
+		t.Fatalf("A kendi incident'ini görmeli: %v %v", rows, err)
+	}
+	for _, r := range rows {
+		if r.DeviceID != devA {
+			t.Fatalf("A başka cihazın incident'ini görmemeli: %+v", r)
+		}
+	}
+}

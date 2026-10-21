@@ -157,6 +157,7 @@ type savedSearchRec struct {
 
 // incidentRec, korelasyonla gruplanmış bir olaydır (bellek-içi).
 type incidentRec struct {
+	tenant                                                                string // cihazın KANONİK kiracısı (db incidents.tenant_id ile aynı; Z4b-11)
 	id, deviceID, corrKey, ruleID, technique, severity, sampleMsg, status string
 	count                                                                 int
 	firstSeen, lastSeen                                                   time.Time
@@ -171,6 +172,7 @@ type pendingWipeRec struct {
 
 // eventAckRec, bir olayın triyaj/vaka durumudur (bellek-içi).
 type eventAckRec struct {
+	tenant   string // olayın KANONİK kiracısı (db event_ack.tenant_id ile aynı temsil; Z4b-11)
 	status   string
 	assignee string
 	note     string
@@ -1210,8 +1212,12 @@ func (s *Store) OpenIncident(_ context.Context, deviceID, key, ruleID, technique
 	defer s.mu.Unlock()
 	s.incSeq++
 	id := fmt.Sprintf("inc-%d", s.incSeq)
+	incTenant := string(tenant.Default) // cihazsız/bilinmeyen cihaz → 'default' (db ile aynı)
+	if d, ok := s.devices[deviceID]; ok {
+		incTenant = tenant.Canonical(d.tenant)
+	}
 	s.incidents = append(s.incidents, incidentRec{
-		id: id, deviceID: deviceID, corrKey: key, ruleID: ruleID, technique: technique,
+		id: id, tenant: incTenant, deviceID: deviceID, corrKey: key, ruleID: ruleID, technique: technique,
 		severity: severity, sampleMsg: message, count: 1, firstSeen: at, lastSeen: at, status: "OPEN",
 	})
 	return id, nil
@@ -1402,8 +1408,24 @@ func (s *Store) SetEventAck(_ context.Context, eventID, adminID, status string) 
 	}
 	rec := s.eventAcks[eventID] // mevcut assignee/note korunur
 	rec.status, rec.adminID, rec.at = status, adminID, time.Now()
+	rec.tenant = s.ackTenantLocked(eventID, rec.tenant)
 	s.eventAcks[eventID] = rec
 	return nil
+}
+
+// ackTenantLocked, olayın KANONİK kiracısını döner (Z4b-11, db.ackTenant ile aynı kural):
+// olay bulunursa tenant.Canonical(olay kiracısı); bulunamazsa mevcut satırın kiracısı korunur,
+// o da yoksa 'default'. s.mu tutulurken çağrılır.
+func (s *Store) ackTenantLocked(eventID, existing string) string {
+	for _, e := range s.events {
+		if e.id == eventID {
+			return tenant.Canonical(e.tenant)
+		}
+	}
+	if existing != "" {
+		return existing
+	}
+	return string(tenant.Default)
 }
 
 // SetEventCase, olayın sorumlu+not alanlarını ayarlar (durumu korur). Vaka yönetimi.
@@ -1415,6 +1437,7 @@ func (s *Store) SetEventCase(_ context.Context, eventID, adminID, assignee, note
 	}
 	rec := s.eventAcks[eventID] // mevcut status korunur
 	rec.assignee, rec.note, rec.adminID, rec.at = assignee, note, adminID, time.Now()
+	rec.tenant = s.ackTenantLocked(eventID, rec.tenant)
 	s.eventAcks[eventID] = rec
 	return nil
 }
