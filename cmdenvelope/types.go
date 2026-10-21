@@ -231,3 +231,21 @@ func ProtectedNames() []string {
 	sort.Strings(out)
 	return out
 }
+
+// FamilyIsolation, birbirini geçersiz kılan izolasyon komutlarının sequence ailesidir.
+const FamilyIsolation = "isolation"
+
+// Family, bir komut tipinin sequence AİLESİNİ döner: QUARANTINE ve UNQUARANTINE tek aile
+// ("isolation"), diğer her bilinen tip kendi adıyla kendi ailesidir. Ajan, son sequence'ı
+// aile başına tutar; isolation ailesinde yeni bir komut kimliği son değerin altında gelirse
+// `superseded` olur (W2 tasarımı 2.3). Bilinmeyen tip için "" döner (çağıran reddeder).
+func Family(name string) string {
+	switch name {
+	case TypeQuarantine, TypeUnquarantine:
+		return FamilyIsolation
+	}
+	if Known(name) {
+		return name
+	}
+	return ""
+}
