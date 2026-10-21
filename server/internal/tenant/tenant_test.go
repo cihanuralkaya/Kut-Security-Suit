@@ -46,3 +46,24 @@ func TestContextRoundTrip(t *testing.T) {
 		t.Fatalf("bağlamdan acme beklenirdi, %q", got)
 	}
 }
+
+func TestEquivalentTreatsLegacyEmptyAsDefault(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"", "default", true},
+		{"default", "", true},
+		{"", "", true},
+		{"default", "default", true},
+		{"", "acme", false}, // legacy '' yalnız default ile eşdeğer, gerçek kiracıyla DEĞİL
+		{"acme", "", false},
+		{"acme", "globex", false},
+		{"acme", "acme", true},
+	}
+	for _, c := range cases {
+		if got := Equivalent(c.a, c.b); got != c.want {
+			t.Errorf("Equivalent(%q,%q)=%v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}

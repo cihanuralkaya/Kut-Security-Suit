@@ -176,7 +176,7 @@ func TestAdminLifecycle(t *testing.T) {
 	}
 
 	// ListAdmins e-postaya göre sıralı (alpha < zeta).
-	list, _ := s.ListAdmins(ctx)
+	list, _ := s.ListAdmins(ctx, "")
 	if len(list) != 2 {
 		t.Fatalf("2 admin beklenirdi: %d", len(list))
 	}
@@ -189,7 +189,7 @@ func TestAdminLifecycle(t *testing.T) {
 	if err := s.DeactivateAdmin(ctx, id2); err != nil {
 		t.Fatal(err)
 	}
-	list, _ = s.ListAdmins(ctx)
+	list, _ = s.ListAdmins(ctx, "")
 	for _, a := range list {
 		if a.ID == id2 && a.Active {
 			t.Fatal("id2 pasifleştirilmeliydi")
@@ -212,23 +212,50 @@ func TestMFALifecycle(t *testing.T) {
 	if err := s.SetPendingMFASecret(ctx, id, "SECRET123"); err != nil {
 		t.Fatal(err)
 	}
-	sec, on, _ := s.LookupMFA(ctx, id)
-	if sec != "SECRET123" || on {
-		t.Fatalf("bekleyen sır ayarlanmalı ama etkin olmamalıydı: %q/%v", sec, on)
+	if sec, on, _ := s.LookupMFA(ctx, id); sec != "" || on {
+		t.Fatalf("bekleyen sır ETKİN sır olarak görünmemeliydi: %q/%v", sec, on)
+	}
+	if p, _ := s.LookupPendingMFA(ctx, id); p != "SECRET123" {
+		t.Fatalf("bekleyen sır okunamadı: %q", p)
 	}
 
 	if err := s.ActivateMFA(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	if _, on, _ := s.LookupMFA(ctx, id); !on {
-		t.Fatal("ActivateMFA sonrası etkin olmalıydı")
+	if sec, on, _ := s.LookupMFA(ctx, id); !on || sec != "SECRET123" {
+		t.Fatalf("ActivateMFA sonrası etkin olmalıydı: %q/%v", sec, on)
+	}
+	if p, _ := s.LookupPendingMFA(ctx, id); p != "" {
+		t.Fatal("etkinleşmeden sonra bekleyen sır temizlenmeliydi")
 	}
 
+	// Yeniden kayıt: yeni sır bekleyen kalırken ETKİN sır/durum aynen korunur (S-7);
+	// ActivateMFA atomik takas yapar, eski sır geçersizleşir.
+	if err := s.SetPendingMFASecret(ctx, id, "SECRET456"); err != nil {
+		t.Fatal(err)
+	}
+	if sec, on, _ := s.LookupMFA(ctx, id); !on || sec != "SECRET123" {
+		t.Fatalf("bekleyen pencerede eski sır ve enrolled=true korunmalıydı: %q/%v", sec, on)
+	}
+	if err := s.ActivateMFA(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if sec, on, _ := s.LookupMFA(ctx, id); !on || sec != "SECRET456" {
+		t.Fatalf("takas sonrası yeni sır etkin olmalıydı: %q/%v", sec, on)
+	}
+
+	// Kapatma hem etkin hem bekleyen sırrı temizler.
+	if err := s.SetPendingMFASecret(ctx, id, "SECRET789"); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.DisableMFA(ctx, id); err != nil {
 		t.Fatal(err)
 	}
 	if sec, on, _ := s.LookupMFA(ctx, id); sec != "" || on {
 		t.Fatalf("DisableMFA sır ve durumu temizlemeliydi: %q/%v", sec, on)
+	}
+	if p, _ := s.LookupPendingMFA(ctx, id); p != "" {
+		t.Fatal("DisableMFA bekleyen sırrı da temizlemeliydi")
 	}
 
 	// Sır yokken ActivateMFA etkinleştirmemeli.

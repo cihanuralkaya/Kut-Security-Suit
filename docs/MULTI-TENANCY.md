@@ -80,6 +80,38 @@ Uygulama katmanı her satır/anahtar/vakayı `tenant_id`-atıflı yapar. Derinle
 için altyapı katmanı da yapılandırılabilir (kod değil, dağıtım): ClickHouse tablo/row-
 policy/quota, nesne-depolama (S3) kiracı-önekli anahtarlar, dayanıklı-bus partition/ACL.
 
+## Sonradan kapsanan izolasyon seti (kiracı duvarı kapanışı)
+
+Aşağıdaki yüzeyler de kiracı duvarına ve rol kapısına bağlanmıştır:
+
+- **Enrollment token**: kiracı token'a sunucu tarafında mühürlenir (kiracıya bağlı admin
+  başka kiracı veremez; gövdedeki `tenant_id` yalnız platform admini için geçerlidir) ve
+  iptal (revoke) kiracı + OPERATOR kapısındandır; yabancı/yok token fail-closed reddedilir.
+- **Cihaz yeniden-taşıma yok**: enroll sırasında mevcut cihaz başka kiracıya taşınamaz
+  (`ErrTenantMismatch`); cihazın güvenlik durumu (karantina vb.) yeniden kayıtta korunur.
+  Kiracı öncesi (legacy) cihazların boş kiracısı örtük `default` kiracıyla eşdeğer sayılır:
+  `default` token'ıyla yeniden kayıt reddedilmez ve kiracı `default`'a normalleştirilir
+  (gerçek hiçbir kiracıya taşıma yine yok).
+- **Yönetici yönetimi**: oluşturma/rol/pasifleştirme/listeleme kiracı kapsamlıdır ve
+  kapsam dışına rol (ADMIN dahil) veremez; kapsamın SON etkin ADMIN'i kendini düşüremez
+  veya pasifleştiremez (403, kilitlenme koruması; platform kapsamı için de geçerlidir).
+- **Yönetilen API token'ları** (metrics/ingest; oluştur/listele/iptal): yalnız platform
+  admini; kiracıya bağlı admin 403 alır.
+- **Cihaz etiketleri**: OPERATOR+ ve cihazın kiracısı ile sınırlı.
+- **MFA yeniden kayıt**: MFA zaten etkinse `POST /api/mfa/enroll` mevcut TOTP kodunu
+  (`{"code":"…"}`) ister; kodsuz/yanlış/tekrar kullanılmış kod 403 + denetim kaydıdır.
+  Yeni sır BEKLEYEN olarak ayrı saklanır: yeni sırdan gelen geçerli kodla etkinleşene dek
+  eski sır ve `mfa_enrolled` aynen kalır (giriş MFA'yı zorunlu kılar, kapatma eski sırdan
+  kod ister); etkinleşmede takas atomiktir ve eski sır geçersizleşir.
+- **Adli (forensics) uçları** OPERATOR+ gerektirir (VIEWER 403): artefakt indirme,
+  emanet-zinciri (custody) kaydı, tespit yeniden-oynatma (replay).
+- **İptal edilmiş sertifikalar**, devam ettirilen (resumed) TLS oturumlarında da
+  `VerifyConnection` ile zorlanır; iptal listesi başlangıçta yüklenir.
+
+Konsol bu kapılarla uyumludur: VIEWER oturumunda artefakt indirme denetimi gizlenir
+(kilit simgesi), 403'ler mesajla ele alınır; MFA yeniden kayıt/kapatma mevcut kodu sorar;
+enrollment token isteği kiracı göndermez (kiracı sunucuda çözülür).
+
 ## Değişmezler
 
 - INV-044: kiracı çözülemiyorsa (zorlama açıkken) DENY.

@@ -28,6 +28,7 @@ import (
 	"kut.corp/suite/server/internal/model"
 	"kut.corp/suite/server/internal/msp"
 	"kut.corp/suite/server/internal/security"
+	"kut.corp/suite/server/internal/tenant"
 )
 
 type device struct {
@@ -107,7 +108,8 @@ type adminRec struct {
 	active                  bool
 	mfaSecret               string // TOTP sırrı (bellek-içi demo; db katmanı şifreler)
 	mfaEnrolled             bool
-	mfaLastStep             int64 // en son kabul edilen TOTP adım sayacı (tek-kullanım/anti-replay)
+	mfaPending              string // yeniden kayıtta bekleyen sır (etkinleşene dek mfaSecret/mfaEnrolled değişmez)
+	mfaLastStep             int64  // en son kabul edilen TOTP adım sayacı (tek-kullanım/anti-replay)
 }
 
 type auditRec struct {
@@ -258,6 +260,25 @@ func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollm
 	}
 	if id == "" {
 		id = randID("dev-")
+	}
+	if d, ok := s.devices[id]; ok {
+		// KİRACI DUVARI (db ile aynı): mevcut cihaz başka kiracıya aitse taşınmaz. Eski
+		// (kiracı öncesi) satırların boş kiracısı '', örtük "default" kiracıyla EŞDEĞERDİR;
+		// gerçek hiçbir kiracıyla değil. Eşdeğer yeniden kayıtta kiracı default'a normalleşir.
+		if !tenant.Equivalent(d.tenant, in.TenantID) {
+			return "", enroll.ErrTenantMismatch
+		}
+		d.tenant = tenant.Canonical(d.tenant)
+		d.hostnameEnc, d.macEnc, d.osEnc = in.HostnameEnc, in.MACEnc, in.OSInfoEnc
+		d.macBidx, d.osPlatform, d.agentVersion = in.MACBlindIndex, in.OSPlatform, in.AgentVersion
+		// Güvenlik durumu (QUARANTINE_PENDING/QUARANTINED/ACTIVE) korunur; yalnız
+		// henüz-aktif-olmayan durumlar ACTIVE'e yükselir.
+		switch d.status {
+		case "PENDING_ENROLLMENT", "OFFLINE", "UNINSTALLED", "":
+			d.status = "ACTIVE"
+		}
+		d.lastSeen = time.Now()
+		return id, nil
 	}
 	s.devices[id] = &device{
 		id: id, hostnameEnc: in.HostnameEnc, macEnc: in.MACEnc, osEnc: in.OSInfoEnc,
@@ -483,6 +504,18 @@ func (s *Store) SaveEnrollmentToken(_ context.Context, tokenIndex []byte, create
 		id: randID("etok-"), createdBy: createdBy, tenant: tenantID, expiresAt: expiresAt, createdAt: time.Now(),
 	}
 	return nil
+}
+
+// EnrollmentTokenTenant, token'ın mühürlü kiracısını döner (yoksa found=false) — db ile aynı.
+func (s *Store) EnrollmentTokenTenant(_ context.Context, tokenID string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.tokens {
+		if t.id == tokenID {
+			return t.tenant, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 // RevokeEnrollmentToken, id ile token'ı bulup kullanılmış işaretler (used=true).
@@ -807,30 +840,34 @@ func (s *Store) DeactivateAdmin(_ context.Context, id string) error {
 	return nil
 }
 
-// ListAdmins, yöneticileri e-postaya göre sıralı döner (parola hash'i olmadan).
-func (s *Store) ListAdmins(_ context.Context) ([]admin.AdminInfo, error) {
+// ListAdmins, yöneticileri e-postaya göre sıralı döner (parola hash'i olmadan). tenantID
+// boş değilse yalnız o kiracının yöneticileri (platform adminleri dahil değil) — db ile aynı.
+func (s *Store) ListAdmins(_ context.Context, tenantID string) ([]admin.AdminInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]admin.AdminInfo, 0, len(s.adminsByID))
 	for _, a := range s.adminsByID {
+		if tenantID != "" && a.tenant != tenantID {
+			continue
+		}
 		out = append(out, admin.AdminInfo{ID: a.id, Email: a.email, Role: a.role, Active: a.active})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Email < out[j].Email })
 	return out, nil
 }
 
-// SetPendingMFASecret, yöneticinin TOTP sırrını saklar (henüz etkin değil).
+// SetPendingMFASecret, yeni TOTP sırrını BEKLEYEN olarak saklar; etkin sır ve etkin
+// durum (mfaSecret/mfaEnrolled) değişmez (db katmanıyla aynı: yeniden kayıtta MFA açık kalır).
 func (s *Store) SetPendingMFASecret(_ context.Context, adminID, secret string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if a, ok := s.adminsByID[adminID]; ok {
-		a.mfaSecret = secret
-		a.mfaEnrolled = false
+		a.mfaPending = secret
 	}
 	return nil
 }
 
-// LookupMFA, TOTP sırrını ve etkin durumunu döner.
+// LookupMFA, ETKİN TOTP sırrını ve etkin durumunu döner.
 func (s *Store) LookupMFA(_ context.Context, adminID string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -840,22 +877,36 @@ func (s *Store) LookupMFA(_ context.Context, adminID string) (string, bool, erro
 	return "", false, nil
 }
 
-// ActivateMFA, bekleyen sırrı etkinleştirir.
+// LookupPendingMFA, bekleyen (etkinleştirilmemiş) TOTP sırrını döner; yoksa "".
+func (s *Store) LookupPendingMFA(_ context.Context, adminID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if a, ok := s.adminsByID[adminID]; ok {
+		return a.mfaPending, nil
+	}
+	return "", nil
+}
+
+// ActivateMFA, bekleyen sırrı atomik olarak etkin sır yapar (eski sır geçersizleşir).
+// Bekleyen sır yoksa hiçbir şey değişmez.
 func (s *Store) ActivateMFA(_ context.Context, adminID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if a, ok := s.adminsByID[adminID]; ok && a.mfaSecret != "" {
+	if a, ok := s.adminsByID[adminID]; ok && a.mfaPending != "" {
+		a.mfaSecret = a.mfaPending
+		a.mfaPending = ""
 		a.mfaEnrolled = true
 	}
 	return nil
 }
 
-// DisableMFA, sırrı temizler ve MFA'yı kapatır.
+// DisableMFA, etkin ve bekleyen sırrı temizler ve MFA'yı kapatır.
 func (s *Store) DisableMFA(_ context.Context, adminID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if a, ok := s.adminsByID[adminID]; ok {
 		a.mfaSecret = ""
+		a.mfaPending = ""
 		a.mfaEnrolled = false
 	}
 	return nil

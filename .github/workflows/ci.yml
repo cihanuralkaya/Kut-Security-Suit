@@ -126,6 +126,13 @@ jobs:
           export PSQL="docker exec -i $PGCID psql"
           bash scripts/smoke-test.sh
 
+      # Kiracı duvarı (cihaz yeniden-kayıt ON CONFLICT, token/yönetici kiracı süzmesi) GERÇEK
+      # PostgreSQL'e karşı: smoke adımı şemayı yüklediği için tablolar hazırdır.
+      - name: DB kiracı-duvarı entegrasyon testleri
+        env:
+          KUT_DATABASE_URL: postgres://kut:kut@localhost:5432/kut?sslmode=disable
+        run: go test -count=1 -run PG -v ./server/internal/db/
+
   enterprise-kafka:
     name: Enterprise Kafka bus (Redpanda)
     runs-on: ubuntu-latest

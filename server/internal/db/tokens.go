@@ -2,7 +2,10 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
 
 	"kut.corp/suite/server/internal/adminread"
 )
@@ -49,4 +52,18 @@ func (s *Store) RevokeEnrollmentToken(ctx context.Context, tokenID string) error
 		return fmt.Errorf("db: enrollment token iptali: %w", err)
 	}
 	return nil
+}
+
+// EnrollmentTokenTenant, enrollment token'ın mühürlü kiracısını döner (iptal yazma-yolunun
+// kiracı zorunlu-kılması için). Token yoksa found=false (hata değil).
+func (s *Store) EnrollmentTokenTenant(ctx context.Context, tokenID string) (string, bool, error) {
+	var tenant string
+	err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM enrollment_tokens WHERE id::text = $1`, tokenID).Scan(&tenant)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("db: enrollment token kiracısı: %w", err)
+	}
+	return tenant, true, nil
 }

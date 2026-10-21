@@ -942,6 +942,8 @@
             <span class="sp"></span><span id="mfa-status" class="count">—</span></div>
           <div class="body">
             <p class="hint" style="margin:0 0 10px">Hesabınızı TOTP (authenticator uygulaması) ile koruyun. Etkinleştirildiğinde girişte parola + kod gerekir.</p>
+            <div class="lbl">Mevcut kod (yalnız 2FA zaten etkinse — yeniden kayıt için gerekli)</div>
+            <div class="field"><input id="mfa-ecode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" aria-label="Mevcut 2FA kodu (yeniden kayıt)"></div>
             <button class="btn sm" data-act="mfaEnroll">Kurulumu Başlat</button>
             <div id="mfa-setup" style="display:none;margin-top:12px">
               <div class="lbl">1) Bu sırrı authenticator'a ekleyin</div>
@@ -952,8 +954,8 @@
               <div class="field"><input id="mfa-code" type="text" inputmode="numeric" maxlength="6" placeholder="123456"></div>
               <button class="btn sm" data-act="mfaActivate">Etkinleştir</button>
             </div>
-            <div id="mfa-disable" style="display:none;margin-top:12px">
-              <div class="lbl">MFA'yı kapatmak için mevcut kodu girin</div>
+            <div id="mfa-disable" style="margin-top:12px">
+              <div class="lbl">2FA etkinse, kapatmak için mevcut kodu girin</div>
               <div class="field"><input id="mfa-dcode" type="text" inputmode="numeric" maxlength="6" placeholder="123456"></div>
               <button class="btn sm ghost" data-act="mfaDisable">2FA'yı Kapat</button>
             </div>
@@ -1429,7 +1431,7 @@
   // ================= /TEMA & GÖRÜNÜM =================
 
   var state = { token:"", email:"", devices:[], events:[], sel:null, sevFilter:"", catFilter:"", actFilter:"", pendingOnly:false, auto:true, timer:null,
-    evtOpen:{}, tokens:[], admins:[], policies:[], devSearch:"", devFilter:"",
+    role:"", evtOpen:{}, tokens:[], admins:[], policies:[], devSearch:"", devFilter:"",
     streamOn:false, streamCtrl:null, streamRetry:null, polOpen:{}, polRules:{}, audSearch:"" };
 
   // ---------- API ----------
@@ -1440,7 +1442,7 @@
     return fetch(path, opt).then(function (res) {
       return res.json().catch(function(){ return {}; }).then(function (data) {
         if (res.status === 401) { sessionExpired(); throw new Error(data.error || "Oturum süresi doldu"); }
-        if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+        if (!res.ok) { var ex = new Error(data.error || ("HTTP " + res.status)); ex.status = res.status; throw ex; }
         return data;
       });
     });
@@ -1542,7 +1544,10 @@
   function downloadArtifact(id, path){
     var name=(path||"artifact").replace(/^.*[\\/]/,"")||"artifact";
     fetch("/api/artifacts/"+encodeURIComponent(id)+"/download",{headers:{Authorization:"Bearer "+state.token}})
-      .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.blob(); })
+      .then(function(res){
+        if(res.status===401){ sessionExpired(); throw new Error("Oturum süresi doldu"); }
+        if(res.status===403) throw new Error("Artefakt indirmek için OPERATOR veya üstü yetki gerekir.");
+        if(!res.ok) throw new Error("HTTP "+res.status); return res.blob(); })
       .then(function(blob){
         var url=URL.createObjectURL(blob), a=document.createElement("a");
         a.href=url; a.download=name; document.body.appendChild(a); a.click();
@@ -2262,10 +2267,25 @@
       body.appendChild(tr);
     });
   }
+  // canOperate: oturum rolü OPERATOR+ mu? Rol bilinmiyorsa true (yalnız UI ipucu — asıl
+  // yetkilendirme sunucuda; 403'ler ayrıca nazikçe ele alınır).
+  function canOperate(){ return state.role!=="VIEWER"; }
+  // learnRole: oturum rolünü yönetici listesinden öğrenir. /api/admins OPERATOR+ gerektirir:
+  // 403 → VIEWER; 200 → kendi satırımızın rolü. Başka hatada rol bilinmez (fail-open UI).
+  function learnRole(admins){
+    var me=(state.email||"").toLowerCase();
+    var row=(admins||[]).filter(function(x){ return (x.email||"").toLowerCase()===me; })[0];
+    if(row && row.role) state.role=row.role;
+  }
+  function detectRole(){
+    return api("/api/admins").then(function(r){ learnRole(r.admins||[]); })
+      .catch(function(e){ if(e && e.status===403) state.role="VIEWER"; });
+  }
   function loadAdmins(){
     return api("/api/admins").then(function(r){
-      state.admins=r.admins||[]; renderAdmins();
+      state.admins=r.admins||[]; learnRole(state.admins); renderAdmins();
     }).catch(function(e){
+      if(e && e.status===403) state.role="VIEWER";
       $("adm-empty").textContent="Yönetici listesi görüntülenemedi ("+e.message+").";
       $("adm-empty").style.display="block";
     });
@@ -2941,9 +2961,12 @@
       var arts=(res[2]&&res[2].artifacts)||[];
       var artHtml="";
       if(arts.length){
+        var canDl = canOperate(); // VIEWER: sunucu 403 döner → indirme denetimini gizle
         artHtml=arts.map(function(a){
           return "<div class='mini' style='display:flex;gap:8px;align-items:baseline;padding:3px 0'>"+
-            "<span class='click' style='cursor:pointer;color:var(--accent)' data-artdl='"+esc(a.id)+"' data-artname='"+esc(a.path)+"' title='İndir'><svg class='bi' viewBox='0 0 24 24' aria-hidden='true'><use href='#i-download'/></svg></span>"+
+            (canDl
+              ? "<span class='click' style='cursor:pointer;color:var(--accent)' data-artdl='"+esc(a.id)+"' data-artname='"+esc(a.path)+"' title='İndir'><svg class='bi' viewBox='0 0 24 24' aria-hidden='true'><use href='#i-download'/></svg></span>"
+              : "<span style='color:var(--faint)' title='İndirmek için OPERATOR veya üstü yetki gerekir'><svg class='bi' viewBox='0 0 24 24' aria-hidden='true'><use href='#i-lock'/></svg></span>")+
             "<span style='flex:1;word-break:break-all'>"+esc(a.path)+"</span>"+
             "<span class='mono' style='color:var(--faint)'>"+fmtBytes(a.size)+"</span></div>";
         }).join("");
@@ -3029,12 +3052,28 @@
     loadTokens: function(){ return loadTokens(); },
     loadAdmins: function(){ return loadAdmins(); },
     mfaEnroll: function(){
-      return api("/api/mfa/enroll","POST",{}).then(function(d){
+      // İlk kayıt: gövde {}. 2FA zaten etkinse sunucu mevcut TOTP kodunu ister ({code}),
+      // yoksa 403 döner; kod alanı doluysa her durumda gönderilir.
+      var code=$("mfa-ecode").value.trim(), body={};
+      if(code){
+        if(!/^\d{6}$/.test(code)){ showOut("o-mfa","Mevcut kod 6 haneli olmalıdır.","err"); return Promise.resolve(); }
+        body.code=code;
+      }
+      return api("/api/mfa/enroll","POST",body).then(function(d){
+        $("mfa-ecode").value="";
         $("mfa-secret").textContent=d.secret;
         $("mfa-uri").textContent=d.otpauth_uri;
         $("mfa-setup").style.display="block";
         $("mfa-status").textContent="kurulum bekliyor";
-        showOut("o-mfa","Sırrı authenticator'a ekleyip üretilen kodla etkinleştirin.","ok"); }); },
+        showOut("o-mfa","Sırrı authenticator'a ekleyip üretilen kodla etkinleştirin.","ok"); })
+      .catch(function(e){
+        $("mfa-ecode").value="";
+        if(e && e.status===403){
+          var m="2FA zaten etkin olabilir: yeniden kayıt için authenticator'daki MEVCUT 6 haneli kodu girin. Kod yanlış, süresi geçmiş veya daha önce kullanılmış.";
+          showOut("o-mfa",m,"err"); toast("Yeniden kayıt reddedildi","Geçerli mevcut kod gerekli","err");
+          return;
+        }
+        throw e; }); },
     mfaActivate: function(){
       var code=$("mfa-code").value.trim();
       if(code.length!==6){ showOut("o-mfa","6 haneli kodu girin.","err"); return Promise.resolve(); }
@@ -3045,10 +3084,18 @@
         toast("2FA etkin","Hesabınız iki adımlı doğrulama ile korunuyor","ok"); }); },
     mfaDisable: function(){
       var code=$("mfa-dcode").value.trim();
+      if(!/^\d{6}$/.test(code)){ showOut("o-mfa","Kapatmak için mevcut 6 haneli kodu girin.","err"); return Promise.resolve(); }
       if(!confirm("İki adımlı doğrulama kapatılacak. Onaylıyor musunuz?")) return Promise.resolve();
       return api("/api/mfa/disable","POST",{code:code}).then(function(){
-        $("mfa-disable").style.display="none"; $("mfa-status").textContent="kapalı"; $("mfa-dcode").value="";
-        showOut("o-mfa","2FA kapatıldı.","ok"); toast("2FA kapatıldı",null,"warn"); }); },
+        $("mfa-status").textContent="kapalı"; $("mfa-dcode").value="";
+        showOut("o-mfa","2FA kapatıldı.","ok"); toast("2FA kapatıldı",null,"warn"); })
+      .catch(function(e){
+        $("mfa-dcode").value="";
+        if(e && e.status===403){
+          showOut("o-mfa","2FA kapatılamadı: kod yanlış, süresi geçmiş veya daha önce kullanılmış.","err");
+          toast("2FA kapatılamadı","Geçerli mevcut kod gerekli","err"); return;
+        }
+        throw e; }); },
     createAdmin: function(){
       var email=$("ad-email").value.trim(), pass=$("ad-pass").value, role=$("ad-role").value;
       if(!email || pass.length<8){ showOut("o-adm","Geçerli e-posta ve en az 8 karakter parola girin.","err"); return Promise.resolve(); }
@@ -3198,6 +3245,7 @@
         var out = ["quarantine","release","diagnostics","revoke","exportData","eraseData","assignPolicy"].indexOf(btn.dataset.act)>=0 ? "o-dev"
                 : btn.dataset.act==="token" ? "o-token"
                 : btn.dataset.act==="createAdmin" ? "o-adm"
+                : /^mfa/.test(btn.dataset.act) ? "o-mfa"
                 : btn.dataset.act==="addRule" ? "o-rule" : "o-pol";
         fn().catch(function(e){ showOut(out, e.message, "err"); toast("İşlem başarısız", e.message, "err"); });
       });
@@ -3233,7 +3281,8 @@
     }
   }
   function enterApp(token, email){
-    state.token=token; state.email=email;
+    state.token=token; state.email=email; state.role="";
+    detectRole();
     try { sessionStorage.setItem("xdr_tok", token); sessionStorage.setItem("xdr_email", email); } catch(e){}
     $("who").textContent=email;
     $("login").style.display="none"; $("app").style.display="grid";

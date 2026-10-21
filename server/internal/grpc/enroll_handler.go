@@ -42,6 +42,10 @@ func (h *EnrollmentHandler) Enroll(ctx context.Context, req *kutv1.EnrollRequest
 			// Ayrıntı sızdırma: istemciye yalnız genel bir ret mesajı.
 			return nil, status.Error(codes.PermissionDenied, "enrollment reddedildi")
 		}
+		if errors.Is(err, enroll.ErrTenantMismatch) {
+			// Cihaz başka bir kiracıya ait: ayrıntı sızdırmadan genel ret.
+			return nil, status.Error(codes.PermissionDenied, "enrollment reddedildi")
+		}
 		return nil, status.Error(codes.Internal, "enrollment işlenemedi")
 	}
 	return &kutv1.EnrollResponse{

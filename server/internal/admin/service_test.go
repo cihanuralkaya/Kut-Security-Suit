@@ -17,24 +17,27 @@ type memStore struct {
 	roles        map[string]Role
 	tokens       map[string]string // tokenIndex(hex) -> createdBy
 	revoked      map[string]bool   // tokenID -> iptal edildi mi
-	commands     []cmd
-	audits       []audit
-	policies     map[string]string            // id -> name
-	versions     map[string]string            // id -> version
-	rules        map[string][]RuleInput       // id -> kurallar
-	assigned     map[string]string            // deviceID -> policyID
-	statuses     map[string]string            // deviceID -> son ayarlanan durum
-	tags         map[string][]string          // deviceID -> etiketler
-	deviceTenant map[string]string            // deviceID -> kiracı (çok-tenant aksiyon kapısı)
-	eventTenant  map[string]string            // eventID -> kiracı (çok-tenant triyaj kapısı)
-	admins       map[string]*adminEntry       // id -> yönetici
-	erased       string                       // EraseDeviceData ile silinen son deviceID
-	eventAcks    map[string]string            // eventID -> status (triyaj)
-	eventCases   map[string][2]string         // eventID -> {assignee, note} (vaka)
-	pendWipes    map[string]string            // deviceID -> requestedBy (çift-kontrol WIPE)
-	cmdParams    map[string]map[string]string // cmdType -> son params
-	nextPolID    int
-	nextAdmID    int
+	tokenTenants map[string]string // tokenID -> mühürlü kiracı (iptal kiracı kapısı)
+
+	lastTokenTenant string // SaveEnrollmentToken'a geçen son kiracı
+	commands        []cmd
+	audits          []audit
+	policies        map[string]string            // id -> name
+	versions        map[string]string            // id -> version
+	rules           map[string][]RuleInput       // id -> kurallar
+	assigned        map[string]string            // deviceID -> policyID
+	statuses        map[string]string            // deviceID -> son ayarlanan durum
+	tags            map[string][]string          // deviceID -> etiketler
+	deviceTenant    map[string]string            // deviceID -> kiracı (çok-tenant aksiyon kapısı)
+	eventTenant     map[string]string            // eventID -> kiracı (çok-tenant triyaj kapısı)
+	admins          map[string]*adminEntry       // id -> yönetici
+	erased          string                       // EraseDeviceData ile silinen son deviceID
+	eventAcks       map[string]string            // eventID -> status (triyaj)
+	eventCases      map[string][2]string         // eventID -> {assignee, note} (vaka)
+	pendWipes       map[string]string            // deviceID -> requestedBy (çift-kontrol WIPE)
+	cmdParams       map[string]map[string]string // cmdType -> son params
+	nextPolID       int
+	nextAdmID       int
 }
 
 func (m *memStore) SetEventAck(_ context.Context, eventID, _, status string) error {
@@ -94,6 +97,7 @@ type adminEntry struct {
 	active      bool
 	mfaSecret   string
 	mfaEnrolled bool
+	mfaPending  string
 	mfaLastStep int64
 }
 
@@ -119,9 +123,14 @@ func (p *fakePublisher) Publish(deviceID string) { p.published = append(p.publis
 func (m *memStore) AdminRole(_ context.Context, adminID string) (Role, error) {
 	return m.roles[adminID], nil
 }
-func (m *memStore) SaveEnrollmentToken(_ context.Context, idx []byte, createdBy, _ string, _ time.Time) error {
+func (m *memStore) SaveEnrollmentToken(_ context.Context, idx []byte, createdBy, tenantID string, _ time.Time) error {
 	m.tokens[string(idx)] = createdBy
+	m.lastTokenTenant = tenantID
 	return nil
+}
+func (m *memStore) EnrollmentTokenTenant(_ context.Context, tokenID string) (string, bool, error) {
+	t, ok := m.tokenTenants[tokenID]
+	return t, ok, nil
 }
 func (m *memStore) RevokeEnrollmentToken(_ context.Context, tokenID string) error {
 	m.revoked[tokenID] = true
@@ -226,8 +235,7 @@ func (m *memStore) SetAdminRole(_ context.Context, id string, role Role) error {
 }
 func (m *memStore) SetPendingMFASecret(_ context.Context, id, secret string) error {
 	if a, ok := m.admins[id]; ok {
-		a.mfaSecret = secret
-		a.mfaEnrolled = false
+		a.mfaPending = secret
 	}
 	return nil
 }
@@ -237,8 +245,16 @@ func (m *memStore) LookupMFA(_ context.Context, id string) (string, bool, error)
 	}
 	return "", false, nil
 }
+func (m *memStore) LookupPendingMFA(_ context.Context, id string) (string, error) {
+	if a, ok := m.admins[id]; ok {
+		return a.mfaPending, nil
+	}
+	return "", nil
+}
 func (m *memStore) ActivateMFA(_ context.Context, id string) error {
-	if a, ok := m.admins[id]; ok && a.mfaSecret != "" {
+	if a, ok := m.admins[id]; ok && a.mfaPending != "" {
+		a.mfaSecret = a.mfaPending
+		a.mfaPending = ""
 		a.mfaEnrolled = true
 	}
 	return nil
@@ -256,6 +272,7 @@ func (m *memStore) ConsumeTOTPStep(_ context.Context, id string, step int64) (bo
 func (m *memStore) DisableMFA(_ context.Context, id string) error {
 	if a, ok := m.admins[id]; ok {
 		a.mfaSecret = ""
+		a.mfaPending = ""
 		a.mfaEnrolled = false
 	}
 	return nil
@@ -266,9 +283,12 @@ func (m *memStore) DeactivateAdmin(_ context.Context, id string) error {
 	}
 	return nil
 }
-func (m *memStore) ListAdmins(_ context.Context) ([]AdminInfo, error) {
+func (m *memStore) ListAdmins(_ context.Context, tenantID string) ([]AdminInfo, error) {
 	var out []AdminInfo
 	for id, a := range m.admins {
+		if tenantID != "" && a.tenant != tenantID {
+			continue
+		}
 		out = append(out, AdminInfo{ID: id, Email: a.email, Role: a.role, Active: a.active})
 	}
 	return out, nil

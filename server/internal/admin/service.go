@@ -76,6 +76,9 @@ type Store interface {
 	// RevokeEnrollmentToken, kullanılmamış bir enrollment token'ı iptal eder
 	// (used_at damgalar). Zaten kullanılmış/yok token için sessizdir (no-op).
 	RevokeEnrollmentToken(ctx context.Context, tokenID string) error
+	// EnrollmentTokenTenant, enrollment token'ın mühürlü kiracısını döner (iptal
+	// yazma-yolunun kiracı zorunlu-kılması için). Token yoksa found=false.
+	EnrollmentTokenTenant(ctx context.Context, tokenID string) (tenantID string, found bool, err error)
 	EnqueueCommand(ctx context.Context, deviceID, cmdType, issuedBy string) error
 	// EnqueueCommandParams, parametreli komut kuyruğa ekler (ör. COLLECT_FILE
 	// için params.path). params ajana google.protobuf.Struct olarak iletilir.
@@ -125,17 +128,24 @@ type Store interface {
 	SetAdminRole(ctx context.Context, id string, role Role) error
 	// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false).
 	DeactivateAdmin(ctx context.Context, id string) error
-	// ListAdmins, tüm yöneticileri döner (parola hash'i olmadan).
-	ListAdmins(ctx context.Context) ([]AdminInfo, error)
-	// SetPendingMFASecret, yöneticinin TOTP sırrını (henüz etkin değil) saklar.
-	// Depo sırrı at-rest şifreler (db katmanı); mfa_enrolled false kalır.
+	// ListAdmins, yöneticileri döner (parola hash'i olmadan). tenantID boş değilse
+	// YALNIZ o kiracının yöneticileri döner (platform adminleri dahil DEĞİL); boş →
+	// tüm yöneticiler (yalnız platform admini çağırır — service katmanı zorunlu kılar).
+	ListAdmins(ctx context.Context, tenantID string) ([]AdminInfo, error)
+	// SetPendingMFASecret, yöneticinin YENİ TOTP sırrını BEKLEYEN olarak saklar (at-rest
+	// şifreli). Etkin sır ve mfa_enrolled DEĞİŞMEZ: yeniden kayıtta mevcut MFA, yeni sır
+	// ActivateMFA ile etkinleşene dek aynen zorunlu kalır.
 	SetPendingMFASecret(ctx context.Context, adminID, secret string) error
-	// LookupMFA, yöneticinin TOTP sırrını ve etkin (enrolled) durumunu döner.
+	// LookupMFA, yöneticinin ETKİN TOTP sırrını ve etkin (enrolled) durumunu döner
+	// (bekleyen sırrı DÖNMEZ — giriş/devre dışı bırakma yalnız etkin sırra karşı doğrulanır).
 	// Sır yoksa ("", false, nil) döner.
 	LookupMFA(ctx context.Context, adminID string) (secret string, enrolled bool, err error)
-	// ActivateMFA, bekleyen TOTP sırrını etkinleştirir (mfa_enrolled=true).
+	// LookupPendingMFA, bekleyen (etkinleştirilmemiş) TOTP sırrını döner; yoksa ("", nil).
+	LookupPendingMFA(ctx context.Context, adminID string) (secret string, err error)
+	// ActivateMFA, bekleyen sırrı ATOMİK olarak etkin sır yapar (mfa_enrolled=true; eski
+	// sır geçersizleşir). Bekleyen sır yoksa hiçbir şey değişmez.
 	ActivateMFA(ctx context.Context, adminID string) error
-	// DisableMFA, TOTP sırrını siler ve MFA'yı kapatır.
+	// DisableMFA, etkin ve bekleyen TOTP sırrını siler ve MFA'yı kapatır.
 	DisableMFA(ctx context.Context, adminID string) error
 	// ConsumeTOTPStep, TOTP tek-kullanım (anti-replay) zorlamasıdır: verilen adım sayacını
 	// (VerifyTOTPStep'ten) yöneticinin son kabul edilen adımından BÜYÜKSE atomik olarak
@@ -329,9 +339,24 @@ func (s *Service) require(ctx context.Context, adminID string, min Role) error {
 
 // IssueEnrollmentToken, tek kullanımlık bir kayıt token'ı üretir (OPERATOR+).
 // Ham token YALNIZ burada döner (bir kez gösterilir); DB'de HMAC indeksi saklanır.
+//
+// KİRACI DUVARI: kiracıya bağlı bir çağıran HER ZAMAN kendi kiracısı için token üretir;
+// tenantID boşsa "kendi kiracım" demektir, başka bir değer ErrForbidden'dır (başka
+// kiracıya cihaz sokma / telemetri zehirleme engeli). Yalnız platform admini (kiracısız)
+// kiracı seçebilir; çağıran (HTTP katmanı) doğrulanmış kiracıyı verir.
 func (s *Service) IssueEnrollmentToken(ctx context.Context, adminID, tenantID string) (string, error) {
 	if err := s.require(ctx, adminID, RoleOperator); err != nil {
 		return "", err
+	}
+	callerTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return "", err
+	}
+	if callerTenant != "" {
+		if tenantID != "" && tenantID != callerTenant {
+			return "", ErrForbidden
+		}
+		tenantID = callerTenant
 	}
 	token, err := s.genToken()
 	if err != nil {
@@ -353,6 +378,21 @@ func (s *Service) RevokeEnrollmentToken(ctx context.Context, adminID, tokenID st
 	if err := s.require(ctx, adminID, RoleOperator); err != nil {
 		return err
 	}
+	// KİRACI DUVARI: kiracıya bağlı çağıran yalnız KENDİ kiracısının token'ını iptal
+	// edebilir; yok/yabancı token fail-closed ErrForbidden (varlık sızdırmaz).
+	callerTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return err
+	}
+	if callerTenant != "" {
+		tokTenant, found, err := s.store.EnrollmentTokenTenant(ctx, tokenID)
+		if err != nil {
+			return err
+		}
+		if !found || tokTenant != callerTenant {
+			return ErrForbidden
+		}
+	}
 	if err := s.store.RevokeEnrollmentToken(ctx, tokenID); err != nil {
 		return err
 	}
@@ -364,9 +404,36 @@ func (s *Service) RevokeEnrollmentToken(ctx context.Context, adminID, tokenID st
 // saklar ve authenticator uygulamasına eklenecek otpauth:// URI'sini döner. Yalnız
 // oturum sahibinin kendi hesabı için çağrılır (adminID oturumdan gelir). Etkin
 // olması için ActivateMFA ile doğrulama gerekir.
-func (s *Service) BeginMFAEnrollment(ctx context.Context, adminID string) (secret, uri string, err error) {
+//
+// MFA zaten ETKİNSE (yeniden kayıt) mevcut sırdan geçerli bir TOTP kodu (currentCode)
+// ZORUNLUDUR: aksi halde çalınmış/uzun ömürlü bir oturum, kodsuz /mfa/enroll ile MFA'yı
+// sessizce kapatabilirdi (DisableMFA kod ister, enroll istemiyordu). Kod, ActivateMFA/
+// DisableMFA ile aynı anti-replay (ConsumeTOTPStep) yoluyla tüketilir. İlk kayıtta
+// (MFA etkin değil) kod gerekmez. Yeni sır BEKLEYEN olarak ayrı saklanır; mevcut sır ve
+// etkin durum, yeni sır ActivateMFA ile (YENİ sırdan geçerli kodla) etkinleşene dek
+// DEĞİŞMEZ — böylece yeniden kayıt penceresinde giriş MFA'yı zorunlu kılmaya, DisableMFA
+// ise mevcut sırdan kod istemeye devam eder; terk edilen yeniden kayıt MFA'yı kapatmaz.
+// Her başlatma denetim izine yazılır.
+func (s *Service) BeginMFAEnrollment(ctx context.Context, adminID, currentCode string) (secret, uri string, err error) {
 	if err := s.require(ctx, adminID, RoleViewer); err != nil {
 		return "", "", err
+	}
+	oldSecret, enrolled, err := s.store.LookupMFA(ctx, adminID)
+	if err != nil {
+		return "", "", err
+	}
+	if enrolled {
+		step, ok := security.VerifyTOTPStep(oldSecret, currentCode, s.now())
+		if !ok {
+			s.audit(ctx, adminID, "MFA_REENROLL_DENIED", "admin", adminID)
+			return "", "", fmt.Errorf("%w: MFA yeniden kaydı için mevcut doğrulama kodu gerekli", ErrForbidden)
+		}
+		if accepted, err := s.store.ConsumeTOTPStep(ctx, adminID, step); err != nil {
+			return "", "", err
+		} else if !accepted {
+			s.audit(ctx, adminID, "MFA_REENROLL_DENIED", "admin", adminID)
+			return "", "", fmt.Errorf("%w: kod zaten kullanıldı (tekrar reddi)", ErrForbidden)
+		}
 	}
 	secret, err = security.GenerateTOTPSecret()
 	if err != nil {
@@ -375,17 +442,23 @@ func (s *Service) BeginMFAEnrollment(ctx context.Context, adminID string) (secre
 	if err := s.store.SetPendingMFASecret(ctx, adminID, secret); err != nil {
 		return "", "", err
 	}
+	if enrolled {
+		s.audit(ctx, adminID, "MFA_REENROLL_BEGIN", "admin", adminID)
+	} else {
+		s.audit(ctx, adminID, "MFA_ENROLL_BEGIN", "admin", adminID)
+	}
 	uri = security.OTPAuthURI("KUT Konsol", adminID, secret)
 	return secret, uri, nil
 }
 
-// ActivateMFA, bekleyen TOTP sırrını yalnız geçerli bir kod ile etkinleştirir
-// (kullanıcının authenticator'ı doğru kurduğunu kanıtlar). Doğrulama izi yazılır.
+// ActivateMFA, BEKLEYEN TOTP sırrını yalnız o (YENİ) sırdan üretilmiş geçerli bir kod ile
+// etkinleştirir (kullanıcının authenticator'ını doğru kurduğunu kanıtlar); depoda atomik
+// takas yapılır: yeni sır etkin olur, eski sır GEÇERSİZLEŞİR. Doğrulama izi yazılır.
 func (s *Service) ActivateMFA(ctx context.Context, adminID, code string) error {
 	if err := s.require(ctx, adminID, RoleViewer); err != nil {
 		return err
 	}
-	secret, _, err := s.store.LookupMFA(ctx, adminID)
+	secret, err := s.store.LookupPendingMFA(ctx, adminID)
 	if err != nil {
 		return err
 	}
@@ -449,6 +522,10 @@ const (
 // Denetim izine yazılır.
 func (s *Service) SetDeviceTags(ctx context.Context, adminID, deviceID string, tags []string) error {
 	if err := s.require(ctx, adminID, RoleOperator); err != nil {
+		return err
+	}
+	// KİRACI DUVARI: diğer cihaz mutasyonları gibi — yalnız kendi kiracısının cihazı.
+	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return err
 	}
 	clean := normalizeTags(tags)

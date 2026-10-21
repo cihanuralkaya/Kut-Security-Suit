@@ -236,3 +236,28 @@ func TestRenewCertificateGenericError(t *testing.T) {
 		t.Fatalf("jenerik hata → Internal beklenirdi, dönen: %v", err)
 	}
 }
+
+// tenantMismatchStore, her cihaz kaydında kiracı uyuşmazlığı bildiren bir depodur.
+type tenantMismatchStore struct{ *enrollMemStore }
+
+func (tenantMismatchStore) UpsertEnrollingDevice(context.Context, enroll.DeviceEnrollment) (string, error) {
+	return "", enroll.ErrTenantMismatch
+}
+
+// Z4b-02: kiracı uyuşmazlığı PermissionDenied (genel ret) ile döner, ayrıntı sızdırmaz.
+func TestEnrollHandlerTenantMismatchDenied(t *testing.T) {
+	base := newEnrollMemStore()
+	svc, bidx := buildEnrollService(t, tenantMismatchStore{base})
+	base.tokens[string(bidx.Compute("enroll-token:TOK-T"))] = ""
+	h := NewEnrollmentHandler(svc)
+
+	_, err := h.Enroll(context.Background(), &kutv1.EnrollRequest{
+		EnrollmentToken: "TOK-T", CsrPem: makeCSR(t), Hostname: "h", MacAddress: "AA:BB:CC:DD:EE:FF",
+	})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("kiracı uyuşmazlığı → PermissionDenied beklenirdi, dönen: %v", err)
+	}
+	if len(base.certs) != 0 {
+		t.Fatal("reddedilen kayıtta sertifika verilmemeli")
+	}
+}

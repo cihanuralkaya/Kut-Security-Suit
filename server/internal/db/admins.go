@@ -59,11 +59,13 @@ func (s *Store) DeactivateAdmin(ctx context.Context, id string) error {
 	return nil
 }
 
-// ListAdmins, tüm yöneticileri e-postaya göre sıralı döner. Parola hash'i ASLA
+// ListAdmins, yöneticileri e-postaya göre sıralı döner. tenantID boş değilse YALNIZ
+// o kiracının yöneticileri (platform adminleri dahil değil). Parola hash'i ASLA
 // seçilmez/dönmez.
-func (s *Store) ListAdmins(ctx context.Context) ([]admin.AdminInfo, error) {
-	const q = `SELECT id::text, email, role, is_active FROM admins ORDER BY email`
-	rows, err := s.pool.Query(ctx, q)
+func (s *Store) ListAdmins(ctx context.Context, tenantID string) ([]admin.AdminInfo, error) {
+	const q = `SELECT id::text, email, role, is_active FROM admins
+	             WHERE ($1 = '' OR tenant_id = $1) ORDER BY email`
+	rows, err := s.pool.Query(ctx, q, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: yönetici listesi: %w", err)
 	}
