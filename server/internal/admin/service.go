@@ -47,6 +47,12 @@ func rank(r Role) int {
 // ErrForbidden, çağıran yöneticinin yetkisi yetersiz olduğunda döner.
 var ErrForbidden = errors.New("admin: yetki yetersiz")
 
+// ErrUnknownAdmin, kimliği çözülemeyen ya da PASİF bir yönetici için kiracı sorgulandığında
+// döner (Store.AdminTenant). ErrForbidden'ı sarar (HTTP 403): "" kiracısı PLATFORM kapsamıdır,
+// bu yüzden bilinmeyen/pasif bir yöneticinin sessizce platform admini gibi davranması (fail-open
+// birleştirme, Z4b-09) yerine çağıranlar bu hatayı yayar ve isteği reddeder.
+var ErrUnknownAdmin = fmt.Errorf("%w: bilinmeyen veya pasif yönetici", ErrForbidden)
+
 // ErrInvalidRule, kural girdisi doğrulamayı geçemediğinde döner (istemci hatası).
 var ErrInvalidRule = errors.New("admin: geçersiz kural")
 
@@ -74,8 +80,11 @@ type Store interface {
 	AdminRole(ctx context.Context, adminID string) (Role, error)
 	SaveEnrollmentToken(ctx context.Context, tokenIndex []byte, createdBy, tenantID string, expiresAt time.Time) error
 	// RevokeEnrollmentToken, kullanılmamış bir enrollment token'ı iptal eder
-	// (used_at damgalar). Zaten kullanılmış/yok token için sessizdir (no-op).
-	RevokeEnrollmentToken(ctx context.Context, tokenID string) error
+	// (used_at damgalar). Zaten kullanılmış/yok token için sessizdir (no-op). tenantID
+	// boş değilse SQL yazımı DA token'ın kiracısıyla daraltılır (derinlemesine savunma: servis
+	// katmanı hatası kiracı sınırını aşamaz); kiracıya bağlı çağıran için eşleşen token yoksa
+	// ErrForbidden döner. Boş tenantID = platform kapsamı (süzme yok).
+	RevokeEnrollmentToken(ctx context.Context, tokenID, tenantID string) error
 	// EnrollmentTokenTenant, enrollment token'ın mühürlü kiracısını döner (iptal
 	// yazma-yolunun kiracı zorunlu-kılması için). Token yoksa found=false.
 	EnrollmentTokenTenant(ctx context.Context, tokenID string) (tenantID string, found bool, err error)
@@ -86,8 +95,9 @@ type Store interface {
 	// SetDeviceStatus, cihazın durum sütununu doğrudan ayarlar (komut kuyruğa
 	// girdikten sonra durumun UI'da yansıması için).
 	SetDeviceStatus(ctx context.Context, deviceID, status string) error
-	// SetDeviceTags, cihazın etiketlerini (filo gruplama) değiştirir.
-	SetDeviceTags(ctx context.Context, deviceID string, tags []string) error
+	// SetDeviceTags, cihazın etiketlerini (filo gruplama) değiştirir. tenantID boş değilse
+	// yazım cihazın kiracısıyla daraltılır (eşleşen cihaz yoksa ErrForbidden); boş = platform.
+	SetDeviceTags(ctx context.Context, deviceID string, tags []string, tenantID string) error
 	RevokeDeviceCerts(ctx context.Context, deviceID, reason string) error
 	// EraseDeviceData, KVKK veri silme talebi için cihazın davranışsal/telemetri
 	// verisini (olay logları, komut geçmişi) siler ve sertifikalarını iptal eder
@@ -116,7 +126,9 @@ type Store interface {
 	// bağlı olduğu kiracıdır (boş → platform admini, tüm kiracıları görür).
 	CreateAdmin(ctx context.Context, email, passwordHash string, role Role, tenantID string) (string, error)
 	// AdminTenant, bir yöneticinin bağlı olduğu kiracıyı döner (okuma izolasyonu ve
-	// ayrıcalık-yükseltme koruması için). Boş → platform admini.
+	// ayrıcalık-yükseltme koruması için). Boş → platform admini. Bilinmeyen veya PASİF yönetici
+	// için "" DÖNMEZ: ErrUnknownAdmin (403) döner — çağıranlar fail-closed reddeder, asla
+	// platform kapsamına düşmez (Z4b-09).
 	AdminTenant(ctx context.Context, adminID string) (string, error)
 	// TenantForDevice, cihazın bağlı olduğu kiracıyı döner (aksiyon/yazma-yolu kiracı
 	// zorunlu-kılması için). Cihaz yoksa boş döner.
@@ -124,10 +136,13 @@ type Store interface {
 	// EventTenant, bir olayın (event_logs.id) kiracısını döner (olay triyaj yazma-yolu
 	// kiracı zorunlu-kılması için). Olay yoksa boş döner.
 	EventTenant(ctx context.Context, eventID string) (string, error)
-	// SetAdminRole, bir yöneticinin rolünü değiştirir.
-	SetAdminRole(ctx context.Context, id string, role Role) error
-	// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false).
-	DeactivateAdmin(ctx context.Context, id string) error
+	// SetAdminRole, bir yöneticinin rolünü değiştirir. tenantID boş değilse yazım hedefin
+	// kiracısıyla daraltılır (derinlemesine savunma; eşleşen yönetici yoksa ErrForbidden);
+	// boş = platform kapsamı (süzme yok).
+	SetAdminRole(ctx context.Context, id string, role Role, tenantID string) error
+	// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false). tenantID semantiği
+	// SetAdminRole ile aynıdır.
+	DeactivateAdmin(ctx context.Context, id, tenantID string) error
 	// ListAdmins, yöneticileri döner (parola hash'i olmadan). tenantID boş değilse
 	// YALNIZ o kiracının yöneticileri döner (platform adminleri dahil DEĞİL); boş →
 	// tüm yöneticiler (yalnız platform admini çağırır — service katmanı zorunlu kılar).
@@ -393,7 +408,7 @@ func (s *Service) RevokeEnrollmentToken(ctx context.Context, adminID, tokenID st
 			return ErrForbidden
 		}
 	}
-	if err := s.store.RevokeEnrollmentToken(ctx, tokenID); err != nil {
+	if err := s.store.RevokeEnrollmentToken(ctx, tokenID, callerTenant); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "REVOKE_ENROLLMENT_TOKEN", "token", tokenID)
@@ -525,11 +540,12 @@ func (s *Service) SetDeviceTags(ctx context.Context, adminID, deviceID string, t
 		return err
 	}
 	// KİRACI DUVARI: diğer cihaz mutasyonları gibi — yalnız kendi kiracısının cihazı.
-	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
+	callerTenant, err := s.deviceCallerTenant(ctx, adminID, deviceID)
+	if err != nil {
 		return err
 	}
 	clean := normalizeTags(tags)
-	if err := s.store.SetDeviceTags(ctx, deviceID, clean); err != nil {
+	if err := s.store.SetDeviceTags(ctx, deviceID, clean, callerTenant); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "SET_TAGS", "device", deviceID)
@@ -794,21 +810,29 @@ var commandScopeAction = map[string]scope.Action{
 // gibi YIKICI aksiyonlarını (çapraz-kiracı WRITE IDOR) engeller. Kiracı SUNUCU-TARAFI
 // çözülür (adminID → admins.tenant_id; deviceID → devices.tenant_id), istekten DEĞİL.
 func (s *Service) enforceDeviceTenant(ctx context.Context, adminID, deviceID string) error {
+	_, err := s.deviceCallerTenant(ctx, adminID, deviceID)
+	return err
+}
+
+// deviceCallerTenant, enforceDeviceTenant ile aynı kapıdır ve ek olarak çağıranın (sunucu-
+// tarafı çözülmüş) kiracısını döner; yazma-yolu SQL'inin kiracı predicate'ine (S-4) verilir.
+// Bilinmeyen/pasif çağıran ErrUnknownAdmin (403) alır — asla platform kapsamına düşmez.
+func (s *Service) deviceCallerTenant(ctx context.Context, adminID, deviceID string) (string, error) {
 	adminTenant, err := s.store.AdminTenant(ctx, adminID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if adminTenant == "" {
-		return nil // platform admini: tüm kiracıların cihazlarına yetkili
+		return "", nil // platform admini: tüm kiracıların cihazlarına yetkili
 	}
 	devTenant, err := s.store.TenantForDevice(ctx, deviceID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if devTenant != adminTenant {
-		return ErrForbidden
+		return "", ErrForbidden
 	}
-	return nil
+	return adminTenant, nil
 }
 
 // enforceEventTenant, çağıran yöneticinin bir OLAYIN triyajını (ack/resolve/vaka)

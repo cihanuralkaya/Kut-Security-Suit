@@ -396,3 +396,190 @@ func TestPGUpgradeBlockIdempotent(t *testing.T) {
 		}
 	}
 }
+
+// S-5 / Z4b-09 (PG): bilinmeyen, geçersiz-id'li veya pasif yönetici platform ("") DEĞİL,
+// ErrUnknownAdmin; etkin platform/kiracılı admin doğru kiracıyı alır.
+func TestPGAdminTenantUnknownInactiveFailsClosed(t *testing.T) {
+	s, ctx := pgStore(t)
+	tn := uniq(t, "tn-")
+	plat, err := s.CreateAdmin(ctx, uniq(t, "plat-")+"@x", "h", admin.RoleAdmin, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenanted, err := s.CreateAdmin(ctx, uniq(t, "ten-")+"@x", "h", admin.RoleOperator, tn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(ctx, `DELETE FROM admins WHERE id IN ($1::uuid, $2::uuid)`, plat, tenanted)
+	})
+
+	// POZITIF.
+	if got, err := s.AdminTenant(ctx, plat); err != nil || got != "" {
+		t.Fatalf("etkin platform admini '' + nil olmalı: %q %v", got, err)
+	}
+	if got, err := s.AdminTenant(ctx, tenanted); err != nil || got != tn {
+		t.Fatalf("etkin kiracılı admin kendi kiracısı: %q %v", got, err)
+	}
+	// NEGATIF: var olmayan uuid, geçersiz id, boş id.
+	for _, id := range []string{"00000000-0000-0000-0000-000000000002", "bu-bir-uuid-degil", ""} {
+		if got, err := s.AdminTenant(ctx, id); !errors.Is(err, admin.ErrUnknownAdmin) || got != "" {
+			t.Fatalf("id %q için ErrUnknownAdmin beklenirdi: %q %v", id, got, err)
+		}
+	}
+	// NEGATIF: pasifleştirilmiş yönetici.
+	if err := s.DeactivateAdmin(ctx, tenanted, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.AdminTenant(ctx, tenanted); !errors.Is(err, admin.ErrUnknownAdmin) || got != "" {
+		t.Fatalf("pasif yönetici ErrUnknownAdmin olmalı: %q %v", got, err)
+	}
+	if !errors.Is(admin.ErrUnknownAdmin, admin.ErrForbidden) {
+		t.Fatal("ErrUnknownAdmin 403'e eşlenmek için ErrForbidden'ı sarmalı")
+	}
+}
+
+// S-4 (PG): token iptali, yönetici rol/pasifleştirme ve cihaz etiketi SQL'i kiracı
+// predicate'ini taşır — servis kapısı atlansa bile çapraz-kiracı yazma etkisizdir; boş
+// kiracı (platform) süzülmez.
+func TestPGWritesCarryTenantPredicate(t *testing.T) {
+	s, ctx := pgStore(t)
+	tA, tB := uniq(t, "ta-"), uniq(t, "tb-")
+
+	// --- Token iptali ---
+	tokB := []byte(uniq(t, "tokb-"))
+	if err := s.SaveEnrollmentToken(ctx, tokB, "", tB, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	rowsB, err := s.ListEnrollmentTokens(ctx, 1, tB)
+	if err != nil || len(rowsB) != 1 {
+		t.Fatalf("B token'ı listelenmeli: %v %v", rowsB, err)
+	}
+	tokID := rowsB[0].ID
+	usedAt := func() bool {
+		var used bool
+		if err := s.pool.QueryRow(ctx, `SELECT used_at IS NOT NULL FROM enrollment_tokens WHERE id::text = $1`, tokID).Scan(&used); err != nil {
+			t.Fatal(err)
+		}
+		return used
+	}
+	// NEGATIF: A kapsamı B'nin token'ını iptal edemez (hata + token kullanılmamış kalır).
+	if err := s.RevokeEnrollmentToken(ctx, tokID, tA); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("çapraz-kiracı token iptali ErrForbidden olmalı: %v", err)
+	}
+	if usedAt() {
+		t.Fatal("yabancı kiracının token'ı iptal EDİLMEMELİ")
+	}
+	// NEGATIF: var olmayan / geçersiz id, kiracılı çağıran için ErrForbidden (varlık sızmaz).
+	for _, id := range []string{"00000000-0000-0000-0000-000000000003", "yok"} {
+		if err := s.RevokeEnrollmentToken(ctx, id, tA); !errors.Is(err, admin.ErrForbidden) {
+			t.Fatalf("yok token (%q) ErrForbidden olmalı: %v", id, err)
+		}
+	}
+	// POZITIF: kendi kiracısı iptal eder; tekrar iptal sessiz no-op.
+	if err := s.RevokeEnrollmentToken(ctx, tokID, tB); err != nil {
+		t.Fatal(err)
+	}
+	if !usedAt() {
+		t.Fatal("kendi token'ı iptal edilmeliydi")
+	}
+	if err := s.RevokeEnrollmentToken(ctx, tokID, tB); err != nil {
+		t.Fatalf("zaten kullanılmış kendi token'ı sessiz no-op olmalı: %v", err)
+	}
+	// POZITIF: platform kapsamı (boş) herhangi bir token'ı iptal eder.
+	tokP := []byte(uniq(t, "tokp-"))
+	if err := s.SaveEnrollmentToken(ctx, tokP, "", tA, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	rowsA, _ := s.ListEnrollmentTokens(ctx, 1, tA)
+	if err := s.RevokeEnrollmentToken(ctx, rowsA[0].ID, ""); err != nil {
+		t.Fatalf("platform kapsamı süzülmemeli: %v", err)
+	}
+
+	// --- Yönetici rol / pasifleştirme ---
+	admA, err := s.CreateAdmin(ctx, uniq(t, "a-")+"@x", "h", admin.RoleAdmin, tA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admB, err := s.CreateAdmin(ctx, uniq(t, "b-")+"@x", "h", admin.RoleAdmin, tB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(ctx, `DELETE FROM admins WHERE id IN ($1::uuid, $2::uuid)`, admA, admB)
+	})
+	roleOf := func(id string) (string, bool) {
+		var r string
+		var act bool
+		if err := s.pool.QueryRow(ctx, `SELECT role::text, is_active FROM admins WHERE id = $1::uuid`, id).Scan(&r, &act); err != nil {
+			t.Fatal(err)
+		}
+		return r, act
+	}
+	// NEGATIF.
+	if err := s.SetAdminRole(ctx, admB, admin.RoleViewer, tA); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("çapraz-kiracı rol güncelleme ErrForbidden olmalı: %v", err)
+	}
+	if err := s.DeactivateAdmin(ctx, admB, tA); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("çapraz-kiracı pasifleştirme ErrForbidden olmalı: %v", err)
+	}
+	if err := s.SetAdminRole(ctx, "bu-bir-uuid-degil", admin.RoleViewer, tA); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("geçersiz id kiracılı çağıran için ErrForbidden olmalı: %v", err)
+	}
+	if r, act := roleOf(admB); r != "ADMIN" || !act {
+		t.Fatalf("yabancı yönetici değişmemeli: %s active=%v", r, act)
+	}
+	// POZITIF: kendi kiracısı ve platform kapsamı.
+	if err := s.SetAdminRole(ctx, admA, admin.RoleOperator, tA); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := roleOf(admA); r != "OPERATOR" {
+		t.Fatalf("kendi kiracısında rol güncellenmeli: %s", r)
+	}
+	if err := s.DeactivateAdmin(ctx, admB, ""); err != nil {
+		t.Fatalf("platform kapsamı süzülmemeli: %v", err)
+	}
+	if _, act := roleOf(admB); act {
+		t.Fatal("platform kapsamı B yöneticisini pasifleştirebilmeli")
+	}
+
+	// --- Cihaz etiketi ---
+	devB, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
+		MACBlindIndex: []byte(uniq(t, "mac-tag-")), HostnameEnc: []byte("h"), MACEnc: []byte("m"),
+		OSInfoEnc: []byte("o"), OSPlatform: "linux", AgentVersion: "1", TenantID: tB,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, devB) })
+	tagsOf := func() []string {
+		var tg []string
+		if err := s.pool.QueryRow(ctx, `SELECT tags FROM devices WHERE id = $1::uuid`, devB).Scan(&tg); err != nil {
+			t.Fatal(err)
+		}
+		return tg
+	}
+	// NEGATIF.
+	if err := s.SetDeviceTags(ctx, devB, []string{"evil"}, tA); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("çapraz-kiracı etiket yazımı ErrForbidden olmalı: %v", err)
+	}
+	if err := s.SetDeviceTags(ctx, "yok", []string{"x"}, tA); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("geçersiz cihaz id kiracılı çağıran için ErrForbidden olmalı: %v", err)
+	}
+	if len(tagsOf()) != 0 {
+		t.Fatalf("yabancı cihaz etiketlenmemeli: %v", tagsOf())
+	}
+	// POZITIF: kendi kiracısı ve platform.
+	if err := s.SetDeviceTags(ctx, devB, []string{"ok"}, tB); err != nil {
+		t.Fatal(err)
+	}
+	if tg := tagsOf(); len(tg) != 1 || tg[0] != "ok" {
+		t.Fatalf("kendi kiracısında etiket yazılmalı: %v", tg)
+	}
+	if err := s.SetDeviceTags(ctx, devB, []string{"plat"}, ""); err != nil {
+		t.Fatalf("platform kapsamı süzülmemeli: %v", err)
+	}
+	if tg := tagsOf(); len(tg) != 1 || tg[0] != "plat" {
+		t.Fatalf("platform etiketi yazılmalı: %v", tg)
+	}
+}

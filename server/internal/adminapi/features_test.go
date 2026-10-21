@@ -1024,7 +1024,7 @@ func TestDeactivatedAdminTokenRejected(t *testing.T) {
 		t.Fatalf("aktif admin token'ı çalışmalıydı, %d", r.StatusCode)
 	}
 	// Pasifleştir → aynı token artık reddedilmeli (401).
-	if err := store.DeactivateAdmin(nil, id); err != nil {
+	if err := store.DeactivateAdmin(nil, id, ""); err != nil {
 		t.Fatal(err)
 	}
 	if r, _ := authedGET(t, ts.URL+"/api/devices", tok); r.StatusCode != http.StatusUnauthorized {

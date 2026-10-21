@@ -168,7 +168,7 @@ func TestAdminLifecycle(t *testing.T) {
 	}
 
 	// SetAdminRole.
-	if err := s.SetAdminRole(ctx, id1, admin.RoleAdmin); err != nil {
+	if err := s.SetAdminRole(ctx, id1, admin.RoleAdmin, ""); err != nil {
 		t.Fatal(err)
 	}
 	if r, _ := s.AdminRole(ctx, id1); r != admin.RoleAdmin {
@@ -186,7 +186,7 @@ func TestAdminLifecycle(t *testing.T) {
 	// Parola hash'i sızmamalı (AdminInfo'da alan yok — derleme garantisi).
 
 	// DeactivateAdmin.
-	if err := s.DeactivateAdmin(ctx, id2); err != nil {
+	if err := s.DeactivateAdmin(ctx, id2, ""); err != nil {
 		t.Fatal(err)
 	}
 	list, _ = s.ListAdmins(ctx, "")

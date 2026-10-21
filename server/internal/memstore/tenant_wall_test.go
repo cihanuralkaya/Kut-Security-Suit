@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"kut.corp/suite/server/internal/admin"
 	"kut.corp/suite/server/internal/enroll"
 )
 
@@ -254,5 +255,85 @@ func TestLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 	}
 	if tn, _ := s.TenantForDevice(ctx, l2); tn != "default" {
 		t.Fatalf("preferred yolunda da normalleşmeli: %q", tn)
+	}
+}
+
+// Z4b-09 / S-5 (memstore, db ile aynı): bilinmeyen veya pasif yönetici platform ("") değil
+// ErrUnknownAdmin; pasif yönetici AdminRole'den de yetkisiz döner.
+func TestAdminTenantUnknownInactiveFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	plat, _ := s.CreateAdmin(ctx, "p@x", "h", admin.RoleAdmin, "")
+	acme, _ := s.CreateAdmin(ctx, "a@x", "h", admin.RoleOperator, "acme")
+
+	if tn, err := s.AdminTenant(ctx, "ghost"); !errors.Is(err, admin.ErrUnknownAdmin) || tn != "" {
+		t.Fatalf("bilinmeyen yönetici ErrUnknownAdmin olmalı: %q %v", tn, err)
+	}
+	if tn, err := s.AdminTenant(ctx, plat); err != nil || tn != "" {
+		t.Fatalf("etkin platform admini '' + nil olmalı: %q %v", tn, err)
+	}
+	if tn, err := s.AdminTenant(ctx, acme); err != nil || tn != "acme" {
+		t.Fatalf("etkin kiracılı admin kendi kiracısı: %q %v", tn, err)
+	}
+	if err := s.DeactivateAdmin(ctx, acme, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AdminTenant(ctx, acme); !errors.Is(err, admin.ErrUnknownAdmin) {
+		t.Fatalf("pasif yönetici ErrUnknownAdmin olmalı: %v", err)
+	}
+	if r, _ := s.AdminRole(ctx, acme); r != "" {
+		t.Fatalf("pasif yönetici rolsüz olmalı: %q", r)
+	}
+}
+
+// S-4 (memstore, db ile aynı): yazma-yolları kiracı predicate'ini taşır; boş kiracı = platform.
+func TestWritePathsCarryTenantPredicate(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	acmeDev, _ := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: []byte("m-a"), TenantID: "acme"})
+	globexDev, _ := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: []byte("m-g"), TenantID: "globex"})
+	globexAdm, _ := s.CreateAdmin(ctx, "g@x", "h", admin.RoleAdmin, "globex")
+	_ = s.SaveEnrollmentToken(ctx, []byte("ig"), "", "globex", time.Now().Add(time.Hour))
+	gTok, _ := s.ListEnrollmentTokens(ctx, 5, "globex")
+
+	// NEGATIF: acme kapsamıyla globex nesnelerine yazma reddedilir ve durum değişmez.
+	if err := s.SetDeviceTags(ctx, globexDev, []string{"x"}, "acme"); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("etiket: %v", err)
+	}
+	if row, _, _ := s.DeviceByID(ctx, globexDev); len(row.Tags) != 0 {
+		t.Fatalf("yabancı cihaz etiketlenmemeli: %v", row.Tags)
+	}
+	if err := s.SetAdminRole(ctx, globexAdm, admin.RoleViewer, "acme"); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("rol: %v", err)
+	}
+	if err := s.DeactivateAdmin(ctx, globexAdm, "acme"); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("pasifleştirme: %v", err)
+	}
+	if r, _ := s.AdminRole(ctx, globexAdm); r != admin.RoleAdmin {
+		t.Fatalf("yabancı yönetici değişmemeli: %q", r)
+	}
+	if err := s.RevokeEnrollmentToken(ctx, gTok[0].ID, "acme"); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("token iptali: %v", err)
+	}
+	if _, _, err := s.ConsumeEnrollmentToken(ctx, []byte("ig"), time.Now()); err != nil {
+		t.Fatalf("yabancı token iptal edilmemiş olmalı (hâlâ tüketilebilir): %v", err)
+	}
+
+	// POZITIF: kendi kiracısı + platform (boş) kapsamı.
+	if err := s.SetDeviceTags(ctx, acmeDev, []string{"ok"}, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetDeviceTags(ctx, globexDev, []string{"plat"}, ""); err != nil {
+		t.Fatalf("platform kapsamı süzülmemeli: %v", err)
+	}
+	if err := s.SetAdminRole(ctx, globexAdm, admin.RoleOperator, "globex"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeactivateAdmin(ctx, globexAdm, ""); err != nil {
+		t.Fatal(err)
+	}
+	// Kendi token'ı (zaten tüketilmiş) için sessiz no-op.
+	if err := s.RevokeEnrollmentToken(ctx, gTok[0].ID, "globex"); err != nil {
+		t.Fatalf("kendi (kullanılmış) token'ı no-op olmalı: %v", err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"kut.corp/suite/server/internal/admin"
 	"kut.corp/suite/server/internal/adminread"
 )
 
@@ -45,11 +46,29 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context, limit int, tenantID st
 // RevokeEnrollmentToken, henüz kullanılmamış bir enrollment token'ı iptal eder:
 // used_at'i now() ile damgalar (böylece bir sonraki kayıt denemesinde reddedilir).
 // Zaten kullanılmış veya var olmayan token için hiçbir satır etkilenmez (no-op).
-func (s *Store) RevokeEnrollmentToken(ctx context.Context, tokenID string) error {
-	const q = `UPDATE enrollment_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL`
-	_, err := s.pool.Exec(ctx, q, tokenID)
+//
+// S-4 derinlemesine savunma: tenantID boş değilse UPDATE token'ın mühürlü kiracısıyla
+// daraltılır (`AND tenant_id = $2`); servis katmanındaki kiracı kapısı atlansa bile başka
+// kiracının token'ı iptal edilemez. Boş tenantID = platform kapsamı (süzme yok). Kiracıya
+// bağlı çağıran için o kiracıda böyle bir token HİÇ yoksa (yok/yabancı) ErrForbidden; kendi
+// token'ı zaten kullanılmışsa sessiz no-op.
+func (s *Store) RevokeEnrollmentToken(ctx context.Context, tokenID, tenantID string) error {
+	const q = `UPDATE enrollment_tokens SET used_at = now()
+	            WHERE id::text = $1 AND used_at IS NULL AND ($2 = '' OR tenant_id = $2)`
+	ct, err := s.pool.Exec(ctx, q, tokenID, tenantID)
 	if err != nil {
 		return fmt.Errorf("db: enrollment token iptali: %w", err)
+	}
+	if tenantID != "" && ct.RowsAffected() == 0 {
+		var owned bool
+		if err := s.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM enrollment_tokens WHERE id::text = $1 AND tenant_id = $2)`,
+			tokenID, tenantID).Scan(&owned); err != nil {
+			return fmt.Errorf("db: enrollment token sahiplik: %w", err)
+		}
+		if !owned {
+			return admin.ErrForbidden
+		}
 	}
 	return nil
 }

@@ -188,7 +188,7 @@ func (s *Service) SetAdminRole(ctx context.Context, adminID, targetID string, ro
 			return err
 		}
 	}
-	if err := s.store.SetAdminRole(ctx, targetID, role); err != nil {
+	if err := s.store.SetAdminRole(ctx, targetID, role, callerTenant); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "SET_ADMIN_ROLE", "admin", targetID)
@@ -210,7 +210,7 @@ func (s *Service) DeactivateAdmin(ctx context.Context, adminID, targetID string)
 	if err := s.guardLastAdmin(ctx, adminID, targetID, callerTenant); err != nil {
 		return err
 	}
-	if err := s.store.DeactivateAdmin(ctx, targetID); err != nil {
+	if err := s.store.DeactivateAdmin(ctx, targetID, callerTenant); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "DEACTIVATE_ADMIN", "admin", targetID)

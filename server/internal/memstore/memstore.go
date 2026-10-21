@@ -502,7 +502,7 @@ func (s *Store) LatestUpdate(_ context.Context, _, _, _ string) (*kutv1.UpdateMa
 func (s *Store) AdminRole(_ context.Context, adminID string) (admin.Role, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if a, ok := s.adminsByID[adminID]; ok {
+	if a, ok := s.adminsByID[adminID]; ok && a.active { // db ile aynı: pasif yönetici rolsüz (yetkisiz)
 		return a.role, nil
 	}
 	return admin.Role(""), nil
@@ -531,14 +531,24 @@ func (s *Store) EnrollmentTokenTenant(_ context.Context, tokenID string) (string
 
 // RevokeEnrollmentToken, id ile token'ı bulup kullanılmış işaretler (used=true).
 // Zaten kullanılmış/yok token için sessiz (no-op) — db davranışını taklit eder.
-func (s *Store) RevokeEnrollmentToken(_ context.Context, tokenID string) error {
+// S-4 (db ile aynı): tenantID boş değilse yalnız o kiracının token'ı iptal edilir; kiracıya
+// bağlı çağıran için o kiracıda böyle bir token yoksa ErrForbidden. Boş = platform.
+func (s *Store) RevokeEnrollmentToken(_ context.Context, tokenID, tenantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	owned := false
 	for _, t := range s.tokens {
-		if t.id == tokenID && !t.used {
-			t.used = true
-			break
+		if t.id != tokenID || (tenantID != "" && t.tenant != tenantID) {
+			continue
 		}
+		owned = true
+		if !t.used {
+			t.used = true
+		}
+		break
+	}
+	if tenantID != "" && !owned {
+		return admin.ErrForbidden
 	}
 	return nil
 }
@@ -823,29 +833,42 @@ func (s *Store) CreateAdmin(_ context.Context, email, passwordHash string, role 
 	return id, nil
 }
 
-// AdminTenant, yöneticinin bağlı kiracısını döner ("" = platform admini / bilinmeyen).
+// AdminTenant, yöneticinin bağlı kiracısını döner ("" = platform admini). Bilinmeyen veya
+// PASİF yönetici için admin.ErrUnknownAdmin döner (db ile aynı; Z4b-09): "" platform kapsamı
+// olduğundan "yok"u "" ile birleştirmek fail-open olurdu.
 func (s *Store) AdminTenant(_ context.Context, adminID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if a, ok := s.adminsByID[adminID]; ok {
+	if a, ok := s.adminsByID[adminID]; ok && a.active {
 		return a.tenant, nil
 	}
-	return "", nil
+	return "", admin.ErrUnknownAdmin
 }
 
-func (s *Store) SetAdminRole(_ context.Context, id string, role admin.Role) error {
+// SetAdminRole, S-4 (db ile aynı): tenantID boş değilse hedefin kiracısı eşleşmeli, yoksa
+// ErrForbidden; boş = platform (süzme yok, bilinmeyen hedef no-op).
+func (s *Store) SetAdminRole(_ context.Context, id string, role admin.Role, tenantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if a, ok := s.adminsByID[id]; ok {
+	a, ok := s.adminsByID[id]
+	if tenantID != "" && (!ok || a.tenant != tenantID) {
+		return admin.ErrForbidden
+	}
+	if ok {
 		a.role = role
 	}
 	return nil
 }
 
-func (s *Store) DeactivateAdmin(_ context.Context, id string) error {
+// DeactivateAdmin, S-4: tenantID semantiği SetAdminRole ile aynıdır.
+func (s *Store) DeactivateAdmin(_ context.Context, id, tenantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if a, ok := s.adminsByID[id]; ok {
+	a, ok := s.adminsByID[id]
+	if tenantID != "" && (!ok || a.tenant != tenantID) {
+		return admin.ErrForbidden
+	}
+	if ok {
 		a.active = false
 	}
 	return nil
@@ -1584,10 +1607,15 @@ func (s *Store) DeviceByID(_ context.Context, id string) (adminread.DeviceRow, b
 }
 
 // SetDeviceTags, cihazın etiketlerini değiştirir (bilinmeyen cihazda no-op).
-func (s *Store) SetDeviceTags(_ context.Context, deviceID string, tags []string) error {
+// S-4 (db ile aynı): tenantID boş değilse cihazın kiracısı eşleşmeli, yoksa ErrForbidden.
+func (s *Store) SetDeviceTags(_ context.Context, deviceID string, tags []string, tenantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if d, ok := s.devices[deviceID]; ok {
+	d, ok := s.devices[deviceID]
+	if tenantID != "" && (!ok || d.tenant != tenantID) {
+		return admin.ErrForbidden
+	}
+	if ok {
 		d.tags = append([]string(nil), tags...)
 	}
 	return nil

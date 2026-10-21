@@ -107,7 +107,7 @@ func TestRevokeEnrollmentToken(t *testing.T) {
 	}
 	tokID := rows[0].ID
 
-	if err := s.RevokeEnrollmentToken(ctx, tokID); err != nil {
+	if err := s.RevokeEnrollmentToken(ctx, tokID, ""); err != nil {
 		t.Fatal(err)
 	}
 	// Artık tüketilemez.
@@ -116,7 +116,7 @@ func TestRevokeEnrollmentToken(t *testing.T) {
 	}
 
 	// Bilinmeyen id no-op (panik/hata yok).
-	if err := s.RevokeEnrollmentToken(ctx, "yok"); err != nil {
+	if err := s.RevokeEnrollmentToken(ctx, "yok", ""); err != nil {
 		t.Fatalf("bilinmeyen id no-op olmalıydı: %v", err)
 	}
 }

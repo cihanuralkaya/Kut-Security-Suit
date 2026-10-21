@@ -103,7 +103,12 @@ func (m *memStore) EnrollmentTokenTenant(_ context.Context, tokenID string) (str
 	t, ok := m.tokenTen[tokenID]
 	return t, ok, nil
 }
-func (m *memStore) RevokeEnrollmentToken(_ context.Context, tokenID string) error {
+func (m *memStore) RevokeEnrollmentToken(_ context.Context, tokenID, tenantID string) error {
+	if tenantID != "" { // S-4: db gibi — tenantID doluysa token'ın kiracısı eşleşmeli
+		if t, ok := m.tokenTen[tokenID]; !ok || t != tenantID {
+			return admin.ErrForbidden
+		}
+	}
 	for i := range m.tokenRows {
 		if m.tokenRows[i].ID == tokenID && !m.tokenRows[i].Used {
 			m.tokenRows[i].Used = true
@@ -145,7 +150,10 @@ func (m *memStore) SetDeviceStatus(_ context.Context, deviceID, status string) e
 	m.statuses[deviceID] = status
 	return nil
 }
-func (m *memStore) SetDeviceTags(_ context.Context, deviceID string, tags []string) error {
+func (m *memStore) SetDeviceTags(_ context.Context, deviceID string, tags []string, tenantID string) error {
+	if tenantID != "" && m.deviceTenant[deviceID] != tenantID { // S-4
+		return admin.ErrForbidden
+	}
 	for i := range m.devRows {
 		if m.devRows[i].ID == deviceID {
 			m.devRows[i].Tags = tags
@@ -215,6 +223,11 @@ func (m *memStore) CreateAdmin(_ context.Context, email, passwordHash string, ro
 	return id, nil
 }
 func (m *memStore) AdminTenant(_ context.Context, adminID string) (string, error) {
+	// Z4b-09: db gibi — rolü olmayan (bilinmeyen/pasif: DeactivateAdmin roles'u siler)
+	// yönetici platform ("") DEĞİL, ErrUnknownAdmin.
+	if _, ok := m.roles[adminID]; !ok {
+		return "", admin.ErrUnknownAdmin
+	}
 	return m.adminTen[adminID], nil
 }
 func (m *memStore) TenantForDevice(_ context.Context, deviceID string) (string, error) {
@@ -223,14 +236,20 @@ func (m *memStore) TenantForDevice(_ context.Context, deviceID string) (string, 
 func (m *memStore) EventTenant(_ context.Context, eventID string) (string, error) {
 	return m.eventTenant[eventID], nil
 }
-func (m *memStore) SetAdminRole(_ context.Context, id string, role admin.Role) error {
+func (m *memStore) SetAdminRole(_ context.Context, id string, role admin.Role, tenantID string) error {
+	if tenantID != "" && m.adminTen[id] != tenantID { // S-4
+		return admin.ErrForbidden
+	}
 	m.roles[id] = role
 	if a, ok := m.adminInfos[id]; ok {
 		a.Role = role
 	}
 	return nil
 }
-func (m *memStore) DeactivateAdmin(_ context.Context, id string) error {
+func (m *memStore) DeactivateAdmin(_ context.Context, id, tenantID string) error {
+	if tenantID != "" && m.adminTen[id] != tenantID { // S-4
+		return admin.ErrForbidden
+	}
 	if a, ok := m.adminInfos[id]; ok {
 		a.Active = false
 	}
