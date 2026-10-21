@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"kut.corp/suite/cmdenvelope"
 	kutv1 "kut.corp/suite/gen/kut/v1"
 	"kut.corp/suite/server/internal/admin"
 	"kut.corp/suite/server/internal/adminread"
@@ -412,9 +413,9 @@ func (s *Store) ApplyCommandResults(_ context.Context, deviceID string, outcomes
 			continue
 		}
 		switch o.Type {
-		case "QUARANTINE":
+		case cmdenvelope.TypeQuarantine:
 			d.status = "QUARANTINED"
-		case "UNQUARANTINE":
+		case cmdenvelope.TypeUnquarantine:
 			d.status = "ACTIVE"
 		}
 	}
@@ -1804,27 +1805,14 @@ func ruleTypeToProto(t string) kutv1.PolicyRule_RuleType {
 	}
 }
 
+// commandTypeToProto, kuyruk türü adını proto komut tipine çevirir. Eşleme PAYLAŞILAN
+// komut tablosundan (cmdenvelope) okunur; kayıtsız ad UNSPECIFIED döner (ajan bunu
+// reddeder — fail-closed).
 func commandTypeToProto(t string) kutv1.Command_CommandType {
-	switch t {
-	case "QUARANTINE":
-		return kutv1.Command_COMMAND_TYPE_QUARANTINE
-	case "UNQUARANTINE":
-		return kutv1.Command_COMMAND_TYPE_UNQUARANTINE
-	case "RUN_SIGNED_SCRIPT":
-		return kutv1.Command_COMMAND_TYPE_RUN_SIGNED_SCRIPT
-	case "UNINSTALL":
-		return kutv1.Command_COMMAND_TYPE_UNINSTALL
-	case "COLLECT_DIAGNOSTICS":
-		return kutv1.Command_COMMAND_TYPE_COLLECT_DIAGNOSTICS
-	case "COLLECT_FILE":
-		return kutv1.Command_COMMAND_TYPE_COLLECT_FILE
-	case "LOCK":
-		return kutv1.Command_COMMAND_TYPE_LOCK
-	case "RESTART":
-		return kutv1.Command_COMMAND_TYPE_RESTART
-	case "WIPE":
-		return kutv1.Command_COMMAND_TYPE_WIPE
-	default:
-		return kutv1.Command_COMMAND_TYPE_UNSPECIFIED
+	if spec, ok := cmdenvelope.Lookup(t); ok {
+		if v, ok := kutv1.Command_CommandType_value[spec.ProtoEnum]; ok {
+			return kutv1.Command_CommandType(v)
+		}
 	}
+	return kutv1.Command_COMMAND_TYPE_UNSPECIFIED
 }
