@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"kut.corp/suite/cmdenvelope"
 	"kut.corp/suite/server/internal/commandplane"
 	"kut.corp/suite/server/internal/metrics"
 	"kut.corp/suite/server/internal/scope"
@@ -262,13 +263,14 @@ func (s *Service) SetScopeEngine(e *scope.Engine, enforce bool, tenant string) {
 // RBAC/tenant/scope ön-kontrollerinin ÜSTÜNE imza + anti-replay + kanonik authz ekler.
 func (s *Service) SetCommandPlane(p *commandplane.Plane) { s.cmdPlane = p }
 
-// planeRoutableCmd, commandplane.CommandType olarak kabul edilen komut türleridir.
-// Komut düzlemi bağlıyken YALNIZ bunlar düzlemden geçer; listede OLMAYAN türler (ör.
-// COLLECT_DIAGNOSTICS) doğrudan depo yoluna düşer (düzlem Validate'ini tetiklemeden,
-// davranış korunur).
-var planeRoutableCmd = map[string]bool{
-	"QUARANTINE": true, "UNQUARANTINE": true, "LOCK": true, "RESTART": true,
-	"WIPE": true, "RUN_SIGNED_SCRIPT": true, "COLLECT_FILE": true,
+// planeRoutable, komut tipinin yönetici yolunda komut düzleminden geçip geçmeyeceğini
+// PAYLAŞILAN komut tablosundan (cmdenvelope.Spec.PlaneRouted) okur. Komut düzlemi
+// bağlıyken YALNIZ PlaneRouted tipler düzlemden geçer; diğerleri (COLLECT_DIAGNOSTICS:
+// W2-S5'te taşınır; UNINSTALL: yönetici giriş noktası yok) doğrudan depo yoluna düşer
+// (düzlem Validate'ini tetiklemeden, davranış korunur). Kayıtsız tip düzleme gitmez.
+func planeRoutable(cmdType string) bool {
+	spec, ok := cmdenvelope.Lookup(cmdType)
+	return ok && spec.PlaneRouted
 }
 
 // enqueue, bir cihaz komutunu kuyruğa alır. Komut düzlemi bağlı VE komut türü
@@ -276,7 +278,7 @@ var planeRoutableCmd = map[string]bool{
 // enqueue sınırına delege). guardScope bu çağrıdan ÖNCE uygulanmıştır. Aksi halde
 // doğrudan depo (geriye uyumlu).
 func (s *Service) enqueue(ctx context.Context, deviceID, cmdType, issuedBy string, params map[string]string) error {
-	if s.cmdPlane != nil && planeRoutableCmd[cmdType] {
+	if s.cmdPlane != nil && planeRoutable(cmdType) {
 		_, err := s.cmdPlane.Dispatch(ctx, commandplane.CommandRequest{
 			DeviceID: deviceID,
 			Type:     commandplane.CommandType(cmdType),
@@ -588,29 +590,29 @@ func (s *Service) QuarantineDevice(ctx context.Context, adminID, deviceID string
 	// DESIRED durum QUARANTINE_PENDING'dir (F-D): komut kuyruğa alındı ama cihaz henüz
 	// gerçek izolasyonu onaylamadı. EFFECTIVE 'QUARANTINED', yalnız ajan komut SUCCESS
 	// bildirince ApplyCommandResults ile verilir — SOC yanıltıcı "izole" görmez.
-	return s.command(ctx, adminID, deviceID, "QUARANTINE", "QUARANTINE_PENDING")
+	return s.command(ctx, adminID, deviceID, cmdenvelope.TypeQuarantine, "QUARANTINE_PENDING")
 }
 
 // ReleaseDevice, karantinayı kaldırma komutu kuyruğa ekler (OPERATOR+) ve durum
 // sütununu ACTIVE olarak geri yansıtır.
 func (s *Service) ReleaseDevice(ctx context.Context, adminID, deviceID string) error {
-	return s.command(ctx, adminID, deviceID, "UNQUARANTINE", "ACTIVE")
+	return s.command(ctx, adminID, deviceID, cmdenvelope.TypeUnquarantine, "ACTIVE")
 }
 
 // CollectDiagnostics, cihazdan tanılama toplama komutu kuyruğa ekler (OPERATOR+).
 // Durum değiştirmez — zararsız, salt-toplama bir işlemdir.
 func (s *Service) CollectDiagnostics(ctx context.Context, adminID, deviceID string) error {
-	return s.command(ctx, adminID, deviceID, "COLLECT_DIAGNOSTICS", "")
+	return s.command(ctx, adminID, deviceID, cmdenvelope.TypeCollectDiagnostics, "")
 }
 
 // LockDevice, uzaktan ekran kilitleme komutu kuyruğa ekler (OPERATOR+, MDM).
 func (s *Service) LockDevice(ctx context.Context, adminID, deviceID string) error {
-	return s.command(ctx, adminID, deviceID, "LOCK", "")
+	return s.command(ctx, adminID, deviceID, cmdenvelope.TypeLock, "")
 }
 
 // RestartDevice, uzaktan yeniden başlatma komutu kuyruğa ekler (OPERATOR+, MDM).
 func (s *Service) RestartDevice(ctx context.Context, adminID, deviceID string) error {
-	return s.command(ctx, adminID, deviceID, "RESTART", "")
+	return s.command(ctx, adminID, deviceID, cmdenvelope.TypeRestart, "")
 }
 
 // WipeDevice, uzaktan veri silme komutu kuyruğa ekler — YIKICI olduğundan ADMIN
@@ -630,16 +632,16 @@ func (s *Service) audit(ctx context.Context, adminID, action, kind, target strin
 }
 
 func (s *Service) WipeDevice(ctx context.Context, adminID, deviceID string) error {
-	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
+	if err := s.requireCmd(ctx, adminID, cmdenvelope.TypeWipe); err != nil {
 		return err
 	}
 	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return err
 	}
-	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionWipe); err != nil {
+	if err := s.guardCmdScope(ctx, adminID, deviceID, cmdenvelope.TypeWipe); err != nil {
 		return err
 	}
-	if err := s.enqueue(ctx, deviceID, "WIPE", adminID, nil); err != nil {
+	if err := s.enqueue(ctx, deviceID, cmdenvelope.TypeWipe, adminID, nil); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "WIPE", "device", deviceID)
@@ -656,7 +658,7 @@ func (s *Service) WipeDualControl() bool { return s.wipeDualControl }
 // kuyruğa GİRMEZ — farklı bir ADMIN ApproveWipe ile onaylamalıdır (dört-göz ilkesi;
 // tek ele geçirilmiş/kötü-niyetli ADMIN filo silemez). Denetim izine yazılır.
 func (s *Service) RequestWipe(ctx context.Context, adminID, deviceID, reason string) error {
-	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
+	if err := s.requireCmd(ctx, adminID, cmdenvelope.TypeWipe); err != nil {
 		return err
 	}
 	if strings.TrimSpace(deviceID) == "" {
@@ -669,7 +671,7 @@ func (s *Service) RequestWipe(ctx context.Context, adminID, deviceID, reason str
 		return err
 	}
 	// Scope/ROE'yi ERKEN uygula: kapsam dışı bir WIPE talebi hiç kaydedilmesin.
-	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionWipe); err != nil {
+	if err := s.guardCmdScope(ctx, adminID, deviceID, cmdenvelope.TypeWipe); err != nil {
 		return err
 	}
 	if err := s.store.SavePendingWipe(ctx, deviceID, adminID, strings.TrimSpace(reason)); err != nil {
@@ -683,7 +685,7 @@ func (s *Service) RequestWipe(ctx context.Context, adminID, deviceID, reason str
 // Onaylayan, talep edenden FARKLI olmalıdır — kendi talebini onaylayamaz (dört-göz).
 // Onaydan sonra bekleyen talep silinir. Denetim izine yazılır.
 func (s *Service) ApproveWipe(ctx context.Context, approverID, deviceID string) error {
-	if err := s.require(ctx, approverID, RoleAdmin); err != nil {
+	if err := s.requireCmd(ctx, approverID, cmdenvelope.TypeWipe); err != nil {
 		return err
 	}
 	if err := s.enforceDeviceTenant(ctx, approverID, deviceID); err != nil {
@@ -691,7 +693,7 @@ func (s *Service) ApproveWipe(ctx context.Context, approverID, deviceID string) 
 	}
 	// Onay anında da Scope/ROE uygulanır (talep ile onay arasında politika değişebilir);
 	// kapsam dışıysa talebi TÜKETMEDEN reddet.
-	if err := s.guardScope(ctx, approverID, deviceID, scope.ActionWipe); err != nil {
+	if err := s.guardCmdScope(ctx, approverID, deviceID, cmdenvelope.TypeWipe); err != nil {
 		return err
 	}
 	// Atomik claim (G-08): GetPendingWipe+DeletePendingWipe arasındaki TOCTOU yarışı
@@ -707,7 +709,7 @@ func (s *Service) ApproveWipe(ctx context.Context, approverID, deviceID string) 
 		}
 		return fmt.Errorf("%w: bekleyen WIPE talebi yok", ErrInvalidInput) // yok ya da başka onaylayan tüketti
 	}
-	if err := s.enqueue(ctx, deviceID, "WIPE", approverID, nil); err != nil {
+	if err := s.enqueue(ctx, deviceID, cmdenvelope.TypeWipe, approverID, nil); err != nil {
 		return err
 	}
 	s.audit(ctx, approverID, "WIPE_APPROVE", "device", deviceID)
@@ -754,7 +756,7 @@ func (s *Service) UpdateEventCase(ctx context.Context, adminID, eventID, assigne
 // CollectFile, bir cihazdan adli/IR dosya toplama komutu kuyruğa ekler
 // (OPERATOR+). Ajan dosyayı okuyup UploadArtifact ile yükler. Denetim izine yazılır.
 func (s *Service) CollectFile(ctx context.Context, adminID, deviceID, path string) error {
-	if err := s.require(ctx, adminID, RoleOperator); err != nil {
+	if err := s.requireCmd(ctx, adminID, cmdenvelope.TypeCollectFile); err != nil {
 		return err
 	}
 	if strings.TrimSpace(path) == "" {
@@ -765,10 +767,10 @@ func (s *Service) CollectFile(ctx context.Context, adminID, deviceID, path strin
 	}
 	// G-04: uzaktan dosya toplama da diğer cihaz komutlarıyla TUTARLI biçimde Scope/ROE'den
 	// geçer (kapsam dışı cihazdan kanıt/dosya toplanmasın; H5 chain-of-custody).
-	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionRemoteCommand); err != nil {
+	if err := s.guardCmdScope(ctx, adminID, deviceID, cmdenvelope.TypeCollectFile); err != nil {
 		return err
 	}
-	if err := s.enqueue(ctx, deviceID, "COLLECT_FILE", adminID, map[string]string{"path": path}); err != nil {
+	if err := s.enqueue(ctx, deviceID, cmdenvelope.TypeCollectFile, adminID, map[string]string{"path": path}); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "COLLECT_FILE", "device", deviceID)
@@ -801,12 +803,44 @@ func (s *Service) AckEvent(ctx context.Context, adminID, eventID, status string)
 // (reflectStatus boş değilse) cihazın durum sütununu günceller. Durum güncelleme
 // hatası akışı BOZMAZ: komut zaten kuyruğa girmiştir; hata yutulur (best-effort
 // yansıma), çünkü asıl doğruluk kaynağı komut kuyruğudur.
-// commandScopeAction, komut kuyruğu türlerini Scope/ROE aksiyonlarına eşler. Burada
-// OLMAYAN komutlar (UNQUARANTINE, COLLECT_DIAGNOSTICS) guardrail'dan muaftır.
-var commandScopeAction = map[string]scope.Action{
-	"QUARANTINE": scope.ActionQuarantine,
-	"LOCK":       scope.ActionLock,
-	"RESTART":    scope.ActionRestart,
+// commandScope, komut tipinin Scope/ROE aksiyonunu PAYLAŞILAN komut tablosundan çözer
+// (fabricauthz.CommandAuthorizer ile AYNI kaynak — admin ve komut düzlemi tek kararda
+// uyuşur, Z2-02). exempt=true: tip scope DIŞLAMASINDAN muaftır (UNQUARANTINE,
+// COLLECT_DIAGNOSTICS; kısıt kaldıran/salt-okuma). RBAC ve kiracı denetimi muafiyetten
+// ETKİLENMEZ: UNQUARANTINE de QUARANTINE ile aynı rolü (OPERATOR+) ister. ok=false:
+// kayıtsız tip → çağıran REDDEDER (fail-closed).
+func commandScope(cmdType string) (act scope.Action, exempt, ok bool) {
+	spec, found := cmdenvelope.Lookup(cmdType)
+	if !found {
+		return "", false, false
+	}
+	if spec.ScopeExempt {
+		return "", true, true
+	}
+	return scope.Action(spec.ScopeAction), false, true
+}
+
+// guardCmdScope, komut tipini tablodaki scope aksiyonuyla guardScope'tan geçirir; tablo-muaf
+// tip için no-op'tur, kayıtsız tip için ErrInvalidInput döner (fail-closed).
+func (s *Service) guardCmdScope(ctx context.Context, adminID, deviceID, cmdType string) error {
+	act, exempt, known := commandScope(cmdType)
+	if !known {
+		return fmt.Errorf("%w: bilinmeyen komut tipi %q", ErrInvalidInput, cmdType)
+	}
+	if exempt {
+		return nil
+	}
+	return s.guardScope(ctx, adminID, deviceID, act)
+}
+
+// requireCmd, komut tipinin tablodaki asgari rolünü doğrular (kayıtsız tip →
+// ErrInvalidInput, fail-closed). cmdenvelope.Role ile admin.Role aynı dizgelerdir.
+func (s *Service) requireCmd(ctx context.Context, adminID, cmdType string) error {
+	spec, ok := cmdenvelope.Lookup(cmdType)
+	if !ok {
+		return fmt.Errorf("%w: bilinmeyen komut tipi %q", ErrInvalidInput, cmdType)
+	}
+	return s.require(ctx, adminID, Role(spec.MinRole))
 }
 
 // enforceDeviceTenant, çağıran yöneticinin hedef cihaza AKSİYON uygulama yetkisini
@@ -864,7 +898,7 @@ func (s *Service) enforceEventTenant(ctx context.Context, adminID, eventID strin
 }
 
 func (s *Service) command(ctx context.Context, adminID, deviceID, cmdType, reflectStatus string) error {
-	if err := s.require(ctx, adminID, RoleOperator); err != nil {
+	if err := s.requireCmd(ctx, adminID, cmdType); err != nil {
 		return err
 	}
 	// Çok-tenant: hedef cihaz çağıranın kiracısında mı? (scope/ROE'den ÖNCE; UNQUARANTINE/
@@ -872,12 +906,10 @@ func (s *Service) command(ctx context.Context, adminID, deviceID, cmdType, refle
 	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return err
 	}
-	// Yüksek-etkili komutlar Scope/ROE kapısından geçer (geri döndürülebilir/pasif
-	// olanlar — UNQUARANTINE, COLLECT_DIAGNOSTICS — muaf).
-	if act, ok := commandScopeAction[cmdType]; ok {
-		if err := s.guardScope(ctx, adminID, deviceID, act); err != nil {
-			return err
-		}
+	// Yüksek-etkili komutlar Scope/ROE kapısından geçer; tablo-muaf tipler (UNQUARANTINE,
+	// COLLECT_DIAGNOSTICS) dışlamaya takılmaz. Kayıtsız tip fail-closed reddedilir.
+	if err := s.guardCmdScope(ctx, adminID, deviceID, cmdType); err != nil {
+		return err
 	}
 	if err := s.enqueue(ctx, deviceID, cmdType, adminID, nil); err != nil {
 		return err

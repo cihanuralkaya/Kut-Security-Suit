@@ -18,9 +18,11 @@ import (
 	"fmt"
 	"strings"
 
+	"kut.corp/suite/cmdenvelope"
 	"kut.corp/suite/server/internal/aiprovider"
 	"kut.corp/suite/server/internal/commandplane"
 	"kut.corp/suite/server/internal/coordinator"
+	"kut.corp/suite/server/internal/metrics"
 	"kut.corp/suite/server/internal/scope"
 )
 
@@ -33,27 +35,67 @@ var (
 
 // CommandAuthorizer, commandplane.Authorizer'ı scope.Engine üzerinden karşılar.
 // Komut, sunucu kiracısı + hedef cihaz için scope/ROE kararına tabidir.
+//
+// Mod: enforce=true (varsayılan; NewCommandAuthorizer) → scope RED'i komutu engeller.
+// enforce=false (AUDIT; NewCommandAuthorizerMode) → scope RED'i yalnız sayılır
+// (kut_command_plane_would_deny_total) ve izin verilir; böylece imzalama her zaman
+// açıkken yetki politikası operatör ayarlanana dek sertleştirilmez. Bilinmeyen komut
+// tipi iki modda da HER ZAMAN reddedilir.
 type CommandAuthorizer struct {
-	eng    *scope.Engine
-	tenant string
+	eng     *scope.Engine
+	tenant  string
+	enforce bool
 }
 
-// NewCommandAuthorizer, verilen scope motoru ve kiracı için komut yetkilendiricisi
-// üretir. Kiracı başına ayrı komut düzlemi, kiracı başına ayrı adaptörle bağlanır.
+// NewCommandAuthorizer, verilen scope motoru ve kiracı için ENFORCE modunda komut
+// yetkilendiricisi üretir. Kiracı başına ayrı komut düzlemi, kiracı başına ayrı
+// adaptörle bağlanır.
 func NewCommandAuthorizer(eng *scope.Engine, tenant string) *CommandAuthorizer {
-	return &CommandAuthorizer{eng: eng, tenant: tenant}
+	return NewCommandAuthorizerMode(eng, tenant, true)
 }
 
-// Authorize, komut isteğini scope/ROE kararına çevirir. Motor yoksa fail-closed
-// reddeder. Bilinmeyen aksiyon adı scope.ImpactOf'ta Destructive'e düşer (en katı).
+// NewCommandAuthorizerMode, enforce bayrağıyla (true=ENFORCE, false=AUDIT) komut
+// yetkilendiricisi üretir.
+func NewCommandAuthorizerMode(eng *scope.Engine, tenant string, enforce bool) *CommandAuthorizer {
+	return &CommandAuthorizer{eng: eng, tenant: tenant, enforce: enforce}
+}
+
+// Authorize, komut isteğini scope/ROE kararına çevirir. Karar, PAYLAŞILAN komut
+// tablosundan (cmdenvelope) türetilir — ham komut adı scope aksiyonu olarak
+// KULLANILMAZ (Z2-02: UNQUARANTINE/COLLECT_FILE/RUN_SIGNED_SCRIPT eskiden bilinmeyen
+// aksiyon sayılıp Destructive'e düşerek hep reddediliyordu).
+//
+//   - Tabloda olmayan tip → HER ZAMAN red (fail-closed; scope motoruna hiç sorulmaz).
+//   - ScopeExempt tip (UNQUARANTINE, COLLECT_DIAGNOSTICS) → izin; admin.guardScope ile
+//     aynı kural: kısıt kaldıran/salt-okuma tipler scope DIŞLAMASINA takılmaz. RBAC ve
+//     kiracı denetimi bu kararın dışında, çağıran katmanda uygulanır.
+//   - Diğer tipler → tablodaki scope aksiyonuyla scope.Engine kararı. Motor yoksa
+//     ENFORCE'ta red, AUDIT'te izin (would-deny sayılır). WIPE/UNINSTALL "wipe" olarak
+//     Destructive kalır (açık ROE ister).
 func (c *CommandAuthorizer) Authorize(ctx context.Context, req commandplane.ActionRequest) (commandplane.AuthorizationDecision, error) {
-	if c == nil || c.eng == nil {
-		return commandplane.AuthorizationDecision{Allowed: false, Reason: "scope motoru yapılandırılmadı (fail-closed)"}, nil
+	spec, ok := cmdenvelope.Lookup(strings.ToUpper(strings.TrimSpace(req.Action)))
+	if !ok {
+		return commandplane.AuthorizationDecision{Allowed: false, Reason: fmt.Sprintf("bilinmeyen komut tipi %q — reddedildi (fail-closed)", req.Action)}, nil
 	}
-	act := scope.Action(strings.ToLower(strings.TrimSpace(req.Action)))
-	tgt := scope.Target{Tenant: c.tenant, DeviceID: req.Object}
-	d := c.eng.Authorize(tgt, act)
-	return commandplane.AuthorizationDecision{Allowed: d.Allowed, Reason: d.Reason}, nil
+	if spec.ScopeExempt {
+		return commandplane.AuthorizationDecision{Allowed: true, Reason: fmt.Sprintf("%s scope dışlamasından muaf", spec.Name)}, nil
+	}
+	var denyReason string
+	if c == nil || c.eng == nil {
+		denyReason = "scope motoru yapılandırılmadı (fail-closed)"
+	} else {
+		d := c.eng.Authorize(scope.Target{Tenant: c.tenant, DeviceID: req.Object}, scope.Action(spec.ScopeAction))
+		if d.Allowed {
+			return commandplane.AuthorizationDecision{Allowed: true, Reason: d.Reason}, nil
+		}
+		denyReason = d.Reason
+	}
+	// RED: ENFORCE'ta engeller; AUDIT'te (yalnız c != nil ve enforce=false) sayar ve izin verir.
+	if c != nil && !c.enforce {
+		metrics.IncCommandPlaneWouldDeny()
+		return commandplane.AuthorizationDecision{Allowed: true, Reason: "AUDIT would-deny: " + denyReason}, nil
+	}
+	return commandplane.AuthorizationDecision{Allowed: false, Reason: denyReason}, nil
 }
 
 // responseActionToScope, otonom yanıt aksiyon tiplerini scope aksiyonlarına eşler.

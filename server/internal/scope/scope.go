@@ -88,6 +88,14 @@ func ImpactOf(a Action) Impact {
 	return Destructive
 }
 
+// Known, aksiyonun etki tablosunda KAYITLI olup olmadığını bildirir. ImpactOf kayıtsız
+// aksiyonu Destructive saydığından, çağıranlar "gerçekten Destructive" ile "tanınmayan"ı
+// ayırt etmek için (ör. komut tablosu tutarlılık testleri) bunu kullanır.
+func Known(a Action) bool {
+	_, ok := impactOf[a]
+	return ok
+}
+
 // Target, üzerinde işlem yapılacak varlıktır. Alanlar bilindiği kadarıyla doldurulur;
 // boş alanlar ilgili seçici tarafından yok sayılır.
 type Target struct {

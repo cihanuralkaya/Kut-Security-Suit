@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"kut.corp/suite/cmdenvelope"
 	"kut.corp/suite/server/internal/model"
 )
 
@@ -39,9 +40,9 @@ func (s *Store) ApplyCommandResults(ctx context.Context, deviceID string, outcom
 		}
 		var st string
 		switch o.Type {
-		case "QUARANTINE":
+		case cmdenvelope.TypeQuarantine:
 			st = "QUARANTINED"
-		case "UNQUARANTINE":
+		case cmdenvelope.TypeUnquarantine:
 			st = "ACTIVE"
 		default:
 			continue
