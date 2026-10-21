@@ -259,6 +259,22 @@ func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollm
 	if id == "" {
 		id = randID("dev-")
 	}
+	if d, ok := s.devices[id]; ok {
+		// KİRACI DUVARI (db ile aynı): mevcut cihaz başka kiracıya aitse taşınmaz.
+		if d.tenant != in.TenantID {
+			return "", enroll.ErrTenantMismatch
+		}
+		d.hostnameEnc, d.macEnc, d.osEnc = in.HostnameEnc, in.MACEnc, in.OSInfoEnc
+		d.macBidx, d.osPlatform, d.agentVersion = in.MACBlindIndex, in.OSPlatform, in.AgentVersion
+		// Güvenlik durumu (QUARANTINE_PENDING/QUARANTINED/ACTIVE) korunur; yalnız
+		// henüz-aktif-olmayan durumlar ACTIVE'e yükselir.
+		switch d.status {
+		case "PENDING_ENROLLMENT", "OFFLINE", "UNINSTALLED", "":
+			d.status = "ACTIVE"
+		}
+		d.lastSeen = time.Now()
+		return id, nil
+	}
 	s.devices[id] = &device{
 		id: id, hostnameEnc: in.HostnameEnc, macEnc: in.MACEnc, osEnc: in.OSInfoEnc,
 		macBidx: in.MACBlindIndex, osPlatform: in.OSPlatform, agentVersion: in.AgentVersion,
@@ -483,6 +499,18 @@ func (s *Store) SaveEnrollmentToken(_ context.Context, tokenIndex []byte, create
 		id: randID("etok-"), createdBy: createdBy, tenant: tenantID, expiresAt: expiresAt, createdAt: time.Now(),
 	}
 	return nil
+}
+
+// EnrollmentTokenTenant, token'ın mühürlü kiracısını döner (yoksa found=false) — db ile aynı.
+func (s *Store) EnrollmentTokenTenant(_ context.Context, tokenID string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.tokens {
+		if t.id == tokenID {
+			return t.tenant, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 // RevokeEnrollmentToken, id ile token'ı bulup kullanılmış işaretler (used=true).
@@ -807,12 +835,16 @@ func (s *Store) DeactivateAdmin(_ context.Context, id string) error {
 	return nil
 }
 
-// ListAdmins, yöneticileri e-postaya göre sıralı döner (parola hash'i olmadan).
-func (s *Store) ListAdmins(_ context.Context) ([]admin.AdminInfo, error) {
+// ListAdmins, yöneticileri e-postaya göre sıralı döner (parola hash'i olmadan). tenantID
+// boş değilse yalnız o kiracının yöneticileri (platform adminleri dahil değil) — db ile aynı.
+func (s *Store) ListAdmins(_ context.Context, tenantID string) ([]admin.AdminInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]admin.AdminInfo, 0, len(s.adminsByID))
 	for _, a := range s.adminsByID {
+		if tenantID != "" && a.tenant != tenantID {
+			continue
+		}
 		out = append(out, admin.AdminInfo{ID: a.id, Email: a.email, Role: a.role, Active: a.active})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Email < out[j].Email })

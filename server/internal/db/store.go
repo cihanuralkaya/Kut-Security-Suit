@@ -137,13 +137,23 @@ func (s *Store) UpsertEnrollingDevice(ctx context.Context, in enroll.DeviceEnrol
 			       mac_address_bidx = $5,
 			       os_platform = $6,
 			       agent_version = $7,
-			       tenant_id = $8,
-			       status = 'ACTIVE'
+			       status = CASE WHEN status IN ('PENDING_ENROLLMENT','OFFLINE','UNINSTALLED')
+			                     THEN 'ACTIVE'::device_status ELSE status END
 			 WHERE id = $1
+			   AND tenant_id = $8
 		 RETURNING id::text`
 		var id string
 		err := s.pool.QueryRow(ctx, upd, in.PreferredDeviceID, in.HostnameEnc, in.MACEnc,
 			in.OSInfoEnc, in.MACBlindIndex, in.OSPlatform, in.AgentVersion, in.TenantID).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Satır ya yok ya da BAŞKA kiracıya ait (tenant_id eşleşmedi). Cihaz KİRACILAR
+			// ARASI taşınmaz: mevcutsa kiracı uyuşmazlığı, değilse eski "yok" hatası.
+			var exists bool
+			if qerr := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM devices WHERE id = $1)`,
+				in.PreferredDeviceID).Scan(&exists); qerr == nil && exists {
+				return "", enroll.ErrTenantMismatch
+			}
+		}
 		if err != nil {
 			return "", fmt.Errorf("db: cihaz güncelleme: %w", err)
 		}
@@ -161,12 +171,18 @@ func (s *Store) UpsertEnrollingDevice(ctx context.Context, in enroll.DeviceEnrol
 			os_info_encrypted = EXCLUDED.os_info_encrypted,
 			os_platform = EXCLUDED.os_platform,
 			agent_version = EXCLUDED.agent_version,
-			tenant_id = EXCLUDED.tenant_id,
-			status = 'ACTIVE'
+			status = CASE WHEN devices.status IN ('PENDING_ENROLLMENT','OFFLINE','UNINSTALLED')
+			              THEN 'ACTIVE'::device_status ELSE devices.status END
+		WHERE devices.tenant_id = EXCLUDED.tenant_id
 	 RETURNING id::text`
 	var id string
 	err := s.pool.QueryRow(ctx, ins, in.HostnameEnc, in.MACEnc, in.OSInfoEnc,
 		in.MACBlindIndex, in.OSPlatform, in.AgentVersion, in.TenantID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// ON CONFLICT ... WHERE: kiracı eşleşmedi → satır güncellenmedi/döndürülmedi;
+		// aynı MAC başka kiracıya ait. Re-homing YOK (fail-closed).
+		return "", enroll.ErrTenantMismatch
+	}
 	if err != nil {
 		return "", fmt.Errorf("db: cihaz ekleme: %w", err)
 	}

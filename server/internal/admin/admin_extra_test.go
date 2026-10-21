@@ -34,7 +34,7 @@ func TestMFAEnrollmentLifecycle(t *testing.T) {
 	}
 
 	// BeginMFAEnrollment: sır + otpauth URI döner, sır bekleyen (enrolled=false) olur.
-	secret, uri, err := svc.BeginMFAEnrollment(ctx, id)
+	secret, uri, err := svc.BeginMFAEnrollment(ctx, id, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestDisableMFAPendingOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := svc.BeginMFAEnrollment(ctx, id); err != nil {
+	if _, _, err := svc.BeginMFAEnrollment(ctx, id, ""); err != nil {
 		t.Fatal(err)
 	}
 	// enrolled=false → kod gerekmeden kapatılır, MFA_DISABLED audit'i YAZILMAZ.

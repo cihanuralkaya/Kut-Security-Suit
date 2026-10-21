@@ -35,6 +35,7 @@ type memStore struct {
 	cmdRows       []adminread.CmdRow
 	tokenRows     []adminread.EnrollmentTokenRow
 	tokenSeq      int
+	tokenTen      map[string]string // tokenID -> mühürlü kiracı
 	polID         string
 	polVer        string
 	rules         map[string][]admin.RuleInput // policyID -> kurallar
@@ -77,8 +78,12 @@ func newMemStore() *memStore {
 func (m *memStore) AdminRole(_ context.Context, id string) (admin.Role, error) {
 	return m.roles[id], nil
 }
-func (m *memStore) SaveEnrollmentToken(_ context.Context, _ []byte, createdBy, _ string, expiresAt time.Time) error {
+func (m *memStore) SaveEnrollmentToken(_ context.Context, _ []byte, createdBy, tenantID string, expiresAt time.Time) error {
 	m.tokenSeq++
+	if m.tokenTen == nil {
+		m.tokenTen = map[string]string{}
+	}
+	m.tokenTen["etok-"+strconv.Itoa(m.tokenSeq)] = tenantID
 	// createdBy admin id'sini e-postaya çöz (db LEFT JOIN davranışını taklit et).
 	var email string
 	for e, r := range m.emails {
@@ -92,6 +97,10 @@ func (m *memStore) SaveEnrollmentToken(_ context.Context, _ []byte, createdBy, _
 		ExpiresAt: expiresAt, Used: false, CreatedAt: time.Now(),
 	}}, m.tokenRows...)
 	return nil
+}
+func (m *memStore) EnrollmentTokenTenant(_ context.Context, tokenID string) (string, bool, error) {
+	t, ok := m.tokenTen[tokenID]
+	return t, ok, nil
 }
 func (m *memStore) RevokeEnrollmentToken(_ context.Context, tokenID string) error {
 	for i := range m.tokenRows {
@@ -229,9 +238,12 @@ func (m *memStore) DeactivateAdmin(_ context.Context, id string) error {
 	delete(m.roles, id)
 	return nil
 }
-func (m *memStore) ListAdmins(_ context.Context) ([]admin.AdminInfo, error) {
+func (m *memStore) ListAdmins(_ context.Context, tenantID string) ([]admin.AdminInfo, error) {
 	var out []admin.AdminInfo
-	for _, a := range m.adminInfos {
+	for id, a := range m.adminInfos {
+		if tenantID != "" && m.adminTen[id] != tenantID {
+			continue
+		}
 		out = append(out, *a)
 	}
 	return out, nil

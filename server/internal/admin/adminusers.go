@@ -93,13 +93,51 @@ func (s *Service) AdminTenant(ctx context.Context, adminID string) (string, erro
 	return s.store.AdminTenant(ctx, adminID)
 }
 
-// SetAdminRole, bir yöneticinin rolünü değiştirir (ADMIN).
+// enforceAdminTarget, bir yönetici-yönetimi mutasyonunun (rol değiştir / pasifleştir)
+// kiracı sınırını doğrular ve çağıranın kiracısını döner. Platform admini (kiracısız)
+// kısıtsızdır. Kiracıya bağlı bir admin YALNIZ kendi kiracısının yöneticilerine dokunabilir:
+// hedefin kiracısı boş (platform admini) ya da başka bir kiracı ya da bilinmeyen/pasif
+// hedef → ErrForbidden (fail-closed; CreateAdmin'in kiracı korumasının aynası).
+func (s *Service) enforceAdminTarget(ctx context.Context, adminID, targetID string) (string, error) {
+	callerTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return "", err
+	}
+	if callerTenant == "" {
+		return "", nil // platform admini: kısıtsız
+	}
+	targetTenant, err := s.store.AdminTenant(ctx, targetID)
+	if err != nil {
+		return "", err
+	}
+	if targetTenant == "" || targetTenant != callerTenant {
+		return "", ErrForbidden
+	}
+	return callerTenant, nil
+}
+
+// SetAdminRole, bir yöneticinin rolünü değiştirir (ADMIN). Kiracıya bağlı bir admin yalnız
+// kendi kiracısındaki yöneticilerin rolünü değiştirebilir, platform adminlerine dokunamaz
+// ve kendi rolünün ÜSTÜNDE bir rol veremez (ayrıcalık yükseltme koruması).
 func (s *Service) SetAdminRole(ctx context.Context, adminID, targetID string, role Role) error {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
 		return err
 	}
 	if !validAdminRole(role) {
 		return ErrInvalidInput
+	}
+	callerTenant, err := s.enforceAdminTarget(ctx, adminID, targetID)
+	if err != nil {
+		return err
+	}
+	if callerTenant != "" {
+		callerRole, err := s.store.AdminRole(ctx, adminID)
+		if err != nil {
+			return err
+		}
+		if rank(role) > rank(callerRole) {
+			return ErrForbidden
+		}
 	}
 	if err := s.store.SetAdminRole(ctx, targetID, role); err != nil {
 		return err
@@ -109,9 +147,13 @@ func (s *Service) SetAdminRole(ctx context.Context, adminID, targetID string, ro
 }
 
 // DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false) (ADMIN).
-// Pasif yönetici artık oturum açamaz ve yetki denetimlerinden geçemez.
+// Pasif yönetici artık oturum açamaz ve yetki denetimlerinden geçemez. Kiracıya bağlı
+// bir admin yalnız kendi kiracısının yöneticilerini pasifleştirebilir.
 func (s *Service) DeactivateAdmin(ctx context.Context, adminID, targetID string) error {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
+		return err
+	}
+	if _, err := s.enforceAdminTarget(ctx, adminID, targetID); err != nil {
 		return err
 	}
 	if err := s.store.DeactivateAdmin(ctx, targetID); err != nil {
@@ -121,12 +163,18 @@ func (s *Service) DeactivateAdmin(ctx context.Context, adminID, targetID string)
 	return nil
 }
 
-// ListAdmins, tüm yöneticileri döner (OPERATOR+). Parola hash'i ASLA dönmez.
+// ListAdmins, yöneticileri döner (OPERATOR+). Platform admini hepsini görür; kiracıya
+// bağlı çağıran YALNIZ kendi kiracısının yöneticilerini görür (platform adminleri ve
+// diğer kiracılar listelenmez). Parola hash'i ASLA dönmez.
 func (s *Service) ListAdmins(ctx context.Context, adminID string) ([]AdminView, error) {
 	if err := s.require(ctx, adminID, RoleOperator); err != nil {
 		return nil, err
 	}
-	infos, err := s.store.ListAdmins(ctx)
+	callerTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return nil, err
+	}
+	infos, err := s.store.ListAdmins(ctx, callerTenant)
 	if err != nil {
 		return nil, err
 	}

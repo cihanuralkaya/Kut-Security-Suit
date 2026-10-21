@@ -176,7 +176,7 @@ func TestAdminLifecycle(t *testing.T) {
 	}
 
 	// ListAdmins e-postaya göre sıralı (alpha < zeta).
-	list, _ := s.ListAdmins(ctx)
+	list, _ := s.ListAdmins(ctx, "")
 	if len(list) != 2 {
 		t.Fatalf("2 admin beklenirdi: %d", len(list))
 	}
@@ -189,7 +189,7 @@ func TestAdminLifecycle(t *testing.T) {
 	if err := s.DeactivateAdmin(ctx, id2); err != nil {
 		t.Fatal(err)
 	}
-	list, _ = s.ListAdmins(ctx)
+	list, _ = s.ListAdmins(ctx, "")
 	for _, a := range list {
 		if a.ID == id2 && a.Active {
 			t.Fatal("id2 pasifleştirilmeliydi")
