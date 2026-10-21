@@ -1,7 +1,7 @@
 # ADR-0041: Lawful Basis for Endpoint Telemetry
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12, counsel review under G9)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner, counsel review under G9)
 
 ## Context
 Endpoint telemetry (process, file, network and user events) is personal data of employees. Consent is a weak basis in an employment relationship (EDPB Guidelines 05/2020, the KVKK explicit-consent guide) and can be withdrawn, which would switch security monitoring off. The pilot needs a basis that holds up before the first customer.

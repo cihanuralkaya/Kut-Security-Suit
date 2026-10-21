@@ -1,7 +1,7 @@
 # ADR-0045: Rust Strangler Path and GA-Lean Scope
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner)
 
 ## Context
 A Rust agent core (kut-core) and data plane (kut-dp) are attractive for memory safety and throughput, but the plan carries seven toolchains for one maintainer and a large rewrite risk for GA.

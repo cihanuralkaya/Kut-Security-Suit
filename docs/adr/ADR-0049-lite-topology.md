@@ -1,7 +1,7 @@
 # ADR-0049: Lite Topology: Embedded WAL Bus and Command Outbox
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner)
 
 ## Context
 Lite is a small single-site deployment that must stay simple and free of heavy dependencies. The CI zero-dependency guard for `server/cmd/c2` forbids NATS and similar clients.

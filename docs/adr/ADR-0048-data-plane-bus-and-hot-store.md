@@ -1,7 +1,7 @@
 # ADR-0048: Data Plane: Enterprise Bus and Hot Store
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner)
 
 ## Context
 PostgreSQL is used as a lake and telemetry is processed event by event. The Enterprise tier needs a durable bus and an analytic hot store; Lite needs a lighter path (ADR-0049). Redpanda is BSL and cannot be bundled.

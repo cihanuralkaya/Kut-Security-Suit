@@ -1,7 +1,7 @@
 # ADR-0047: KUT-QL Compiler in Go
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner)
 
 ## Context
 KUT-QL is the search and query language of the platform. Every query must carry the caller's tenant and authorization context, and tenant predicates must not be bypassable by query text.

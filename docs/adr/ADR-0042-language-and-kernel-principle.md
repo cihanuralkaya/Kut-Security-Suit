@@ -1,7 +1,7 @@
 # ADR-0042: Language Set and Kernel Principle
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner)
 
 ## Context
 The product spans a kernel driver, eBPF sensors, an agent, Go services, a data plane, a web console and AI workers. A single-language rule would be wrong for several layers, while seven toolchains are too many for one maintainer.

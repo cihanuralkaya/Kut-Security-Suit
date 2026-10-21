@@ -1,7 +1,7 @@
 # ADR-0050: TUF Roots and the One-Person Gate Rule
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12, key matters under G7)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner, key matters under G7)
 
 ## Context
 Updates and content are distributed with TUF. Today the project has one maintainer, so a rule that needs several people on paper would simply not be followed.

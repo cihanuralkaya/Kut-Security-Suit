@@ -1,9 +1,9 @@
 # Architecture decision records
 
 Numbers 0001-0040 are the existing records. Numbers 0041-0069 are reserved by
-roadmap decision D19 for the decision sprint (WP-PM-025). The records below are
-drafts: status `Proposed`, accepted by the owner under gate G12 (`adrlint`
-green), with G0 evidence being the Accepted status and its date.
+roadmap decision D19 for the decision sprint (WP-PM-025). The decision-sprint
+records below have status `Accepted`: the owner accepted them under gate G12 on
+2026-10-22 (`adrlint` green), and G0 evidence is the Accepted status and its date.
 
 ## Record layout
 
