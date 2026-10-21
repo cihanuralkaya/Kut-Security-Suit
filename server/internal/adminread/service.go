@@ -89,9 +89,12 @@ type EnrollmentTokenRow struct {
 // PolicyRow, DB'den okunan ham politika satırıdır (kural + atanmış cihaz
 // sayımlarıyla). Politika adı/sürümü hassas değildir; şifrelenmez.
 type PolicyRow struct {
-	ID          string
-	Name        string
-	Version     string
+	ID      string
+	Name    string
+	Version string
+	// TenantID, politikanın sahibi kiracıdır; boş = platform/paylaşımlı (kiracıya bağlı admin
+	// için salt-okunur).
+	TenantID    string
 	RuleCount   int
 	DeviceCount int
 }
@@ -159,9 +162,11 @@ type Store interface {
 	// ListEnrollmentTokens, enrollment token'ların meta verisini en yeniden
 	// eskiye listeler (ham token asla okunmaz).
 	ListEnrollmentTokens(ctx context.Context, limit int, tenantID string) ([]EnrollmentTokenRow, error)
-	// ListPolicies, tüm politikaları (kural sayısı + atanmış cihaz sayısıyla)
-	// listeler.
-	ListPolicies(ctx context.Context, limit int) ([]PolicyRow, error)
+	// ListPolicies, politikaları (kural sayısı + atanmış cihaz sayısıyla) listeler.
+	// tenantID boş değilse yalnız o kiracının VE platform/paylaşımlı politikalar döner
+	// (başka kiracınınkiler asla) ve cihaz sayısı yalnız o kiracının cihazlarını sayar; boş
+	// tenantID (platform admini) hepsini listeler.
+	ListPolicies(ctx context.Context, limit int, tenantID string) ([]PolicyRow, error)
 	// SaveSearch, adlandırılmış bir threat-hunting sorgusunu (filtre JSON) kalıcılaştırır
 	// ve oluşturulan kaydı döner (SIEM kayıtlı-arama). name+filter zorunlu.
 	SaveSearch(ctx context.Context, name, filterJSON, createdBy string) (SavedSearchRow, error)
@@ -336,9 +341,13 @@ type EnrollmentTokenDTO struct {
 
 // PolicyDTO, konsola dönen politika görünümüdür.
 type PolicyDTO struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Version     string `json:"version"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	// TenantID politikanın sahibi kiracıdır; Shared=true platform/paylaşımlı politikadır
+	// (kiracıya bağlı admin için salt-okunur, atanabilir).
+	TenantID    string `json:"tenant_id"`
+	Shared      bool   `json:"shared"`
 	RuleCount   int    `json:"rule_count"`
 	DeviceCount int    `json:"device_count"`
 }
@@ -1384,9 +1393,11 @@ func (s *Service) ExportDevice(ctx context.Context, deviceID string, tenantID st
 	}, true, nil
 }
 
-// Policies, tüm politikaları (kural + atanmış cihaz sayımlarıyla) döner.
-func (s *Service) Policies(ctx context.Context, limit int) ([]PolicyDTO, error) {
-	rows, err := s.store.ListPolicies(ctx, clampLimit(limit))
+// Policies, politikaları (kural + atanmış cihaz sayımlarıyla) döner. tenantID boş değilse
+// yalnız o kiracının ve platform/paylaşımlı politikalar (kiracı-süzülmüş okuma); boş →
+// tümü (platform admini).
+func (s *Service) Policies(ctx context.Context, limit int, tenantID string) ([]PolicyDTO, error) {
+	rows, err := s.store.ListPolicies(ctx, clampLimit(limit), tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -1396,6 +1407,8 @@ func (s *Service) Policies(ctx context.Context, limit int) ([]PolicyDTO, error) 
 			ID:          r.ID,
 			Name:        r.Name,
 			Version:     r.Version,
+			TenantID:    r.TenantID,
+			Shared:      r.TenantID == "",
 			RuleCount:   r.RuleCount,
 			DeviceCount: r.DeviceCount,
 		})

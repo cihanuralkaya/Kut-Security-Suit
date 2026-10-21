@@ -87,7 +87,7 @@ func TestSetDeviceTags(t *testing.T) {
 	id := enrollDevice(t, s)
 
 	tags := []string{"prod", "critical"}
-	if err := s.SetDeviceTags(ctx, id, tags); err != nil {
+	if err := s.SetDeviceTags(ctx, id, tags, ""); err != nil {
 		t.Fatal(err)
 	}
 	// Kaynağı değiştir: depodaki kopya etkilenmemeli.
@@ -99,7 +99,7 @@ func TestSetDeviceTags(t *testing.T) {
 	}
 
 	// Bilinmeyen cihaz: no-op, hata yok.
-	if err := s.SetDeviceTags(ctx, "yok", []string{"x"}); err != nil {
+	if err := s.SetDeviceTags(ctx, "yok", []string{"x"}, ""); err != nil {
 		t.Fatalf("bilinmeyen cihazda hata olmamalıydı: %v", err)
 	}
 }

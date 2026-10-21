@@ -36,6 +36,7 @@ type memStore struct {
 	eventCases      map[string][2]string         // eventID -> {assignee, note} (vaka)
 	pendWipes       map[string]string            // deviceID -> requestedBy (çift-kontrol WIPE)
 	cmdParams       map[string]map[string]string // cmdType -> son params
+	polTenants      map[string]string            // policyID -> sahip kiracı ("" = paylaşımlı)
 	nextPolID       int
 	nextAdmID       int
 }
@@ -132,7 +133,13 @@ func (m *memStore) EnrollmentTokenTenant(_ context.Context, tokenID string) (str
 	t, ok := m.tokenTenants[tokenID]
 	return t, ok, nil
 }
-func (m *memStore) RevokeEnrollmentToken(_ context.Context, tokenID string) error {
+func (m *memStore) RevokeEnrollmentToken(_ context.Context, tokenID, tenantID string) error {
+	// S-4: db gibi — tenantID doluysa token'ın kiracısı eşleşmeli.
+	if tenantID != "" {
+		if t, ok := m.tokenTenants[tokenID]; !ok || t != tenantID {
+			return ErrForbidden
+		}
+	}
 	m.revoked[tokenID] = true
 	return nil
 }
@@ -152,7 +159,11 @@ func (m *memStore) SetDeviceStatus(_ context.Context, deviceID, status string) e
 	m.statuses[deviceID] = status
 	return nil
 }
-func (m *memStore) SetDeviceTags(_ context.Context, deviceID string, tags []string) error {
+func (m *memStore) SetDeviceTags(_ context.Context, deviceID string, tags []string, tenantID string) error {
+	// S-4: db gibi — tenantID doluysa cihazın kiracısı eşleşmeli.
+	if tenantID != "" && m.deviceTenant[deviceID] != tenantID {
+		return ErrForbidden
+	}
 	if m.tags == nil {
 		m.tags = map[string][]string{}
 	}
@@ -167,12 +178,24 @@ func (m *memStore) WriteAudit(_ context.Context, adminID, action, targetType, ta
 	m.audits = append(m.audits, audit{adminID, action, targetType, targetID})
 	return nil
 }
-func (m *memStore) CreatePolicy(_ context.Context, name, version string) (string, error) {
+func (m *memStore) CreatePolicy(_ context.Context, name, version, tenantID string) (string, error) {
 	m.nextPolID++
 	id := "pol-" + string(rune('0'+m.nextPolID))
 	m.policies[id] = name
 	m.versions[id] = version
+	if m.polTenants == nil {
+		m.polTenants = map[string]string{}
+	}
+	m.polTenants[id] = tenantID
 	return id, nil
+}
+
+// PolicyTenant: db gibi — oluşturulmuş politikanın sahibi; yoksa found=false.
+func (m *memStore) PolicyTenant(_ context.Context, policyID string) (string, bool, error) {
+	if _, ok := m.policies[policyID]; !ok {
+		return "", false, nil
+	}
+	return m.polTenants[policyID], true, nil
 }
 func (m *memStore) AssignPolicy(_ context.Context, deviceID, policyID string) error {
 	m.assigned[deviceID] = policyID
@@ -215,10 +238,18 @@ func (m *memStore) CreateAdmin(_ context.Context, email, passwordHash string, ro
 	return id, nil
 }
 func (m *memStore) AdminTenant(_ context.Context, adminID string) (string, error) {
+	// Z4b-09: db gibi — bilinmeyen/pasif yönetici platform ("") DEĞİL, ErrUnknownAdmin.
 	if a, ok := m.admins[adminID]; ok {
-		return a.tenant, nil
+		if a.active {
+			return a.tenant, nil
+		}
+		return "", ErrUnknownAdmin
 	}
-	return "", nil
+	// Yalnız rol tohumlanmış (m.roles) yönetici = kiracısız (platform) etkin yönetici.
+	if _, ok := m.roles[adminID]; ok {
+		return "", nil
+	}
+	return "", ErrUnknownAdmin
 }
 func (m *memStore) TenantForDevice(_ context.Context, deviceID string) (string, error) {
 	return m.deviceTenant[deviceID], nil
@@ -226,7 +257,13 @@ func (m *memStore) TenantForDevice(_ context.Context, deviceID string) (string, 
 func (m *memStore) EventTenant(_ context.Context, eventID string) (string, error) {
 	return m.eventTenant[eventID], nil
 }
-func (m *memStore) SetAdminRole(_ context.Context, id string, role Role) error {
+func (m *memStore) SetAdminRole(_ context.Context, id string, role Role, tenantID string) error {
+	// S-4: db gibi — tenantID doluysa hedefin kiracısı eşleşmeli.
+	if tenantID != "" {
+		if a, ok := m.admins[id]; !ok || a.tenant != tenantID {
+			return ErrForbidden
+		}
+	}
 	if a, ok := m.admins[id]; ok {
 		a.role = role
 	}
@@ -277,7 +314,12 @@ func (m *memStore) DisableMFA(_ context.Context, id string) error {
 	}
 	return nil
 }
-func (m *memStore) DeactivateAdmin(_ context.Context, id string) error {
+func (m *memStore) DeactivateAdmin(_ context.Context, id, tenantID string) error {
+	if tenantID != "" {
+		if a, ok := m.admins[id]; !ok || a.tenant != tenantID {
+			return ErrForbidden
+		}
+	}
 	if a, ok := m.admins[id]; ok {
 		a.active = false
 	}
@@ -725,10 +767,10 @@ func TestCreatePolicyRequiresAdmin(t *testing.T) {
 	store.roles["admin1"] = RoleAdmin
 	svc, _ := newService(t, store)
 
-	if _, err := svc.CreatePolicy(context.Background(), "op1", "P", "v1"); err != ErrForbidden {
+	if _, err := svc.CreatePolicy(context.Background(), "op1", "P", "v1", ""); err != ErrForbidden {
 		t.Fatalf("OPERATOR politika oluşturamamalı, dönen: %v", err)
 	}
-	id, err := svc.CreatePolicy(context.Background(), "admin1", "Mesai Politikası", "v1")
+	id, err := svc.CreatePolicy(context.Background(), "admin1", "Mesai Politikası", "v1", "")
 	if err != nil || id == "" {
 		t.Fatalf("ADMIN politika oluşturabilmeli: %v", err)
 	}
@@ -743,7 +785,7 @@ func TestAddPolicyRuleRBACAndPush(t *testing.T) {
 	svc.SetPublisher(pub)
 
 	// Bir politika oluştur ve iki cihaza ata.
-	id, err := store.CreatePolicy(context.Background(), "Mesai", "v1")
+	id, err := store.CreatePolicy(context.Background(), "Mesai", "v1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1096,6 +1138,7 @@ func TestScopeGuardG04(t *testing.T) {
 	base := func() (*Service, *memStore) {
 		store := newMemStore()
 		store.roles["admin1"] = RoleAdmin
+		_, _ = store.CreatePolicy(ctx, "P", "v1", "") // pol-1
 		svc, _ := newService(t, store)
 		return svc, store
 	}

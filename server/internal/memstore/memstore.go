@@ -86,6 +86,7 @@ type policyRule struct {
 
 type policyRec struct {
 	id, name, version string
+	tenant            string // sahip kiracı; "" = platform/paylaşımlı (kiracıya bağlı admin için salt-okunur)
 	rules             []policyRule
 }
 
@@ -156,6 +157,7 @@ type savedSearchRec struct {
 
 // incidentRec, korelasyonla gruplanmış bir olaydır (bellek-içi).
 type incidentRec struct {
+	tenant                                                                string // cihazın KANONİK kiracısı (db incidents.tenant_id ile aynı; Z4b-11)
 	id, deviceID, corrKey, ruleID, technique, severity, sampleMsg, status string
 	count                                                                 int
 	firstSeen, lastSeen                                                   time.Time
@@ -170,6 +172,7 @@ type pendingWipeRec struct {
 
 // eventAckRec, bir olayın triyaj/vaka durumudur (bellek-içi).
 type eventAckRec struct {
+	tenant   string // olayın KANONİK kiracısı (db event_ack.tenant_id ile aynı temsil; Z4b-11)
 	status   string
 	assignee string
 	note     string
@@ -250,9 +253,12 @@ func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollm
 	defer s.mu.Unlock()
 	id := in.PreferredDeviceID
 	if id == "" {
-		// mac bidx eşleşen cihaz varsa onu güncelle (yeniden kayıt).
+		// S-3 (db ile aynı): MAC tekilliği KİRACI BAŞINADIR. Yalnız AYNI kiracıda (legacy boş
+		// kiracı ≡ default dahil) eşleşen cihaz yeniden-kayıt sayılır; başka kiracıdaki aynı
+		// MAC o satıra DOKUNMAZ ve bu kiracı kendi cihazını alır (MAC-squat DoS yok).
 		for _, d := range s.devices {
-			if len(d.macBidx) > 0 && string(d.macBidx) == string(in.MACBlindIndex) {
+			if len(d.macBidx) > 0 && string(d.macBidx) == string(in.MACBlindIndex) &&
+				tenant.Equivalent(d.tenant, in.TenantID) {
 				id = d.id
 				break
 			}
@@ -267,6 +273,14 @@ func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollm
 		// gerçek hiçbir kiracıyla değil. Eşdeğer yeniden kayıtta kiracı default'a normalleşir.
 		if !tenant.Equivalent(d.tenant, in.TenantID) {
 			return "", enroll.ErrTenantMismatch
+		}
+		// db parity (uq_devices_tenant_mac): preferred yolunda MAC değişimi AYNI kiracıdaki
+		// başka bir cihazın MAC'iyle çakışamaz.
+		for _, o := range s.devices {
+			if o.id != id && len(in.MACBlindIndex) > 0 && string(o.macBidx) == string(in.MACBlindIndex) &&
+				tenant.Equivalent(o.tenant, d.tenant) {
+				return "", fmt.Errorf("memstore: mac_address_bidx bu kiracıda zaten kayıtlı")
+			}
 		}
 		d.tenant = tenant.Canonical(d.tenant)
 		d.hostnameEnc, d.macEnc, d.osEnc = in.HostnameEnc, in.MACEnc, in.OSInfoEnc
@@ -470,6 +484,11 @@ func (s *Store) CurrentPolicy(_ context.Context, deviceID string) (*kutv1.Policy
 	if !ok {
 		return nil, nil
 	}
+	// db ile aynı: yalnız platform/paylaşımlı ya da cihazın kiracısına ait politika uygulanır
+	// (eski/bozuk çapraz-kiracı atama ajana kural itemez).
+	if p.tenant != "" && !tenant.Equivalent(p.tenant, d.tenant) {
+		return nil, nil
+	}
 	var rules []*kutv1.PolicyRule
 	for _, r := range p.rules {
 		rules = append(rules, &kutv1.PolicyRule{
@@ -491,7 +510,7 @@ func (s *Store) LatestUpdate(_ context.Context, _, _, _ string) (*kutv1.UpdateMa
 func (s *Store) AdminRole(_ context.Context, adminID string) (admin.Role, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if a, ok := s.adminsByID[adminID]; ok {
+	if a, ok := s.adminsByID[adminID]; ok && a.active { // db ile aynı: pasif yönetici rolsüz (yetkisiz)
 		return a.role, nil
 	}
 	return admin.Role(""), nil
@@ -520,14 +539,24 @@ func (s *Store) EnrollmentTokenTenant(_ context.Context, tokenID string) (string
 
 // RevokeEnrollmentToken, id ile token'ı bulup kullanılmış işaretler (used=true).
 // Zaten kullanılmış/yok token için sessiz (no-op) — db davranışını taklit eder.
-func (s *Store) RevokeEnrollmentToken(_ context.Context, tokenID string) error {
+// S-4 (db ile aynı): tenantID boş değilse yalnız o kiracının token'ı iptal edilir; kiracıya
+// bağlı çağıran için o kiracıda böyle bir token yoksa ErrForbidden. Boş = platform.
+func (s *Store) RevokeEnrollmentToken(_ context.Context, tokenID, tenantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	owned := false
 	for _, t := range s.tokens {
-		if t.id == tokenID && !t.used {
-			t.used = true
-			break
+		if t.id != tokenID || (tenantID != "" && t.tenant != tenantID) {
+			continue
 		}
+		owned = true
+		if !t.used {
+			t.used = true
+		}
+		break
+	}
+	if tenantID != "" && !owned {
+		return admin.ErrForbidden
 	}
 	return nil
 }
@@ -673,25 +702,36 @@ func (s *Store) VerifyAuditChain(_ context.Context) error {
 	return nil
 }
 
-func (s *Store) CreatePolicy(_ context.Context, name, version string) (string, error) {
+func (s *Store) CreatePolicy(_ context.Context, name, version, tenantID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := randID("pol-")
-	s.policies[id] = &policyRec{id: id, name: name, version: version}
+	s.policies[id] = &policyRec{id: id, name: name, version: version, tenant: tenantID}
 	return id, nil
 }
 
+// PolicyTenant, politikanın sahibi kiracıyı döner ("" = platform/paylaşımlı); yoksa found=false.
+func (s *Store) PolicyTenant(_ context.Context, policyID string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.policies[policyID]; ok {
+		return p.tenant, true, nil
+	}
+	return "", false, nil
+}
+
+// AssignPolicy, db ile aynı derinlemesine savunmayı uygular: politika platform/paylaşımlı ya
+// da cihazın kiracısına ait olmalı; aksi halde (veya cihaz/politika yoksa) ErrForbidden.
 func (s *Store) AssignPolicy(_ context.Context, deviceID, policyID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	d, ok := s.devices[deviceID]
-	if !ok {
-		return nil
+	d, dok := s.devices[deviceID]
+	p, pok := s.policies[policyID]
+	if !dok || !pok || (p.tenant != "" && !tenant.Equivalent(p.tenant, d.tenant)) {
+		return admin.ErrForbidden
 	}
-	if p, ok := s.policies[policyID]; ok {
-		d.policyID = policyID
-		d.policyVersion = p.version
-	}
+	d.policyID = policyID
+	d.policyVersion = p.version
 	return nil
 }
 
@@ -752,19 +792,24 @@ func (s *Store) DevicesForPolicy(_ context.Context, policyID string) ([]string, 
 
 // ListPolicies, tüm politikaları kural + atanmış cihaz sayımlarıyla, ada göre
 // sıralı döner (deterministik çıktı).
-func (s *Store) ListPolicies(_ context.Context, limit int) ([]adminread.PolicyRow, error) {
+func (s *Store) ListPolicies(_ context.Context, limit int, tenantID string) ([]adminread.PolicyRow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	assigned := map[string]int{}
 	for _, d := range s.devices {
-		if d.policyID != "" {
+		// db ile aynı: kiracıya bağlı çağıranın sayımı yalnız kendi kiracısının cihazlarını sayar.
+		if d.policyID != "" && (tenantID == "" || d.tenant == tenantID) {
 			assigned[d.policyID]++
 		}
 	}
 	out := make([]adminread.PolicyRow, 0, len(s.policies))
 	for _, p := range s.policies {
+		// db ile aynı: kiracıya bağlı çağıran yalnız kendi kiracısının + paylaşımlı politikaları görür.
+		if tenantID != "" && p.tenant != "" && p.tenant != tenantID {
+			continue
+		}
 		out = append(out, adminread.PolicyRow{
-			ID: p.id, Name: p.name, Version: p.version,
+			ID: p.id, Name: p.name, Version: p.version, TenantID: p.tenant,
 			RuleCount: len(p.rules), DeviceCount: assigned[p.id],
 		})
 	}
@@ -812,29 +857,42 @@ func (s *Store) CreateAdmin(_ context.Context, email, passwordHash string, role 
 	return id, nil
 }
 
-// AdminTenant, yöneticinin bağlı kiracısını döner ("" = platform admini / bilinmeyen).
+// AdminTenant, yöneticinin bağlı kiracısını döner ("" = platform admini). Bilinmeyen veya
+// PASİF yönetici için admin.ErrUnknownAdmin döner (db ile aynı; Z4b-09): "" platform kapsamı
+// olduğundan "yok"u "" ile birleştirmek fail-open olurdu.
 func (s *Store) AdminTenant(_ context.Context, adminID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if a, ok := s.adminsByID[adminID]; ok {
+	if a, ok := s.adminsByID[adminID]; ok && a.active {
 		return a.tenant, nil
 	}
-	return "", nil
+	return "", admin.ErrUnknownAdmin
 }
 
-func (s *Store) SetAdminRole(_ context.Context, id string, role admin.Role) error {
+// SetAdminRole, S-4 (db ile aynı): tenantID boş değilse hedefin kiracısı eşleşmeli, yoksa
+// ErrForbidden; boş = platform (süzme yok, bilinmeyen hedef no-op).
+func (s *Store) SetAdminRole(_ context.Context, id string, role admin.Role, tenantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if a, ok := s.adminsByID[id]; ok {
+	a, ok := s.adminsByID[id]
+	if tenantID != "" && (!ok || a.tenant != tenantID) {
+		return admin.ErrForbidden
+	}
+	if ok {
 		a.role = role
 	}
 	return nil
 }
 
-func (s *Store) DeactivateAdmin(_ context.Context, id string) error {
+// DeactivateAdmin, S-4: tenantID semantiği SetAdminRole ile aynıdır.
+func (s *Store) DeactivateAdmin(_ context.Context, id, tenantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if a, ok := s.adminsByID[id]; ok {
+	a, ok := s.adminsByID[id]
+	if tenantID != "" && (!ok || a.tenant != tenantID) {
+		return admin.ErrForbidden
+	}
+	if ok {
 		a.active = false
 	}
 	return nil
@@ -1154,8 +1212,12 @@ func (s *Store) OpenIncident(_ context.Context, deviceID, key, ruleID, technique
 	defer s.mu.Unlock()
 	s.incSeq++
 	id := fmt.Sprintf("inc-%d", s.incSeq)
+	incTenant := string(tenant.Default) // cihazsız/bilinmeyen cihaz → 'default' (db ile aynı)
+	if d, ok := s.devices[deviceID]; ok {
+		incTenant = tenant.Canonical(d.tenant)
+	}
 	s.incidents = append(s.incidents, incidentRec{
-		id: id, deviceID: deviceID, corrKey: key, ruleID: ruleID, technique: technique,
+		id: id, tenant: incTenant, deviceID: deviceID, corrKey: key, ruleID: ruleID, technique: technique,
 		severity: severity, sampleMsg: message, count: 1, firstSeen: at, lastSeen: at, status: "OPEN",
 	})
 	return id, nil
@@ -1346,8 +1408,24 @@ func (s *Store) SetEventAck(_ context.Context, eventID, adminID, status string) 
 	}
 	rec := s.eventAcks[eventID] // mevcut assignee/note korunur
 	rec.status, rec.adminID, rec.at = status, adminID, time.Now()
+	rec.tenant = s.ackTenantLocked(eventID, rec.tenant)
 	s.eventAcks[eventID] = rec
 	return nil
+}
+
+// ackTenantLocked, olayın KANONİK kiracısını döner (Z4b-11, db.ackTenant ile aynı kural):
+// olay bulunursa tenant.Canonical(olay kiracısı); bulunamazsa mevcut satırın kiracısı korunur,
+// o da yoksa 'default'. s.mu tutulurken çağrılır.
+func (s *Store) ackTenantLocked(eventID, existing string) string {
+	for _, e := range s.events {
+		if e.id == eventID {
+			return tenant.Canonical(e.tenant)
+		}
+	}
+	if existing != "" {
+		return existing
+	}
+	return string(tenant.Default)
 }
 
 // SetEventCase, olayın sorumlu+not alanlarını ayarlar (durumu korur). Vaka yönetimi.
@@ -1359,6 +1437,7 @@ func (s *Store) SetEventCase(_ context.Context, eventID, adminID, assignee, note
 	}
 	rec := s.eventAcks[eventID] // mevcut status korunur
 	rec.assignee, rec.note, rec.adminID, rec.at = assignee, note, adminID, time.Now()
+	rec.tenant = s.ackTenantLocked(eventID, rec.tenant)
 	s.eventAcks[eventID] = rec
 	return nil
 }
@@ -1573,10 +1652,15 @@ func (s *Store) DeviceByID(_ context.Context, id string) (adminread.DeviceRow, b
 }
 
 // SetDeviceTags, cihazın etiketlerini değiştirir (bilinmeyen cihazda no-op).
-func (s *Store) SetDeviceTags(_ context.Context, deviceID string, tags []string) error {
+// S-4 (db ile aynı): tenantID boş değilse cihazın kiracısı eşleşmeli, yoksa ErrForbidden.
+func (s *Store) SetDeviceTags(_ context.Context, deviceID string, tags []string, tenantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if d, ok := s.devices[deviceID]; ok {
+	d, ok := s.devices[deviceID]
+	if tenantID != "" && (!ok || d.tenant != tenantID) {
+		return admin.ErrForbidden
+	}
+	if ok {
 		d.tags = append([]string(nil), tags...)
 	}
 	return nil

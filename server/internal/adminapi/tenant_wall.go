@@ -60,3 +60,15 @@ func decodeOptional(w http.ResponseWriter, r *http.Request, v any) bool {
 	}
 	return true
 }
+
+// normalizeTenantInput, istekten gelen BOŞ OLMAYAN bir kiracı değerini sınırda doğrular ve
+// normalleştirir (tenant.Normalize: kırp + küçük harf + [a-z0-9-], 1-63). Geçersizse hata döner;
+// çağıran 400 yazar. Boş girdi çağıranın sorumluluğundadır (Normalize boşu "default"a çevirir,
+// oysa burada boş "belirtilmedi" demektir).
+func normalizeTenantInput(raw string) (string, error) {
+	n, err := tenant.Normalize(raw)
+	if err != nil {
+		return "", err
+	}
+	return string(n), nil
+}

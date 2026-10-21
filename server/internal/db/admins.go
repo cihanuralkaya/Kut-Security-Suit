@@ -28,12 +28,17 @@ func (s *Store) CreateAdmin(ctx context.Context, email, passwordHash string, rol
 }
 
 // AdminTenant, admin'in kiracısını döner (okuma izolasyonu için). Boş → platform admini
-// (tüm kiracılar). Admin yoksa boş döner.
+// (tüm kiracılar). Bilinmeyen, geçersiz-id'li veya PASİF yönetici için "" DÖNMEZ:
+// admin.ErrUnknownAdmin döner — boş kiracı platform kapsamı olduğundan, "yok" sonucunu ""
+// ile birleştirmek silinmiş/pasifleştirilmiş bir yöneticiyi platform admini yapardı (Z4b-09).
 func (s *Store) AdminTenant(ctx context.Context, adminID string) (string, error) {
+	if !validUUID(adminID) {
+		return "", admin.ErrUnknownAdmin
+	}
 	var tenant string
-	err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM admins WHERE id = $1 AND is_active`, adminID).Scan(&tenant)
+	err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM admins WHERE id = $1::uuid AND is_active`, adminID).Scan(&tenant)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
+		return "", admin.ErrUnknownAdmin
 	}
 	if err != nil {
 		return "", fmt.Errorf("db: admin kiracısı: %w", err)
@@ -41,22 +46,49 @@ func (s *Store) AdminTenant(ctx context.Context, adminID string) (string, error)
 	return tenant, nil
 }
 
-// SetAdminRole, bir yöneticinin rolünü değiştirir.
-func (s *Store) SetAdminRole(ctx context.Context, id string, role admin.Role) error {
-	const q = `UPDATE admins SET role = $2::admin_role WHERE id = $1`
-	if _, err := s.pool.Exec(ctx, q, id, string(role)); err != nil {
+// SetAdminRole, bir yöneticinin rolünü değiştirir. S-4: tenantID boş değilse UPDATE hedefin
+// kiracısıyla daraltılır (`AND tenant_id = $3`) — servis katmanındaki kapı atlansa bile bir
+// kiracı başka kiracının/platformun yöneticisinin rolüne dokunamaz. Boş tenantID = platform
+// kapsamı (süzme yok). Kiracıya bağlı çağıran için eşleşen yönetici yoksa ErrForbidden.
+func (s *Store) SetAdminRole(ctx context.Context, id string, role admin.Role, tenantID string) error {
+	if !validUUID(id) {
+		return adminTargetMissing(tenantID, "yönetici rolü güncelleme")
+	}
+	const q = `UPDATE admins SET role = $2::admin_role WHERE id = $1::uuid AND ($3 = '' OR tenant_id = $3)`
+	ct, err := s.pool.Exec(ctx, q, id, string(role), tenantID)
+	if err != nil {
 		return fmt.Errorf("db: yönetici rolü güncelleme: %w", err)
+	}
+	if tenantID != "" && ct.RowsAffected() == 0 {
+		return admin.ErrForbidden
 	}
 	return nil
 }
 
-// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false).
-func (s *Store) DeactivateAdmin(ctx context.Context, id string) error {
-	const q = `UPDATE admins SET is_active = false WHERE id = $1`
-	if _, err := s.pool.Exec(ctx, q, id); err != nil {
+// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false). S-4: tenantID semantiği
+// SetAdminRole ile aynıdır (boş = platform, doluysa hedefin kiracısı eşleşmeli).
+func (s *Store) DeactivateAdmin(ctx context.Context, id, tenantID string) error {
+	if !validUUID(id) {
+		return adminTargetMissing(tenantID, "yönetici pasifleştirme")
+	}
+	const q = `UPDATE admins SET is_active = false WHERE id = $1::uuid AND ($2 = '' OR tenant_id = $2)`
+	ct, err := s.pool.Exec(ctx, q, id, tenantID)
+	if err != nil {
 		return fmt.Errorf("db: yönetici pasifleştirme: %w", err)
 	}
+	if tenantID != "" && ct.RowsAffected() == 0 {
+		return admin.ErrForbidden
+	}
 	return nil
+}
+
+// adminTargetMissing, geçersiz biçimli hedef id'si için hata üretir: kiracıya bağlı çağıran
+// fail-closed ErrForbidden alır; platform çağıran açıklayıcı bir hata (eski davranış: SQL hatası).
+func adminTargetMissing(tenantID, what string) error {
+	if tenantID != "" {
+		return admin.ErrForbidden
+	}
+	return fmt.Errorf("db: %s: geçersiz yönetici id", what)
 }
 
 // ListAdmins, yöneticileri e-postaya göre sıralı döner. tenantID boş değilse YALNIZ

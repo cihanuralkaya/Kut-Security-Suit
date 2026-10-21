@@ -29,7 +29,7 @@ type memStore struct {
 	latestSW   map[string][]string
 }
 
-func (m *memStore) ListPolicies(_ context.Context, _ int) ([]PolicyRow, error) {
+func (m *memStore) ListPolicies(_ context.Context, _ int, _ string) ([]PolicyRow, error) {
 	return m.policies, nil
 }
 

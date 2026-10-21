@@ -29,7 +29,7 @@ func TestPolicyLifecycle(t *testing.T) {
 	s := New()
 	dev := enrollDevice(t, s)
 
-	pid, err := s.CreatePolicy(ctx, "Kısıt", "v1")
+	pid, err := s.CreatePolicy(ctx, "Kısıt", "v1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestBumpPolicyVersion(t *testing.T) {
 	ctx := context.Background()
 	s := New()
 	dev := enrollDevice(t, s)
-	pid, _ := s.CreatePolicy(ctx, "P", "v1")
+	pid, _ := s.CreatePolicy(ctx, "P", "v1", "")
 	if err := s.AssignPolicy(ctx, dev, pid); err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestAdminLifecycle(t *testing.T) {
 	}
 
 	// SetAdminRole.
-	if err := s.SetAdminRole(ctx, id1, admin.RoleAdmin); err != nil {
+	if err := s.SetAdminRole(ctx, id1, admin.RoleAdmin, ""); err != nil {
 		t.Fatal(err)
 	}
 	if r, _ := s.AdminRole(ctx, id1); r != admin.RoleAdmin {
@@ -186,7 +186,7 @@ func TestAdminLifecycle(t *testing.T) {
 	// Parola hash'i sızmamalı (AdminInfo'da alan yok — derleme garantisi).
 
 	// DeactivateAdmin.
-	if err := s.DeactivateAdmin(ctx, id2); err != nil {
+	if err := s.DeactivateAdmin(ctx, id2, ""); err != nil {
 		t.Fatal(err)
 	}
 	list, _ = s.ListAdmins(ctx, "")
