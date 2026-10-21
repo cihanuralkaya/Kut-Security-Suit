@@ -313,6 +313,7 @@ jobs:
           name: sbom
           path: sbom.cyclonedx.json
           if-no-files-found: warn
+          retention-days: 1
 
       # Statik güvenlik analizi (gosec) — HIGH önem + HIGH güven bulguları job'ı
       # KIRAR (bloklayıcı gate). Deneysel taint kuralları (G70x) FP-ağır olduğundan
@@ -359,3 +360,4 @@ jobs:
           name: kut-binaries
           path: dist/
           if-no-files-found: error
+          retention-days: 1
