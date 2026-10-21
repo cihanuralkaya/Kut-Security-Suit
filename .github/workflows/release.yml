@@ -17,7 +17,7 @@ permissions:
 
 # Tekrar-üretilebilir toolchain — ci.yml ile AYNI pinli sürümler (sürüklenme yok).
 env:
-  GO_VERSION: "1.27.2"
+  GO_VERSION: "1.27.3"
   PROTOC_GEN_GO_VERSION: "v1.36.11"
   PROTOC_GEN_GO_GRPC_VERSION: "v1.6.2"
 

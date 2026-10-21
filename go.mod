@@ -2,7 +2,7 @@ module kut.corp/suite
 
 go 1.26.0
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 // Çekirdek paketler (server/internal/security, .../enroll, .../config) yalnız
 // standart kütüphane kullanır ve bu bağımlılıklar olmadan da test edilebilir:

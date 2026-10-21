@@ -12,7 +12,7 @@ permissions:
 # Tekrar-üretilebilir toolchain: tek kaynak. Go ve kod-üreteçleri SABİT sürüme
 # pinlenir (release.yml ile aynı değerler) — "@latest" sürüklenmesi yok.
 env:
-  GO_VERSION: "1.27.2"
+  GO_VERSION: "1.27.3"
   PROTOC_GEN_GO_VERSION: "v1.36.11"      # google.golang.org/protobuf runtime ile eşleşir
   PROTOC_GEN_GO_GRPC_VERSION: "v1.6.2"
   GOVULNCHECK_VERSION: "v1.8.0"          # tarayıcı binary'si pinli; zafiyet DB'si (vuln.go.dev) tarama anında taze çekilir
