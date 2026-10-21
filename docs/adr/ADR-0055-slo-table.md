@@ -1,7 +1,7 @@
 # ADR-0055: Single SLO and Measurement Table
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12). The number 0055 is inside the reserved block 0041-0069 but is not named in D19; it is used here for D24.
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner). The number 0055 is inside the reserved block 0041-0069 but is not named in D19; it is used here for D24.
 
 ## Context
 The work-package tracks used different percentiles for the same targets. A target is only a claim until a benchmark backs it.

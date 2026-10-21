@@ -1,7 +1,7 @@
 # ADR-0053: License Policy
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12, exceptions under G8)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner, exceptions under G8)
 
 ## Context
 Invariant 8 sets the license rules. Several planned components sit near the line (MPL-2.0 tools, AGPL servers, BSL brokers), and a scan result in `THIRD_PARTY_LICENSES.md` has been read as policy.

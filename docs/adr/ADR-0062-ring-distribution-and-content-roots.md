@@ -1,7 +1,7 @@
 # ADR-0062: Ring Distribution and Content Signing Roots
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12, keys under G7)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner, keys under G7)
 
 ## Context
 Detection content and policies change often and a bad package can disable endpoints. A compromised server must not be able to push vendor content. Tenant authors still need to ship their own rules.

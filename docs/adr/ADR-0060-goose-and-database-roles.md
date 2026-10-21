@@ -1,7 +1,7 @@
 # ADR-0060: Migrations with goose and Database Roles
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12, migrations under G2)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner, migrations under G2)
 
 ## Context
 Schema upgrades run as idempotent blocks in application start-up. Row-level security is not effective while the application connects as a role that bypasses it.

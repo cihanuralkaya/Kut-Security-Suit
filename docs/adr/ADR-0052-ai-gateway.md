@@ -1,7 +1,7 @@
 # ADR-0052: AI Gateway: Go Policy Point and Python Worker
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12, model enablement under G11)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner, model enablement under G11)
 
 ## Context
 AI features (triage, hunting, summaries) handle sensitive data and can suggest actions. The trust boundary must sit in one language and one place, while model and retrieval code is naturally Python.

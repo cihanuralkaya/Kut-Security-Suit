@@ -1,7 +1,7 @@
 # ADR-0058: Linux eBPF Sensor Stack
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12, implementation under G4)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner, implementation under G4)
 
 ## Context
 Linux event capture should be kernel assisted without kernel modules. The loader library affects license, language and review effort.

@@ -1,7 +1,7 @@
 # ADR-0054: Scheduler Interface and Temporal for Enterprise
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner)
 
 ## Context
 Scheduled searches, SOAR playbooks and housekeeping need durable scheduling. A workflow engine is a heavy operational load for a single operator in Lite.

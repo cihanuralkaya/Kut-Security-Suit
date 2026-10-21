@@ -1,7 +1,7 @@
 # ADR-0063: Object Storage Behind an S3 API
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner)
 
 ## Context
 Evidence, support bundles and lake data need object storage with retention locking. The best-known open server, MinIO, is AGPL.

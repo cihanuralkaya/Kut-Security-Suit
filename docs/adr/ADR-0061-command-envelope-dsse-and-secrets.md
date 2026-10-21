@@ -1,7 +1,7 @@
 # ADR-0061: Signed Command Envelope (DSSE) and Local Secure Store (COSE)
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12, crypto review under G3). Supersedes the v1 canonical-bytes layout of ADR-0015 for new commands after cutover.
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner, crypto review under G3). Supersedes the v1 canonical-bytes layout of ADR-0015 for new commands after cutover.
 
 ## Context
 The v1 envelope hashes a custom canonical layout. Go `encoding/json` and the float64 behaviour of protobuf `Struct` break Go and Rust parity. The signed command id differs from the id stored in the database, signatures are discarded on write, and the verifier is not called in production. Dual approval needs more than one signature on one body.

@@ -1,7 +1,7 @@
 # ADR-0065: Sigma Engine: One kut-sigma Crate
 
 ## Status
-Proposed (decision sprint WP-PM-025; acceptance under gate G12)
+Accepted (2026-10-22, decision sprint WP-PM-025; gate G12 approved by the owner)
 
 ## Context
 Detections are written in Sigma. The server data plane and the agent must give the same result for the same rule, otherwise shadow diffs and agent-side detection cannot be trusted.
