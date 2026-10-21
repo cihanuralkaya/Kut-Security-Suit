@@ -28,6 +28,7 @@ import (
 	"kut.corp/suite/server/internal/model"
 	"kut.corp/suite/server/internal/msp"
 	"kut.corp/suite/server/internal/security"
+	"kut.corp/suite/server/internal/tenant"
 )
 
 type device struct {
@@ -261,10 +262,13 @@ func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollm
 		id = randID("dev-")
 	}
 	if d, ok := s.devices[id]; ok {
-		// KİRACI DUVARI (db ile aynı): mevcut cihaz başka kiracıya aitse taşınmaz.
-		if d.tenant != in.TenantID {
+		// KİRACI DUVARI (db ile aynı): mevcut cihaz başka kiracıya aitse taşınmaz. Eski
+		// (kiracı öncesi) satırların boş kiracısı '', örtük "default" kiracıyla EŞDEĞERDİR;
+		// gerçek hiçbir kiracıyla değil. Eşdeğer yeniden kayıtta kiracı default'a normalleşir.
+		if !tenant.Equivalent(d.tenant, in.TenantID) {
 			return "", enroll.ErrTenantMismatch
 		}
+		d.tenant = tenant.Canonical(d.tenant)
 		d.hostnameEnc, d.macEnc, d.osEnc = in.HostnameEnc, in.MACEnc, in.OSInfoEnc
 		d.macBidx, d.osPlatform, d.agentVersion = in.MACBlindIndex, in.OSPlatform, in.AgentVersion
 		// Güvenlik durumu (QUARANTINE_PENDING/QUARANTINED/ACTIVE) korunur; yalnız

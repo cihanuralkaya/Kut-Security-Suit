@@ -69,3 +69,19 @@ func FromContext(ctx context.Context) ID {
 	}
 	return Default
 }
+
+// Canonical, DEPOLANMIŞ bir kiracı kimliğini karşılaştırma biçimine çevirir: kiracı
+// kavramından önce yazılmış (eski/legacy) satırlar boş kiracı (şema varsayılanı)
+// taşır ve tek-kiracılı dağıtımın örtük kiracısı olan Default ile AYNI kiracıdır.
+// Gerçek kiracılar (acme, globex, ...) olduğu gibi döner; böylece boş kiracı yalnız "default"
+// ile eşdeğer sayılır, başka hiçbir kiracıyla DEĞİL.
+func Canonical(id string) string {
+	if id == "" {
+		return string(Default)
+	}
+	return id
+}
+
+// Equivalent, iki depolanmış kiracı kimliğinin aynı kiracıyı gösterip göstermediğini
+// döner (boş kiracı ile Default eşdeğerdir; bkz. Canonical).
+func Equivalent(a, b string) bool { return Canonical(a) == Canonical(b) }

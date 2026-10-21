@@ -142,3 +142,69 @@ func TestListAdminsTenantFilter(t *testing.T) {
 		t.Fatalf("boş süzme tümünü döner: %d", len(all))
 	}
 }
+
+// S-2: kiracı öncesi (legacy) cihazların kiracısı boştur; örtük "default" token'ıyla
+// yeniden kayıt PermissionDenied OLMAMALI (yükseltme gerilemesi) ve kiracı default'a
+// normalleşmeli. Gerçek kiracılar için çapraz-kiracı taşıma yine engelli kalır.
+func TestLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	legacy, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
+		MACBlindIndex: []byte("mac-legacy"), HostnameEnc: []byte("old"), TenantID: "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tn, _ := s.TenantForDevice(ctx, legacy); tn != "" {
+		t.Fatalf("legacy cihaz boş kiracıyla başlamalı: %q", tn)
+	}
+
+	// NEGATIF: gerçek bir kiracı, legacy (boş = default) cihazı devralamaz.
+	for _, tn := range []string{"acme", "globex"} {
+		if _, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
+			MACBlindIndex: []byte("mac-legacy"), HostnameEnc: []byte("EVIL"), TenantID: tn,
+		}); !errors.Is(err, enroll.ErrTenantMismatch) {
+			t.Fatalf("%s token'ı legacy cihazı devralamaz: %v", tn, err)
+		}
+		if _, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
+			PreferredDeviceID: legacy, MACBlindIndex: []byte("m2"), TenantID: tn,
+		}); !errors.Is(err, enroll.ErrTenantMismatch) {
+			t.Fatalf("%s token'ı preferred yolunda legacy cihazı devralamaz: %v", tn, err)
+		}
+	}
+	if tn, _ := s.TenantForDevice(ctx, legacy); tn != "" {
+		t.Fatalf("reddedilen kayıtlar kiracıyı değiştirmemeli: %q", tn)
+	}
+
+	// POZITIF: "default" token'ı aynı cihazı günceller ve kiracıyı default'a normalleştirir.
+	id, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
+		MACBlindIndex: []byte("mac-legacy"), HostnameEnc: []byte("new"), TenantID: "default",
+	})
+	if err != nil || id != legacy {
+		t.Fatalf("default token'ı legacy cihazı yeniden kaydetmeli: id=%q err=%v", id, err)
+	}
+	if tn, _ := s.TenantForDevice(ctx, legacy); tn != "default" {
+		t.Fatalf("kiracı default'a normalleşmeli: %q", tn)
+	}
+	row, _, _ := s.DeviceByID(ctx, legacy)
+	if string(row.HostnameEnc) != "new" {
+		t.Fatalf("alanlar güncellenmeli: %q", row.HostnameEnc)
+	}
+	// Normalleşmeden sonra artık gerçek kiracılar için de duvar aynı: acme yine reddedilir.
+	if _, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
+		MACBlindIndex: []byte("mac-legacy"), TenantID: "acme",
+	}); !errors.Is(err, enroll.ErrTenantMismatch) {
+		t.Fatalf("normalleşmiş cihaz acme'ye taşınamaz: %v", err)
+	}
+
+	// Preferred yolu: ikinci bir legacy cihaz da default token'ıyla geçer.
+	l2, _ := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: []byte("mac-l2"), TenantID: ""})
+	if _, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
+		PreferredDeviceID: l2, MACBlindIndex: []byte("mac-l2"), TenantID: "default",
+	}); err != nil {
+		t.Fatalf("preferred yolunda default token'ı legacy cihazı kaydetmeli: %v", err)
+	}
+	if tn, _ := s.TenantForDevice(ctx, l2); tn != "default" {
+		t.Fatalf("preferred yolunda da normalleşmeli: %q", tn)
+	}
+}
