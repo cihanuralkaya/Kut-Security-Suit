@@ -168,14 +168,54 @@ func TestCommandAuthorizer_NilEngineModes(t *testing.T) {
 	}
 }
 
-// Küçük harf / boşluklu KAYITLI tip adı kabul edilir (eski çağrı sözleşmesi: "wipe"); scope
-// aksiyon adları ("remote_command") ise komut tipi sayılmaz.
-func TestCommandAuthorizer_CaseInsensitiveRegisteredOnly(t *testing.T) {
+// Yalnız kanonik (BÜYÜK harf, tam eşleşme) tip adı kabul edilir; küçük harf/boşluklu ad ve scope
+// aksiyon adları ("remote_command") komut tipi sayılmaz (W2-S2: commandplane.Validate ile tutarlı).
+func TestCommandAuthorizer_ExactRegisteredOnly(t *testing.T) {
 	ca := NewCommandAuthorizer(taxonomyEngine(true), "t")
-	if d := decide(t, ca, " wipe ", "dev-in"); !d.Allowed {
-		t.Errorf("küçük harf kayıtlı tip kabul edilmeli: %s", d.Reason)
+	if d := decide(t, ca, "WIPE", "dev-in"); !d.Allowed {
+		t.Errorf("kanonik tip kabul edilmeli: %s", d.Reason)
+	}
+	if d := decide(t, ca, " wipe ", "dev-in"); d.Allowed {
+		t.Error("küçük harf/boşluklu ad komut tipi sayılmamalı")
 	}
 	if d := decide(t, ca, "remote_command", "dev-in"); d.Allowed {
 		t.Error("scope aksiyon adı komut tipi sayılmamalı")
+	}
+}
+
+// W2-S2 (QA S1 NIT-2): komut adı HER yerde tam eşleşir. Kırpma/büyük harfe çevirme yok;
+// Authorize ile commandplane.Validate aynı biçimleri reddeder.
+func TestCommandName_ExactEverywhere(t *testing.T) {
+	variants := func(name string) []string {
+		return []string{
+			strings.ToLower(name), " " + name, name + " ", "\t" + name, name + "\n", name + "\x00",
+			strings.ToUpper(name[:1]) + strings.ToLower(name[1:]), strings.ReplaceAll(name, "_", "-"),
+		}
+	}
+	for _, enforce := range []bool{true, false} {
+		ca := NewCommandAuthorizerMode(taxonomyEngine(true), "t", enforce)
+		for _, s := range cmdenvelope.All() {
+			// Kanonik ad: motor çözer (bilinmeyen değil).
+			if d := decide(t, ca, s.Name, "dev-in"); !d.Allowed && strings.Contains(d.Reason, "bilinmeyen komut tipi") {
+				t.Errorf("enforce=%v: kanonik %s bilinmeyen sayıldı", enforce, s.Name)
+			}
+			for _, v := range variants(s.Name) {
+				if v == s.Name {
+					continue
+				}
+				d := decide(t, ca, v, "dev-in")
+				if d.Allowed || !strings.Contains(d.Reason, "bilinmeyen komut tipi") {
+					t.Errorf("enforce=%v: Authorize(%q) = %+v, bilinmeyen olarak reddedilmeliydi", enforce, v, d)
+				}
+				req := commandplane.CommandRequest{DeviceID: "dev-in", Type: commandplane.CommandType(v), IssuedBy: "admin:1"}
+				if err := req.Validate(); err == nil {
+					t.Errorf("Validate(%q) kabul etti; Authorize ile tutarsız", v)
+				}
+			}
+			req := commandplane.CommandRequest{DeviceID: "dev-in", Type: commandplane.CommandType(s.Name), IssuedBy: "admin:1"}
+			if err := req.Validate(); err != nil {
+				t.Errorf("Validate(%q) kanonik adı reddetti: %v", s.Name, err)
+			}
+		}
 	}
 }
