@@ -1174,11 +1174,17 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 			if err != nil {
 				continue
 			}
-			c := metrics.Counters()
+			// Çok-kiracılı (zorlama açık) dağıtımda özet kiracı-kapsamlıdır ama süreç sayaçları TÜM
+			// kiracıları toplar → sayaçlar rapora konmaz (Z5-15). Tek-kiracılıda dağıtım = kiracı.
+			var c map[string]int64
+			if !cfg.TenantEnforce {
+				c = metrics.Counters()
+			}
 			d := report.Data{
 				GeneratedAt: time.Now(), SchemaVersion: model.EventSchemaVersion, TenantID: cfg.TenantID,
-				Title:        "Güvenlik Duruş Raporu",
-				DevicesTotal: sum.DevicesTotal, DevicesOnline: sum.DevicesOnline, DevicesOffline: sum.DevicesOffline,
+				CountersOmitted: cfg.TenantEnforce,
+				Title:           "Güvenlik Duruş Raporu",
+				DevicesTotal:    sum.DevicesTotal, DevicesOnline: sum.DevicesOnline, DevicesOffline: sum.DevicesOffline,
 				DevicesQuarantined: sum.DevicesQuarantined, NonCompliant: sum.NonCompliantDevices,
 				EventsBySeverity: sum.EventsBySeverity, DevicesByOS: sum.DevicesByOS,
 				Detections: c["detections"], AlertsRaised: c["alerts_raised"],

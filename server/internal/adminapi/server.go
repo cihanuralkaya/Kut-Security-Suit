@@ -32,7 +32,6 @@ import (
 	"kut.corp/suite/server/internal/aibrain"
 	"kut.corp/suite/server/internal/aiprovider"
 	"kut.corp/suite/server/internal/aisec"
-	"kut.corp/suite/server/internal/aisecnorm"
 	"kut.corp/suite/server/internal/auditexport"
 	"kut.corp/suite/server/internal/authtoken"
 	"kut.corp/suite/server/internal/authz"
@@ -1694,171 +1693,6 @@ func (s *Server) handleGraphAnomaly(w http.ResponseWriter, r *http.Request, admi
 	})
 }
 
-// handleAgentSecFindings, agentic tehdit savunmasının exfil bulgularını (Agent Causality
-// Graph) salt-okunur döner. Bulgular DATA'dır (INV-AG-010); enforcement §0 zincirinden
-// geçer, bu uç yalnız görünürlük sağlar.
-func (s *Server) handleAgentSecFindings(w http.ResponseWriter, _ *http.Request, _ string) {
-	if s.agentSec == nil {
-		writeErr(w, http.StatusNotFound, "agentic tehdit savunması etkin değil")
-		return
-	}
-	f := s.agentSec.Findings()
-	out := make([]map[string]any, 0, len(f))
-	for _, x := range f {
-		out = append(out, map[string]any{
-			"agent_id": x.AgentID, "credential": x.Credential,
-			"sink": x.Sink, "trust": x.Trust.String(),
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"findings": out, "count": len(out)})
-}
-
-// handleAgentSecCanonical, AG exfil bulgularını MEVCUT kanonik olay modeline (model.Event)
-// çevirip döner (P0-B). Amaç: agent güvenlik tespitlerini ikinci bir modele değil, dedup
-// (§6)/korelasyon (§5)/SIEM ile aynı kanonik hatta oturtmak. Salt-okunur; enforcement
-// üretmez (INV-AG-010). Opsiyonel ?tenant=<id> atıf içindir (tenant kişisel veri değildir).
-func (s *Server) handleAgentSecCanonical(w http.ResponseWriter, r *http.Request, adminID string) {
-	if s.agentSec == nil {
-		writeErr(w, http.StatusNotFound, "agentic tehdit savunması etkin değil")
-		return
-	}
-	// Kiracı SUNUCU-TARAFI: kiracıya bağlı admin kendi kiracısına sabitlenir (istekteki
-	// ?tenant= parametresi YOK SAYILIR — çapraz-kiracı sızıntısını önler). Platform admini
-	// (boş kiracı) isteğe bağlı ?tenant= ile filtreleyebilir.
-	tenant, err := s.callerTenant(r.Context(), adminID)
-	if respondErr(w, err) {
-		return
-	}
-	if tenant == "" {
-		// Platform admini: isteğe bağlı ?tenant= atıf filtresi sınırda doğrulanır (Z4b-08).
-		if q := strings.TrimSpace(r.URL.Query().Get("tenant")); q != "" {
-			n, nerr := normalizeTenantInput(q)
-			if nerr != nil {
-				writeErr(w, http.StatusBadRequest, "geçersiz tenant (küçük harf/rakam/tire, 1-63)")
-				return
-			}
-			tenant = n
-		}
-	}
-	evs := aisecnorm.FindingsToEvents(s.agentSec.Findings(), tenant, 0, s.now().UTC())
-	writeJSON(w, http.StatusOK, map[string]any{
-		"schema_version": model.EventSchemaVersion,
-		"events":         evs,
-		"count":          len(evs),
-	})
-}
-
-// handleAgentSecEvents, agent-davranış gözlemlerini (düğüm + kenar) ingest eder ve Agent
-// Causality Graph'ı besler (telemetri kaynağı seam'i). Gözlemler DATA'dır; enforcement
-// üretmez (INV-AG-010). Kenar tipleri: read (agent→source), write (agent→sink), delegate
-// (delegator→delegatee), influence (from→to). Bilinmeyen trust fail-safe Untrusted'a düşer.
-func (s *Server) handleAgentSecEvents(w http.ResponseWriter, r *http.Request, adminID string) {
-	if s.agentSec == nil {
-		writeErr(w, http.StatusNotFound, "agentic tehdit savunması etkin değil")
-		return
-	}
-	// Bu uç DURUM-DEĞİŞTİRİR (ObserveNode bir düğümün güvenini ÜZERİNE yazar; kenar
-	// ekler) → salt-okuma bir VIEWER sahte exfil zinciri üretemesin ya da gerçek bulguyu
-	// bastıramasın diye OPERATOR+ gerekir (diğer mutasyon yollarıyla tutarlı; SEC).
-	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleOperator)) {
-		return
-	}
-	var req struct {
-		Nodes []struct {
-			ID    string `json:"id"`
-			Kind  string `json:"kind"`
-			Trust string `json:"trust"`
-		} `json:"nodes"`
-		Edges []struct {
-			Type string `json:"type"`
-			From string `json:"from"`
-			To   string `json:"to"`
-		} `json:"edges"`
-	}
-	if !decode(w, r, &req) {
-		return
-	}
-	for _, n := range req.Nodes {
-		s.agentSec.ObserveNode(n.ID, aisec.NodeKind(n.Kind), aisec.ParseTrust(n.Trust))
-	}
-	for _, e := range req.Edges {
-		switch e.Type {
-		case "read":
-			s.agentSec.ObserveRead(e.From, e.To)
-		case "write":
-			s.agentSec.ObserveWrite(e.From, e.To)
-		case "delegate":
-			s.agentSec.ObserveDelegate(e.From, e.To)
-		case "influence":
-			s.agentSec.ObserveInfluence(e.From, e.To)
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nodes": len(req.Nodes), "edges": len(req.Edges)})
-}
-
-// handleAgentSecTelemetry, KRİPTOGRAFİK İMZALI agent telemetrisini alır (P0-A). Session
-// gerektirmez; kimlik ed25519 imzayla doğrulanır. TrustVerifier fail-closed'dır: imza/
-// tenant/sequence/replay/tazelik kontrolü geçmezse 403 (reason'lı) döner ve graf
-// BESLENMEZ. Kabul edilirse payload (nodes/edges) Agent Causality Graph'a işlenir.
-func (s *Server) handleAgentSecTelemetry(w http.ResponseWriter, r *http.Request) {
-	if s.agentTrust == nil || s.agentSec == nil {
-		writeErr(w, http.StatusNotFound, "agent telemetri etkin değil")
-		return
-	}
-	var wire struct {
-		AgentID   string    `json:"agent_id"`
-		TenantID  string    `json:"tenant_id"`
-		Sequence  uint64    `json:"sequence"`
-		Timestamp time.Time `json:"timestamp"`
-		Nonce     string    `json:"nonce"`
-		Payload   []byte    `json:"payload"`   // kanonik gözlem (base64 JSON)
-		Signature []byte    `json:"signature"` // ed25519 (base64)
-	}
-	if !decode(w, r, &wire) {
-		return
-	}
-	obs := aisec.SignedObservation{
-		AgentID: wire.AgentID, TenantID: wire.TenantID, Sequence: wire.Sequence,
-		Timestamp: wire.Timestamp, Nonce: wire.Nonce, Payload: wire.Payload, Signature: wire.Signature,
-	}
-	if err := s.agentTrust.Verify(obs); err != nil {
-		writeErr(w, http.StatusForbidden, "telemetri reddedildi: "+err.Error())
-		return
-	}
-	var p struct {
-		Nodes []struct {
-			ID    string `json:"id"`
-			Kind  string `json:"kind"`
-			Trust string `json:"trust"`
-		} `json:"nodes"`
-		Edges []struct {
-			Type string `json:"type"`
-			From string `json:"from"`
-			To   string `json:"to"`
-		} `json:"edges"`
-	}
-	if json.Unmarshal(wire.Payload, &p) != nil {
-		writeErr(w, http.StatusBadRequest, "geçersiz payload")
-		return
-	}
-	for _, n := range p.Nodes {
-		s.agentSec.ObserveNode(n.ID, aisec.NodeKind(n.Kind), aisec.ParseTrust(n.Trust))
-	}
-	for _, e := range p.Edges {
-		switch e.Type {
-		case "read":
-			s.agentSec.ObserveRead(e.From, e.To)
-		case "write":
-			s.agentSec.ObserveWrite(e.From, e.To)
-		case "delegate":
-			s.agentSec.ObserveDelegate(e.From, e.To)
-		case "influence":
-			s.agentSec.ObserveInfluence(e.From, e.To)
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"accepted": true, "nodes": len(p.Nodes), "edges": len(p.Edges)})
-}
-
 // handleAITriage, opsiyonel SOC AI brain'inden bir incident için triyaj ÖNERİSİ ister
 // (aksiyon DEĞİL, salt-öneri). FAIL-OPEN: brain yoksa/dış AI yapılandırılmamışsa ya da
 // çağrı başarısızsa "available:false" döner — SOC deterministik yola devam eder. Öneri,
@@ -1969,9 +1803,10 @@ func (s *Server) handleAIExposureScan(w http.ResponseWriter, r *http.Request, _ 
 // handleAIHunt, bir ATT&CK taktiği için tehdit-avı hipotezi üretir ve canlı entity-graf
 // üzerinde yürütür (SALT-OKUNUR: nadir/şüpheli kenarları işaretler). FAIL-OPEN: ajan bağlı
 // değilse {available:false}. Boş taktik → 400.
-func (s *Server) handleAIHunt(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) handleAIHunt(w http.ResponseWriter, r *http.Request, adminID string) {
 	var req struct {
 		Tactic string `json:"tactic"`
+		Tenant string `json:"tenant"` // YALNIZ platform admini için açık kiracı filtresi; kiracılı çağıranda yok sayılır
 	}
 	if !decode(w, r, &req) {
 		return
@@ -1980,6 +1815,14 @@ func (s *Server) handleAIHunt(w http.ResponseWriter, r *http.Request, _ string) 
 		writeJSON(w, http.StatusOK, map[string]any{"available": false})
 		return
 	}
+	// Av yalnız çağıranın kiracısının graf düğümlerini tarar (Z5-03): kiracı SUNUCU-TARAFI
+	// çözülür; kiracılı çağıran başka kiracının süreç/IP/cihaz düğümlerini GÖREMEZ. Platform
+	// admini varsayılan olarak hepsini görür, açık "tenant" ile daraltabilir.
+	scopeTenant, scopeAll, serr := s.readScope(r.Context(), adminID, req.Tenant)
+	if respondErr(w, serr) {
+		return
+	}
+	huntScope := aiprovider.HuntScope{Tenant: scopeTenant, AllTenants: scopeAll}
 	hyps, err := s.hunting.GenerateHypotheses(r.Context(), strings.TrimSpace(req.Tactic))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "taktik (tactic) gerekli")
@@ -1987,7 +1830,7 @@ func (s *Server) handleAIHunt(w http.ResponseWriter, r *http.Request, _ string) 
 	}
 	var findings []aiprovider.HuntFinding
 	for _, h := range hyps {
-		f, herr := s.hunting.ExecuteHunt(r.Context(), h)
+		f, herr := s.hunting.ExecuteHunt(r.Context(), h, huntScope)
 		if herr == nil {
 			findings = append(findings, f...)
 		}
@@ -3157,7 +3000,12 @@ func (s *Server) buildReportData(r *http.Request, tenantID string) (report.Data,
 		return report.Data{}, err
 	}
 	incs, _ := s.reader.Incidents(r.Context(), 20, tenantID)
-	c := metrics.Counters()
+	// Süreç-geneli sayaçlar (tespit/alarm/IoC...) TÜM kiracıların etkinliğini toplar: kiracıya
+	// bağlı rapora KONMAZ (Z5-15). Platform raporu (tenantID == "") bunları taşır.
+	var c map[string]int64
+	if tenantID == "" {
+		c = metrics.Counters()
+	}
 	reportTenant := s.tenantID
 	if tenantID != "" {
 		reportTenant = tenantID // kiracıya bağlı admin: rapor kendi kiracısına etiketlenir
@@ -3169,6 +3017,7 @@ func (s *Server) buildReportData(r *http.Request, tenantID string) (report.Data,
 		EventsBySeverity: sum.EventsBySeverity, DevicesByOS: sum.DevicesByOS,
 		Detections: c["detections"], AlertsRaised: c["alerts_raised"],
 		AlertsSuppressed: c["alerts_suppressed"], IocHits: c["ioc_hits"],
+		CountersOmitted: tenantID != "",
 	}
 	for _, in := range incs {
 		d.TopIncidents = append(d.TopIncidents, report.Incident{
@@ -3793,7 +3642,21 @@ func (s *Server) handleSoftwareSearch(w http.ResponseWriter, r *http.Request, ad
 
 // handleActivity, süreç-içi tehdit/etkinlik sayaçlarını döner (konsol Genel Bakış
 // etkinlik kartı). Süreç başından beri kümülatiftir (/metrics ile aynı kaynak).
-func (s *Server) handleActivity(w http.ResponseWriter, _ *http.Request, _ string) {
+func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request, adminID string) {
+	// Sayaçlar süreç-geneldir (tüm kiracıların etkinliği): kiracıya bağlı çağırana VERİLMEZ
+	// (Z5-15); yalnız platform admini görür. Kiracılı yanıt boş sayaç + counters_omitted bayrağı taşır.
+	ct, err := s.callerTenant(r.Context(), adminID)
+	if respondErr(w, err) {
+		return
+	}
+	if ct != "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"counters":         map[string]int64{},
+			"counters_omitted": true,
+			"uptime_seconds":   metrics.UptimeSeconds(),
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"counters":       metrics.Counters(),
 		"uptime_seconds": metrics.UptimeSeconds(),

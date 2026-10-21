@@ -310,7 +310,22 @@ func (g *Graph) Prune(before time.Time) int {
 	return removed
 }
 
-// NodesByKind, belirtilen türdeki tüm düğümleri döner.
+// NodesByKindFor, belirtilen türdeki düğümlerden YALNIZ verilen kiracıya ait olanları döner
+// (tam eşleşme: boş kiracı yalnız boş-kiracılı düğümleri eşler, "hepsi" anlamına GELMEZ).
+// Kiracıya bağlı çağıranlar (hunting vb.) bunu kullanmalıdır; NodesByKind kiracı sınırını
+// AŞAR ve yalnız platform admini yolunda kullanılmalıdır (Z5-03).
+func (g *Graph) NodesByKindFor(kind Kind, tenant string) []Node {
+	var out []Node
+	for _, n := range g.NodesByKind(kind) {
+		if n.Tenant == tenant {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// NodesByKind, belirtilen türdeki TÜM kiracıların düğümlerini döner — kiracı sınırını AŞAR;
+// yalnız platform admini yolunda kullanın (kiracıya bağlı çağıran için NodesByKindFor).
 func (g *Graph) NodesByKind(kind Kind) []Node {
 	g.mu.RLock()
 	defer g.mu.RUnlock()

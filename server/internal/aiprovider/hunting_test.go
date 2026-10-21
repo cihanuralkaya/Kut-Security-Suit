@@ -43,7 +43,7 @@ func TestHuntingAgent_ExecuteHunt(t *testing.T) {
 	}
 
 	// 1. Boş graf üzerinde bulgu olmamalıdır
-	findings, err := agent.ExecuteHunt(context.Background(), hyp)
+	findings, err := agent.ExecuteHunt(context.Background(), hyp, HuntScope{AllTenants: true})
 	if err != nil {
 		t.Fatalf("beklenmeyen hata: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestHuntingAgent_ExecuteHunt(t *testing.T) {
 	ipNode := entitygraph.Node{Kind: entitygraph.IP, ID: "198.51.100.23"}
 	graph.Observe(pNode, ipNode, entitygraph.Connected, time.Now())
 
-	findings2, err := agent.ExecuteHunt(context.Background(), hyp)
+	findings2, err := agent.ExecuteHunt(context.Background(), hyp, HuntScope{AllTenants: true})
 	if err != nil {
 		t.Fatalf("beklenmeyen hata: %v", err)
 	}
@@ -68,5 +68,45 @@ func TestHuntingAgent_ExecuteHunt(t *testing.T) {
 	}
 	if len(findings2[0].SuspiciousEdges) != 1 {
 		t.Errorf("beklenen şüpheli kenar sayısı 1, alınan %d", len(findings2[0].SuspiciousEdges))
+	}
+}
+
+// Z5-03: av koşusu çağıranın kiracısıyla kısıtlıdır — başka kiracının süreç/IP düğümleri ve
+// kenarları DÖNMEZ (negatif); sahibi kendi bulgusunu görür (pozitif); platform tümünü görür.
+func TestHuntingAgent_ExecuteHuntTenantScoped(t *testing.T) {
+	g := entitygraph.New()
+	now := time.Now()
+	g.Observe(entitygraph.Node{Kind: entitygraph.Process, ID: "proc-acme", Tenant: "acme"},
+		entitygraph.Node{Kind: entitygraph.IP, ID: "203.0.113.1", Tenant: "acme"}, entitygraph.Connected, now)
+	g.Observe(entitygraph.Node{Kind: entitygraph.Process, ID: "proc-globex", Tenant: "globex"},
+		entitygraph.Node{Kind: entitygraph.IP, ID: "203.0.113.2", Tenant: "globex"}, entitygraph.Connected, now)
+	agent := &HuntingAgent{Graph: g}
+	hyp := HuntHypothesis{ID: "h", TargetKind: entitygraph.Process}
+	ctx := context.Background()
+
+	acme, err := agent.ExecuteHunt(ctx, hyp, HuntScope{Tenant: "acme"})
+	if err != nil || len(acme) != 1 || acme[0].TargetNode.ID != "proc-acme" {
+		t.Fatalf("acme yalnız kendi düğümünü görmeli: %+v %v", acme, err)
+	}
+	for _, f := range acme {
+		for _, e := range f.SuspiciousEdges {
+			if e.To.ID == "203.0.113.2" {
+				t.Fatal("acme, globex'in uzak IP'sini görmemeli")
+			}
+		}
+	}
+	globex, _ := agent.ExecuteHunt(ctx, hyp, HuntScope{Tenant: "globex"})
+	if len(globex) != 1 || globex[0].TargetNode.ID != "proc-globex" {
+		t.Fatalf("globex yalnız kendi düğümünü görmeli: %+v", globex)
+	}
+	// Kiracı belirtilmeden (AllTenants=false) KAPSAM "hepsi" ANLAMINA GELMEZ (fail-closed).
+	none, _ := agent.ExecuteHunt(ctx, hyp, HuntScope{})
+	if len(none) != 0 {
+		t.Fatalf("boş kapsam hiçbir kiracının düğümünü döndürmemeli: %+v", none)
+	}
+	// Platform: tümü.
+	all, _ := agent.ExecuteHunt(ctx, hyp, HuntScope{AllTenants: true})
+	if len(all) != 2 {
+		t.Fatalf("platform iki kiracıyı da görmeli: %+v", all)
 	}
 }
