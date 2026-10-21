@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"kut.corp/suite/server/internal/model"
+	"kut.corp/suite/server/internal/tenant"
 )
 
 // Record, normalize edilmiş tek bir alım kaydıdır (hedef cihaz + olay).
@@ -69,6 +70,38 @@ func SourceUUID(source string) string {
 	copy(u[:], sum[:16])
 	u[6] = (u[6] & 0x0f) | 0x50 // sürüm 5
 	u[8] = (u[8] & 0x3f) | 0x80 // RFC4122 varyantı
+	hexs := hex.EncodeToString(u[:])
+	return hexs[0:8] + "-" + hexs[8:12] + "-" + hexs[12:16] + "-" + hexs[16:20] + "-" + hexs[20:32]
+}
+
+// tenantNamespace, kiracıya-özgü cihaz kimliği türetmesi için ayrı ad alanıdır
+// (ingestNamespace'ten FARKLI → kiracı-ad-alanlı kimlikler eski kimliklerle çakışamaz).
+var tenantNamespace = [16]byte{
+	0x7d, 0x21, 0xc4, 0x5e, 0x88, 0x0a, 0x4b, 0x6f,
+	0x9e, 0x13, 0x52, 0xa7, 0xd0, 0x3b, 0x64, 0x19,
+}
+
+// TenantDeviceID, bir harici kaynağın (SourceUUID ile türetilmiş) cihaz kimliğini KİRACIYA
+// göre ad-alanlar: iki kiracı aynı kaynak adını ("fw1") kullansa da kimlikleri AYRIDIR →
+// eşik/bit/korelatör/zincir durumu ve cihaz listesi kiracılar arasında ÇÖKMEZ (Z3-01).
+// Kiracı SUNUCU-TARAFI bilinendir (ingest token'ının bağlı kiracısı / connector yapılandırması),
+// ASLA istemci verisi değildir. Varsayılan kiracı (ve boş = legacy) kimliği DEĞİŞTİRMEZ →
+// mevcut tek-kiracılı kurulumların kaynak kimlikleri sürekliliğini korur; diğer kiracılar
+// ayrı bir ad alanından türetilir (eski kimliklerle çakışma imkânsız).
+func TenantDeviceID(tenantID, deviceID string) string {
+	if tenant.Canonical(tenantID) == string(tenant.Default) {
+		return deviceID
+	}
+	h := sha1.New()
+	h.Write(tenantNamespace[:])
+	h.Write([]byte(tenantID))
+	h.Write([]byte{0x1f})
+	h.Write([]byte(deviceID))
+	sum := h.Sum(nil)
+	var u [16]byte
+	copy(u[:], sum[:16])
+	u[6] = (u[6] & 0x0f) | 0x50
+	u[8] = (u[8] & 0x3f) | 0x80
 	hexs := hex.EncodeToString(u[:])
 	return hexs[0:8] + "-" + hexs[8:12] + "-" + hexs[12:16] + "-" + hexs[16:20] + "-" + hexs[20:32]
 }

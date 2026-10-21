@@ -57,6 +57,7 @@ import (
 	"kut.corp/suite/server/internal/scope"
 	"kut.corp/suite/server/internal/security"
 	"kut.corp/suite/server/internal/telemetryschema"
+	"kut.corp/suite/server/internal/tenant"
 	"kut.corp/suite/server/internal/trace"
 	"kut.corp/suite/server/internal/verify"
 	"kut.corp/suite/server/internal/vuln"
@@ -103,6 +104,7 @@ type Server struct {
 	vulnSet        *vuln.Set                      // zafiyet veri kümesi (nil = kapalı); envanterle eşleşir
 	features       map[string]any                 // dağıtım koruma-duruşu (opsiyonel özellik bayrakları)
 	tenantID       string                         // dağıtımın kiracı kimliği (rapor atıfı)
+	tenantEnforce  bool                           // sıkı çok-tenant (KUT_TENANT_ENFORCE=1): kiracısız ingest token'ı REDDEDİLİR (INV-044)
 	aiProvider     aiassist.Provider              // §27 AI asistanı sağlayıcısı (nil → LocalProvider)
 	tracer         *trace.Tracer                  // §14 dağıtık izleme (nil → kapalı)
 	abacEngine     *iam.Engine                    // §35 ABAC motoru (nil → uç kapalı)
@@ -163,6 +165,12 @@ func (s *Server) SetAIProvider(p aiassist.Provider) { s.aiProvider = p }
 
 // SetTenantID, dağıtımın kiracı kimliğini bağlar (rapor/çıktı atıfı; boş → "default").
 func (s *Server) SetTenantID(id string) { s.tenantID = id }
+
+// SetTenantEnforce, sıkı çok-tenant zorlamasını açar/kapatır (KUT_TENANT_ENFORCE=1; gRPC
+// AgentHandler.SetTenantEnforce ile aynı bayrak, INV-044). Açıkken kiracıya bağlı OLMAYAN
+// bir ingest token'ı ile gelen olaylar REDDEDİLİR (varsayılan kiracıya düşmez); kapalıyken
+// kiracısız (legacy) token'lar dağıtımın varsayılan kiracısına düşer.
+func (s *Server) SetTenantEnforce(on bool) { s.tenantEnforce = on }
 
 // SetDetector, tespit kural motorunu bağlar (kural kataloğu ucu için). nil ise
 // yerleşik varsayılan kurallar kullanılır.
@@ -238,11 +246,39 @@ func (s *Server) SetTokenStore(ts authtoken.Store) { s.tokens = ts }
 // tokenAuthorized, bir istekteki Bearer token'ı verilen kapsam için doğrular:
 // önce yönetilen token deposu (varsa), sonra statik env token (sabit-zamanlı).
 func (s *Server) tokenAuthorized(scope, staticTok string, r *http.Request) bool {
+	_, ok := s.tokenAuthorizedTenant(scope, staticTok, r)
+	return ok
+}
+
+// tokenAuthorizedTenant, tokenAuthorized gibi doğrular ve token'ın bağlı KİRACISINI de
+// döner. Kiracı yalnız yönetilen token'dan gelir (platform admininin oluşturmada verdiği,
+// sunucu-tarafı bağ); statik env token kiracısızdır (legacy → ""). İstek içeriğinden
+// (başlık/gövde/query) kiracı ASLA okunmaz.
+func (s *Server) tokenAuthorizedTenant(scope, staticTok string, r *http.Request) (string, bool) {
 	presented := bearer(r)
-	if s.tokens != nil && presented != "" && s.tokens.Verify(scope, presented) {
-		return true
+	if s.tokens != nil && presented != "" {
+		if t, ok := s.tokens.VerifyTenant(scope, presented); ok {
+			return t, true
+		}
 	}
-	return staticTok != "" && subtle.ConstantTimeCompare([]byte(presented), []byte(staticTok)) == 1
+	if staticTok != "" && subtle.ConstantTimeCompare([]byte(presented), []byte(staticTok)) == 1 {
+		return "", true
+	}
+	return "", false
+}
+
+// ingestTenant, bir ingest isteğinin olay kiracısını SUNUCU-TARAFI çözer. tokenTenant
+// kimlik doğrulanmış token'ın bağlı kiracısıdır. Boşsa (legacy/kiracısız token):
+// KUT_TENANT_ENFORCE açıkken fail-closed ret (ok=false); kapalıyken dağıtımın varsayılan
+// kiracısına (KUT_TENANT_ID; boş → "default") düşer.
+func (s *Server) ingestTenant(tokenTenant string) (string, bool) {
+	if tokenTenant != "" {
+		return tokenTenant, true
+	}
+	if s.tenantEnforce {
+		return "", false
+	}
+	return tenant.Canonical(strings.ToLower(strings.TrimSpace(s.tenantID))), true
 }
 
 // maxSSEConns, eşzamanlı SSE akış bağlantısı üst sınırıdır (SEC-007).
@@ -874,8 +910,18 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !s.tokenAuthorized(authtoken.ScopeIngest, s.ingestToken, r) {
+	tokenTenant, authOK := s.tokenAuthorizedTenant(authtoken.ScopeIngest, s.ingestToken, r)
+	if !authOK {
 		writeErr(w, http.StatusUnauthorized, "geçersiz ingest token")
+		return
+	}
+	// Olay kiracısı SUNUCU-TARAFI: token'ın (oluşturmada platform admininin verdiği) bağlı
+	// kiracısı. İstek başlığı/gövdesi/query'si kiracı SEÇEMEZ. Kiracısız (legacy) token
+	// KUT_TENANT_ENFORCE=1 iken REDDEDİLİR (INV-044: eksik kiracı → DENY); kapalıyken
+	// dağıtımın varsayılan kiracısına düşer (Z3-01 / Z4a-15).
+	evTenant, tenantOK := s.ingestTenant(tokenTenant)
+	if !tenantOK {
+		writeErr(w, http.StatusForbidden, "kiracı zorunlu: ingest token'ı bir kiracıya bağlı değil")
 		return
 	}
 	// Hız sınırı (DoS/sel koruması): katmanlı (global + IP) öncelikli; yoksa tekil IP.
@@ -942,14 +988,21 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	duplicates := 0
 	for _, rec := range records {
 		ev := rec.Event
+		// Kiracı damgası SaveEvents'ten ve EventID türetmesinden ÖNCE: olay kalıcı kayda
+		// kiracısıyla girer (kiracı-kapsamlı okumalarda görünür, SSE/alarm kiracıya atfedilir)
+		// ve cihaz kimliği kiracıya ad-alanlanır → aynı kaynak adını kullanan iki kiracı
+		// AYRI cihaz/eşik/korelatör durumuna sahip olur. Normalizer'ın (ya da istemcinin)
+		// verdiği her kiracı değeri EZİLİR.
+		devID := logingest.TenantDeviceID(evTenant, rec.DeviceID)
+		ev.TenantID = evTenant
+		ev.DeviceID = devID
 		if s.ingestDedup != nil {
-			ev.DeviceID = rec.DeviceID
 			if s.ingestDedup.Duplicate(ev.EnsureID()) {
 				duplicates++
 				continue
 			}
 		}
-		byDevice[rec.DeviceID] = append(byDevice[rec.DeviceID], ev)
+		byDevice[devID] = append(byDevice[devID], ev)
 	}
 	accepted, deferred := 0, 0
 	// ÖNCE tüm cihazları KAYDET; tespit+alarm hattı SONRA çalıştırılır. Böylece
@@ -1040,6 +1093,7 @@ func (s *Server) handleTokenCreate(w http.ResponseWriter, r *http.Request, admin
 	var req struct {
 		Scope      string `json:"scope"`
 		TTLSeconds int    `json:"ttl_seconds"`
+		Tenant     string `json:"tenant"` // ingest token'ının bağlanacağı kiracı (platform admini verir; sunucu-tarafı bağ)
 	}
 	if !decode(w, r, &req) {
 		return
@@ -1050,16 +1104,36 @@ func (s *Server) handleTokenCreate(w http.ResponseWriter, r *http.Request, admin
 		writeErr(w, http.StatusBadRequest, "geçersiz kapsam (metrics|ingest)")
 		return
 	}
-	id, secret, err := s.tokens.Create(req.Scope, time.Duration(req.TTLSeconds)*time.Second)
+	// Kiracı bağı (Z3-01): yalnız ingest kapsamı; biçim sınırda doğrulanır (Z4b-08). Metrics
+	// token'ı filo-geneli okuduğundan kiracıya bağlanamaz. KUT_TENANT_ENFORCE=1 iken
+	// kiracısız ingest token'ı hiç üretilmez (kullanımda zaten reddedilirdi).
+	tokTenant, terr := authtoken.ValidateTenantBinding(req.Scope, strings.TrimSpace(req.Tenant))
+	if terr != nil {
+		writeErr(w, http.StatusBadRequest, "geçersiz tenant (yalnız ingest kapsamı; küçük harf/rakam/tire, 1-63)")
+		return
+	}
+	if req.Scope == authtoken.ScopeIngest && tokTenant == "" && s.tenantEnforce {
+		writeErr(w, http.StatusBadRequest, "tenant zorunlu: kiracı zorlaması açıkken ingest token'ı bir kiracıya bağlanmalı")
+		return
+	}
+	id, secret, err := s.tokens.CreateForTenant(req.Scope, tokTenant, time.Duration(req.TTLSeconds)*time.Second)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "token oluşturulamadı")
 		return
 	}
-	s.adminSvc.RecordAudit(r.Context(), adminID, "API_TOKEN_CREATE:"+req.Scope, "token", id)
-	writeJSON(w, http.StatusCreated, map[string]any{
+	audit := "API_TOKEN_CREATE:" + req.Scope
+	if tokTenant != "" {
+		audit += ":" + tokTenant
+	}
+	s.adminSvc.RecordAudit(r.Context(), adminID, audit, "token", id)
+	resp := map[string]any{
 		"id": id, "scope": req.Scope, "secret": secret,
 		"note": "Bu sır YALNIZCA burada gösterilir — güvenli saklayın.",
-	})
+	}
+	if tokTenant != "" {
+		resp["tenant"] = tokTenant
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 // handleTokenList, yönetilen token'ları (SIR OLMADAN) listeler (ADMIN).

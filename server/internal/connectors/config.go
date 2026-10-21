@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"kut.corp/suite/server/internal/connector"
+	"kut.corp/suite/server/internal/tenant"
 )
 
 // config.go — connector'ların YAPILANDIRMADAN kurulması (§29/§30 canlı hatta bağlama).
@@ -21,6 +23,9 @@ type SourceConfig struct {
 	Provider    string `json:"provider,omitempty"` // cloud için: aws|azure|gcp|m365
 	Whole       bool   `json:"whole,omitempty"`    // belge-tabanlı formatlar (json/winevent/cloud) → true
 	IntervalSec int    `json:"interval_sec"`       // yoklama aralığı (sn); <=0 → 60
+	// Tenant, bu bağlayıcının olaylarının kiracısıdır (OPERATÖR yapılandırması — sunucu-tarafı
+	// güvenilir; kaynak verisinden ASLA türetilmez). Boşsa dağıtımın varsayılan kiracısı.
+	Tenant string `json:"tenant,omitempty"`
 }
 
 // Interval, yapılandırılan yoklama aralığını döner (varsayılan 60sn).
@@ -29,6 +34,21 @@ func (c SourceConfig) Interval() time.Duration {
 		return 60 * time.Second
 	}
 	return time.Duration(c.IntervalSec) * time.Second
+}
+
+// ResolveTenant, bağlayıcının olay kiracısını döner: yapılandırılmış Tenant (doğrulanmış,
+// normalize), boşsa deployDefault (dağıtımın varsayılan kiracısı; boş → "default").
+// Geçersiz biçim hata döner (fail-closed: bozuk kiracı sessizce varsayılana düşmez).
+func (c SourceConfig) ResolveTenant(deployDefault string) (string, error) {
+	t := c.Tenant
+	if strings.TrimSpace(t) == "" {
+		t = deployDefault
+	}
+	id, err := tenant.Normalize(t)
+	if err != nil {
+		return "", fmt.Errorf("connectors: %q kiracısı geçersiz: %w", c.Name, err)
+	}
+	return string(id), nil
 }
 
 // Build, bir SourceConfig'i somut bir connector.Connector'a dönüştürür. Kaynak yerel
@@ -79,6 +99,9 @@ func LoadConfig(path string) ([]SourceConfig, error) {
 func BuildAll(cfgs []SourceConfig) (*connector.Registry, error) {
 	reg := connector.NewRegistry()
 	for _, c := range cfgs {
+		if _, err := c.ResolveTenant(""); err != nil { // biçim hatası fail-fast
+			return nil, err
+		}
 		conn, err := Build(c)
 		if err != nil {
 			return nil, err

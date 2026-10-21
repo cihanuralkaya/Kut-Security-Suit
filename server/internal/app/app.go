@@ -966,21 +966,27 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				intervals[c.Name] = c.Interval()
 			}
 			seen := dedup.New(10*time.Minute, 200000)
-			sink := func(evs []model.Event) {
-				byDev := map[string][]model.Event{}
-				for _, ev := range evs {
-					if seen.Duplicate(ev.EnsureID()) {
-						continue
-					}
-					byDev[ev.DeviceID] = append(byDev[ev.DeviceID], ev)
+			// Her bağlayıcı KENDİ yapılandırılmış kiracısıyla (yoksa dağıtımın varsayılan
+			// kiracısı) damgalanır — kaydetmeden ÖNCE (Z3-02). Kiracı operatör
+			// yapılandırmasından gelir, kaynak verisinden değil.
+			tenants := map[string]string{}
+			for _, c := range cfgs {
+				tn, terr := c.ResolveTenant(cfg.TenantID)
+				if terr != nil {
+					log.Printf("connector %q atlandı: %v", c.Name, terr)
+					continue
 				}
-				for dev, list := range byDev {
-					if _, serr := backend.SaveEvents(ctx, dev, list); serr != nil {
-						log.Printf("connector olay yazımı hatası (%s): %v", dev, serr)
-					}
-				}
+				tenants[c.Name] = tn
 			}
+			isDup := func(e *model.Event) bool { return seen.Duplicate(e.EnsureID()) }
 			for _, c := range reg.List() {
+				tn, ok := tenants[c.Name()]
+				if !ok {
+					continue // geçersiz kiracı: fail-closed, bağlayıcı çalıştırılmaz
+				}
+				sink := connectors.NewTenantSink(ctx, tn, isDup, backend.SaveEvents, func(dev string, serr error) {
+					log.Printf("connector olay yazımı hatası (%s): %v", dev, serr)
+				})
 				runner := connector.NewRunner(c, intervals[c.Name()], sink).
 					OnError(func(name string, err error) { log.Printf("connector %q hata: %v", name, err) })
 				go runner.Start(ctx, nil)
@@ -1101,6 +1107,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		"cert_expiry_days":      certMinDays,
 	})
 	adminAPI.SetTenantID(cfg.TenantID)
+	adminAPI.SetTenantEnforce(cfg.TenantEnforce) // sıkı çok-tenant: kiracısız ingest token'ı reddedilir (INV-044)
 	if cfg.TenantID != "default" {
 		log.Printf("kiracı (tenant): %s", cfg.TenantID)
 	}
