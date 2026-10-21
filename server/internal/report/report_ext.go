@@ -59,13 +59,15 @@ func RenderMarkdown(d Data, kind Kind) string {
 		fmt.Fprintf(&b, "| Uyumsuz | %d (%%%s) |\n\n", d.NonCompliant, pctStr(d.NonCompliant, d.DevicesTotal))
 	}
 
-	// Tehdit etkinliği (tümünde).
-	b.WriteString("## Tehdit etkinliği\n\n")
-	b.WriteString("| Metrik | Değer |\n|---|---:|\n")
-	fmt.Fprintf(&b, "| Tespit | %d |\n", d.Detections)
-	fmt.Fprintf(&b, "| Alarm | %d |\n", d.AlertsRaised)
-	fmt.Fprintf(&b, "| Bastırılan (korelasyon) | %d |\n", d.AlertsSuppressed)
-	fmt.Fprintf(&b, "| IoC eşleşme | %d |\n\n", d.IocHits)
+	// Tehdit etkinliği (tümünde). Süreç-geneli sayaçlar kiracıya bağlı raporda ATLANIR (Z5-15).
+	if !d.CountersOmitted {
+		b.WriteString("## Tehdit etkinliği\n\n")
+		b.WriteString("| Metrik | Değer |\n|---|---:|\n")
+		fmt.Fprintf(&b, "| Tespit | %d |\n", d.Detections)
+		fmt.Fprintf(&b, "| Alarm | %d |\n", d.AlertsRaised)
+		fmt.Fprintf(&b, "| Bastırılan (korelasyon) | %d |\n", d.AlertsSuppressed)
+		fmt.Fprintf(&b, "| IoC eşleşme | %d |\n\n", d.IocHits)
+	}
 
 	// Önem dağılımı (technical).
 	if kind == KindTechnical && len(d.EventsBySeverity) > 0 {

@@ -213,9 +213,11 @@ func NewTenantStamper(tenant string, target Notifier) *TenantStamper {
 	return &TenantStamper{tenant: tenant, target: target}
 }
 
-// Notify, uyarıya kiracıyı iliştirip iletir.
+// Notify, uyarıya kiracıyı iliştirip iletir. Uyarı ZATEN bir kiracı taşıyorsa (sunucu-
+// tarafı cihaz/olay kiracısı — ör. arka plan analizörleri) onun üzerine YAZILMAZ: dağıtım
+// kiracısı yalnız kiracısız uyarılar için varsayılandır.
 func (t *TenantStamper) Notify(a Alert) {
-	if t.tenant != "" {
+	if t.tenant != "" && a.Tenant == "" {
 		a.Tenant = t.tenant
 	}
 	if t.target != nil {

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -379,21 +380,116 @@ func TestPGMACSquatCannotBlockOtherTenant(t *testing.T) {
 	}
 }
 
-// S-3 (PG): yükseltme bloğu yeniden çalıştırılabilir (idempotent) — iki kez uygulanınca hata yok.
+// upgradeBlock, db/schema.sql'ten `-- BEGIN <name>` … `-- END <name>` arasındaki GERÇEK yükseltme
+// bloğunu çıkarır ve ifadelere böler (yorum satırları atılır). Blokta dollar-quote yoktur.
+func upgradeBlock(t *testing.T, name string) []string {
+	t.Helper()
+	raw, err := os.ReadFile("../../../db/schema.sql")
+	if err != nil {
+		t.Fatalf("db/schema.sql okunamadı: %v", err)
+	}
+	src := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	begin, end := "\n-- BEGIN "+name+"\n", "\n-- END "+name+"\n"
+	i, j := strings.Index(src, begin), strings.Index(src, end)
+	if i < 0 || j < 0 || j < i {
+		t.Fatalf("schema.sql içinde %s bloğu bulunamadı", name)
+	}
+	var body strings.Builder
+	for _, ln := range strings.Split(src[i+len(begin):j], "\n") {
+		if strings.HasPrefix(strings.TrimSpace(ln), "--") {
+			continue
+		}
+		body.WriteString(ln + "\n")
+	}
+	var stmts []string
+	for _, s := range strings.Split(body.String(), ";") {
+		if s = strings.TrimSpace(s); s != "" {
+			stmts = append(stmts, s)
+		}
+	}
+	if len(stmts) == 0 {
+		t.Fatalf("%s bloğu boş", name)
+	}
+	return stmts
+}
+
+// S-3 / W1b-2 (PG): schema.sql'deki GERÇEK W1B1 ve W1B2 yükseltme blokları, ESKİ (legacy) bir
+// durumdan — küresel mac_address_bidx kısıtı VAR, policies.tenant_id / tokens.tenant_id YOK —
+// başlayıp İKİ KEZ çalıştırılır: ilk turda eski kısıt düşer, yeni indeks ve sütunlar oluşur;
+// ikinci tur hatasız no-op'tur. Her şey bir transaction + geçici şema içinde yapılır (geri alınır,
+// paylaşılan test şemasına dokunulmaz). Test kopyası değil, dosyadaki blok çalıştırıldığından
+// blok ile test arasında sapma olamaz.
 func TestPGUpgradeBlockIdempotent(t *testing.T) {
 	s, ctx := pgStore(t)
-	for i := 0; i < 2; i++ {
-		for _, stmt := range []string{
-			`CREATE UNIQUE INDEX IF NOT EXISTS uq_devices_tenant_mac
-			   ON devices ((COALESCE(NULLIF(tenant_id, ''), 'default')), mac_address_bidx)`,
-			`ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_mac_address_bidx_key`,
-			`ALTER TABLE policies ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(63) NOT NULL DEFAULT ''`,
-			`CREATE INDEX IF NOT EXISTS idx_policies_tenant ON policies (tenant_id)`,
-		} {
-			if _, err := s.pool.Exec(ctx, stmt); err != nil {
-				t.Fatalf("yükseltme ifadesi tekrar çalıştırılabilmeli (tur %d): %v\n%s", i, err, stmt)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // sonda her zaman geri al
+	exec := func(sql string) {
+		t.Helper()
+		if _, err := tx.Exec(ctx, sql); err != nil {
+			t.Fatalf("%v\n%s", err, sql)
+		}
+	}
+	scratch := uniq(t, "upg_")
+	exec(`CREATE SCHEMA ` + scratch)
+	exec(`SET LOCAL search_path TO ` + scratch + `, public`)
+	// Legacy durum: küresel UNIQUE kısıtlı devices, tenant_id'siz policies/tokens.
+	exec(`CREATE TABLE devices (id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+	        tenant_id VARCHAR(63) NOT NULL DEFAULT '', mac_address_bidx BYTEA NOT NULL,
+	        CONSTRAINT devices_mac_address_bidx_key UNIQUE (mac_address_bidx))`)
+	exec(`CREATE TABLE policies (id UUID PRIMARY KEY DEFAULT uuid_generate_v4())`)
+	exec(`CREATE TABLE tokens (id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), scope TEXT NOT NULL)`)
+
+	count := func(q string) int {
+		t.Helper()
+		var n int
+		if err := tx.QueryRow(ctx, q).Scan(&n); err != nil {
+			t.Fatalf("%v\n%s", err, q)
+		}
+		return n
+	}
+	// docs/MULTI-TENANCY.md'deki yükseltme-sonrası doğrulama sorgusuyla AYNI: mac_address_bidx
+	// üzerindeki tek-sütunlu UNIQUE kısıt/indeks sayısı (adı ne olursa olsun) 0 olmalı.
+	const legacyUnique = `SELECT (SELECT count(*) FROM pg_constraint c
+	    JOIN pg_class t ON t.oid = c.conrelid
+	    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY (c.conkey)
+	   WHERE t.relname = 'devices' AND t.relnamespace = to_regnamespace(current_schema())
+	     AND c.contype = 'u' AND array_length(c.conkey, 1) = 1 AND a.attname = 'mac_address_bidx')
+	  + (SELECT count(*) FROM pg_index i
+	    JOIN pg_class t ON t.oid = i.indrelid
+	    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0]
+	   WHERE t.relname = 'devices' AND t.relnamespace = to_regnamespace(current_schema())
+	     AND i.indisunique AND i.indnatts = 1 AND a.attname = 'mac_address_bidx')`
+	if n := count(legacyUnique); n == 0 {
+		t.Fatal("legacy durumda küresel kısıt bulunmalı (test ön koşulu)")
+	}
+
+	blocks := append(upgradeBlock(t, "W1B1-UPGRADE"), upgradeBlock(t, "W1B2-UPGRADE")...)
+	for round := 0; round < 2; round++ {
+		for _, stmt := range blocks {
+			if _, err := tx.Exec(ctx, stmt); err != nil {
+				t.Fatalf("gerçek yükseltme bloğu (tur %d) çalışmalı: %v\n%s", round, err, stmt)
 			}
 		}
+		if n := count(legacyUnique); n != 0 {
+			t.Fatalf("tur %d: küresel mac_address_bidx kısıtı/indeksi kalmamalı: %d", round, n)
+		}
+		if n := count(`SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'uq_devices_tenant_mac'`); n != 1 {
+			t.Fatalf("tur %d: uq_devices_tenant_mac var olmalı: %d", round, n)
+		}
+		for _, col := range []string{"policies", "tokens"} {
+			if n := count(`SELECT count(*) FROM information_schema.columns
+			                WHERE table_schema = current_schema() AND table_name = '` + col + `' AND column_name = 'tenant_id'`); n != 1 {
+				t.Fatalf("tur %d: %s.tenant_id eklenmeli: %d", round, col, n)
+			}
+		}
+	}
+	// Yükseltme sonrası: aynı MAC iki farklı kiracıda ayrı satır olabilir, aynı kiracıda olamaz.
+	exec(`INSERT INTO devices (tenant_id, mac_address_bidx) VALUES ('a', '\x01'), ('b', '\x01')`)
+	if _, err := tx.Exec(ctx, `INSERT INTO devices (tenant_id, mac_address_bidx) VALUES ('a', '\x01')`); err == nil {
+		t.Fatal("aynı kiracıda aynı MAC reddedilmeli")
 	}
 }
 

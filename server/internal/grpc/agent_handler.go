@@ -163,7 +163,7 @@ type AgentHandler struct {
 	iocSet        atomic.Pointer[ioc.Set]       // tehdit istihbaratı göstergeleri (nil = kapalı; canlı hot-reload için atomik)
 	artifacts     ArtifactSink                  // adli/IR dosya toplama deposu
 	graph         *entitygraph.Graph            // varlık/tehdit grafı — olaylardan kenar besler (nil = kapalı)
-	seqModel      *aibrain.SeqModel             // süreç-zinciri sekans nadirlik modeli — canlı öğrenir (nil = kapalı)
+	seqModel      *aibrain.SeqModels            // kiracı-bölümlü süreç-zinciri sekans nadirlik modeli — canlı öğrenir (nil = kapalı)
 	observer      ProcessedObserver             // yalnızca-export tap (nil = kapalı); tespit+kapı SONRASI beslenir
 	tenant        string                        // sunucu-tarafı kiracı (KUT_TENANT_ID); olaylara atanır (boş = tek-tenant)
 	tenantEnforce bool                          // sıkı çok-tenant: kiracısız cihazın olaylarını reddet (INV-044)
@@ -186,7 +186,28 @@ func (h *AgentHandler) SetEntityGraph(g *entitygraph.Graph) { h.graph = g }
 // SetSeqModel, süreç-zinciri sekans nadirlik modelini bağlar. Bağlıysa PROCESS
 // olaylarındaki soyağacı (root→leaf) taban çizgisi olarak PASİF öğrenilir; skorlama
 // analist tarafından salt-okunur sorgulanır (otomatik alarm yok → gürültü yok).
-func (h *AgentHandler) SetSeqModel(m *aibrain.SeqModel) { h.seqModel = m }
+func (h *AgentHandler) SetSeqModel(m *aibrain.SeqModels) { h.seqModel = m }
+
+// Ajan-kontrollü dizgelerin graf/sekans modeline girişindeki SERT sınırlar (Z3-03 / Z5-18):
+// bir cihaz sınırsız uzun ya da sınırsız derin zincirle belleği şişiremez. Kiracı başına toplam
+// düğüm/kenar tavanı ve LRU/TTL tahliyesi entitygraph/aibrain içinde uygulanır.
+const (
+	maxGraphStringLen = 256 // alan adı / IP / süreç adı azami uzunluğu (bayt)
+	maxParentChain    = 32  // işlenen azami parent_chain derinliği
+)
+
+// graphStr, grafa girecek ajan-kontrollü bir dizgeyi doğrular: boş ya da aşırı uzunsa false
+// (gözlem atlanır ve sayılır).
+func graphStr(s string) bool {
+	if s == "" {
+		return false
+	}
+	if len(s) > maxGraphStringLen {
+		metrics.AddGraphFeedDropped(1)
+		return false
+	}
+	return true
+}
 
 // observeGraph, bir olayın yapılandırılmış Details alanlarından varlık grafına
 // güvenilir kenarlar ekler: DNS olayı → cihaz→alan (Resolved), ağ bağlantısı →
@@ -204,11 +225,11 @@ func (h *AgentHandler) observeGraph(deviceID string, e model.Event) {
 		// e.TenantID sunucu-tarafı damgalıdır (cihazdan), böylece kenarlar kiracı
 		// sınırını geçmez ve pivot/anomali yalnız çağıranın kiracısını görür.
 		dev := entitygraph.Node{Kind: entitygraph.Device, ID: deviceID, Tenant: e.TenantID}
-		if s, ok := d["domain"].(string); ok && s != "" {
-			h.graph.Observe(dev, entitygraph.Node{Kind: entitygraph.Domain, ID: s, Tenant: e.TenantID}, entitygraph.Resolved, e.OccurredAt)
+		if s, ok := d["domain"].(string); ok && graphStr(s) {
+			h.graph.ObserveBy(deviceID, dev, entitygraph.Node{Kind: entitygraph.Domain, ID: s, Tenant: e.TenantID}, entitygraph.Resolved, e.OccurredAt)
 		}
-		if s, ok := d["remote_ip"].(string); ok && s != "" {
-			h.graph.Observe(dev, entitygraph.Node{Kind: entitygraph.IP, ID: s, Tenant: e.TenantID}, entitygraph.Connected, e.OccurredAt)
+		if s, ok := d["remote_ip"].(string); ok && graphStr(s) {
+			h.graph.ObserveBy(deviceID, dev, entitygraph.Node{Kind: entitygraph.IP, ID: s, Tenant: e.TenantID}, entitygraph.Connected, e.OccurredAt)
 		}
 	}
 	// Süreç soyağacı: PROCESS olayının process + parent_chain (en yakın ata önce).
@@ -216,22 +237,26 @@ func (h *AgentHandler) observeGraph(deviceID string, e model.Event) {
 	// "ebeveyni ne?" (Targets) pivotları. Ayrıca root→leaf zinciri sekans nadirlik
 	// modeline PASİF öğrenilir (taban çizgisi; skorlama analistçe salt-okunur sorgulanır).
 	proc, ok := d["process"].(string)
-	if !ok || proc == "" {
+	if !ok || !graphStr(proc) {
 		return
 	}
 	chainRaw, ok := d["parent_chain"].([]any)
 	if !ok {
 		return
 	}
+	if len(chainRaw) > maxParentChain { // derinlik tavanı: yalnız en yakın atalar işlenir
+		metrics.AddGraphFeedDropped(len(chainRaw) - maxParentChain)
+		chainRaw = chainRaw[:maxParentChain]
+	}
 	ancestors := make([]string, 0, len(chainRaw)) // en yakın ata önce
 	child := proc
 	for _, pa := range chainRaw {
 		parent, ok := pa.(string)
-		if !ok || parent == "" {
+		if !ok || !graphStr(parent) {
 			continue
 		}
 		if h.graph != nil {
-			h.graph.Observe(
+			h.graph.ObserveBy(deviceID,
 				entitygraph.Node{Kind: entitygraph.Process, ID: child, Tenant: e.TenantID},
 				entitygraph.Node{Kind: entitygraph.Process, ID: parent, Tenant: e.TenantID},
 				entitygraph.ChildOf, e.OccurredAt)
@@ -246,7 +271,7 @@ func (h *AgentHandler) observeGraph(deviceID string, e model.Event) {
 			lineage = append(lineage, ancestors[i])
 		}
 		lineage = append(lineage, proc)
-		h.seqModel.Observe(lineage)
+		h.seqModel.Observe(e.TenantID, lineage) // kiracı-bölümlü taban çizgisi (e.TenantID sunucu-damgalı)
 	}
 }
 
@@ -405,7 +430,13 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 	if err != nil {
 		return nil, status.Error(codes.Internal, "heartbeat kaydedilemedi")
 	}
-	h.publishDevice(h.tenant, deviceID) // konsola canlı: cihaz görüldü (kiracı-atıflı)
+	// Konsola canlı: cihaz görüldü. Bildirim CİHAZIN kiracısına atfedilir (Z3-06) — sunucu
+	// varsayılan kiracısına DEĞİL: aksi halde B kiracısının cihaz canlılığı "default" abonelerine
+	// sızar ve B'nin kendi konsolu bildirimi hiç almaz. Kiracı çözülemezse (hata ya da zorlama
+	// açıkken kiracısız cihaz) bildirim YAYINLANMAZ (fail-closed); heartbeat'i etkilemez.
+	if nt, ok := h.noticeTenant(ctx, deviceID); ok {
+		h.publishDevice(nt, deviceID)
+	}
 
 	// Öz-tasdik (#4): ajanın ikili hash'i sürüm değişmeden değiştiyse (takas/yama)
 	// KRİTİK kurcalama olayı üret. Best-effort; heartbeat'i kesmez.
@@ -462,6 +493,23 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 		PolicyUpdateAvailable: serverPolicyVersion != "" && serverPolicyVersion != req.GetCurrentPolicyVersion(),
 		PendingCommands:       cmds,
 	}, nil
+}
+
+// noticeTenant, bir cihaz bildiriminin (SSE) atfedileceği kiracıyı SUNUCU-TARAFI çözer:
+// cihazın kayıtlı kiracısı; kayıtsız/legacy cihazda sunucu varsayılanı — YALNIZ zorlama
+// kapalıyken. Arama hatası ya da zorlama açıkken kiracısız cihaz → ok=false (yayınlama).
+func (h *AgentHandler) noticeTenant(ctx context.Context, deviceID string) (string, bool) {
+	t, err := h.devices.TenantForDevice(ctx, deviceID)
+	if err != nil {
+		return "", false
+	}
+	if t != "" {
+		return t, true
+	}
+	if h.tenantEnforce {
+		return "", false
+	}
+	return h.tenant, true
 }
 
 // commandTypeName, proto komut tipini kuyruk-türü string'ine çevirir (EnqueueCommand
@@ -542,7 +590,7 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 				if err := h.responder.AutoQuarantine(stream.Context(), deviceID, reason); err == nil {
 					autoTriggered = true
 					metrics.IncAutoQuarantine()
-					h.publishDevice(h.tenant, deviceID) // konsol durumu tazelesin
+					h.publishDevice(effTenant, deviceID) // konsol durumu tazelesin (cihazın kiracısına atıflı, Z3-06)
 				}
 			}
 		}

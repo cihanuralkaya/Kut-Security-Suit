@@ -435,3 +435,26 @@ func TestStampCanonical(t *testing.T) {
 		t.Errorf("details event_type taşımalı: %q", wr[0].Event.Details)
 	}
 }
+
+// TestTenantDeviceIDNamespacesPerTenant: aynı kaynak adı iki farklı kiracıda AYRI cihaz
+// kimliğine eşlenir (Z3-01); varsayılan/boş kiracı eski kimliği korur; çıktı geçerli UUID.
+func TestTenantDeviceIDNamespacesPerTenant(t *testing.T) {
+	base := SourceUUID("fw1")
+	a := TenantDeviceID("acme", base)
+	b := TenantDeviceID("globex", base)
+	if a == b || a == base || b == base {
+		t.Fatalf("kiracılar arası çakışma: base=%s acme=%s globex=%s", base, a, b)
+	}
+	if TenantDeviceID("acme", base) != a {
+		t.Fatal("türetme kararlı olmalı")
+	}
+	if TenantDeviceID("", base) != base || TenantDeviceID("default", base) != base {
+		t.Fatal("varsayılan/boş kiracı eski kimliği korumalı (süreklilik)")
+	}
+	if TenantDeviceID("acme", SourceUUID("fw2")) == a {
+		t.Fatal("farklı kaynaklar aynı kiracıda ayrı kalmalı")
+	}
+	if len(a) != 36 || a[14] != '5' {
+		t.Fatalf("UUIDv5 biçimi beklenir: %s", a)
+	}
+}

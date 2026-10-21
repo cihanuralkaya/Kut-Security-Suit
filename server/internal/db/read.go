@@ -83,7 +83,7 @@ func (s *Store) ListIncidents(ctx context.Context, limit int, tenantID string) (
 func (s *Store) QueryEvents(ctx context.Context, f adminread.EventFilter) ([]adminread.EventRow, error) {
 	const q = `
 		SELECT id::text, device_id::text, category::text, severity::text, message, occurred_at, created_at,
-		       COALESCE(details::text, '')
+		       COALESCE(details::text, ''), tenant_id
 		  FROM event_logs
 		 WHERE ($1 = '' OR device_id = NULLIF($1,'')::uuid)
 		   AND ($2 = '' OR severity = $2::severity)
@@ -110,7 +110,7 @@ func (s *Store) QueryEvents(ctx context.Context, f adminread.EventFilter) ([]adm
 	for rows.Next() {
 		var e adminread.EventRow
 		var details string
-		if err := rows.Scan(&e.ID, &e.DeviceID, &e.Category, &e.Severity, &e.Message, &e.OccurredAt, &e.CreatedAt, &details); err != nil {
+		if err := rows.Scan(&e.ID, &e.DeviceID, &e.Category, &e.Severity, &e.Message, &e.OccurredAt, &e.CreatedAt, &details, &e.TenantID); err != nil {
 			return nil, fmt.Errorf("db: olay sorgu okuma: %w", err)
 		}
 		if details != "" {

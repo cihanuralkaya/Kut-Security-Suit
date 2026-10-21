@@ -42,6 +42,11 @@ type Data struct {
 	AlertsRaised       int64          `json:"alerts_raised"`
 	AlertsSuppressed   int64          `json:"alerts_suppressed"`
 	IocHits            int64          `json:"ioc_hits"`
+	// CountersOmitted true ise tehdit-etkinliği sayaçları (Detections/AlertsRaised/...) rapora
+	// KONMAZ: bunlar süreç-geneli (tüm kiracıların) sayaçlardır ve kiracıya bağlı bir rapor onları
+	// taşıyamaz (çapraz-kiracı etkinlik sızıntısı, Z5-15). Sıfır değerler "etkinlik yok" demek
+	// DEĞİLDİR; render edilmezler.
+	CountersOmitted bool `json:"counters_omitted,omitempty"`
 }
 
 var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
@@ -72,14 +77,14 @@ h2{font-size:15px;margin:18px 0 4px;border-bottom:2px solid #f0f2f5;padding-bott
   <div class="kpi"><div class="n">{{.DevicesQuarantined}}</div><div class="l">Karantina</div></div>
   <div class="kpi"><div class="n {{if .NonCompliant}}crit{{end}}">{{.NonCompliant}}</div><div class="l">Uyumsuz (%{{pct .NonCompliant .DevicesTotal}})</div></div>
 </div>
-<h2>Tehdit etkinliği</h2>
+{{if not .CountersOmitted}}<h2>Tehdit etkinliği</h2>
 <div class="grid">
   <div class="kpi"><div class="n">{{.Detections}}</div><div class="l">Tespit</div></div>
   <div class="kpi"><div class="n">{{.AlertsRaised}}</div><div class="l">Alarm</div></div>
   <div class="kpi"><div class="n">{{.AlertsSuppressed}}</div><div class="l">Bastırılan (korelasyon)</div></div>
   <div class="kpi"><div class="n">{{.IocHits}}</div><div class="l">IoC eşleşme</div></div>
 </div>
-{{if .TopIncidents}}<h2>Öne çıkan olaylar (incident)</h2>
+{{end}}{{if .TopIncidents}}<h2>Öne çıkan olaylar (incident)</h2>
 <table><thead><tr><th>Cihaz</th><th>Kural</th><th>Önem</th><th>Tekrar</th><th>Son görülme</th></tr></thead><tbody>
 {{range .TopIncidents}}<tr><td>{{.DeviceID}}</td><td>{{.RuleID}}</td><td>{{.Severity}}</td><td>{{.Count}}</td><td>{{ts .LastSeen}}</td></tr>{{end}}
 </tbody></table>{{end}}
@@ -111,10 +116,13 @@ func RenderCSV(d Data) string {
 		{"cihaz_cevrimdisi", strconv.Itoa(d.DevicesOffline)},
 		{"cihaz_karantina", strconv.Itoa(d.DevicesQuarantined)},
 		{"uyumsuz", strconv.Itoa(d.NonCompliant)},
-		{"tespit", strconv.FormatInt(d.Detections, 10)},
-		{"alarm", strconv.FormatInt(d.AlertsRaised, 10)},
-		{"alarm_bastirilan", strconv.FormatInt(d.AlertsSuppressed, 10)},
-		{"ioc_eslesme", strconv.FormatInt(d.IocHits, 10)},
+	}
+	if !d.CountersOmitted {
+		rows = append(rows,
+			[2]string{"tespit", strconv.FormatInt(d.Detections, 10)},
+			[2]string{"alarm", strconv.FormatInt(d.AlertsRaised, 10)},
+			[2]string{"alarm_bastirilan", strconv.FormatInt(d.AlertsSuppressed, 10)},
+			[2]string{"ioc_eslesme", strconv.FormatInt(d.IocHits, 10)})
 	}
 	for _, r := range rows {
 		b.WriteString(csvField(r[0]) + "," + csvField(r[1]) + "\n")
@@ -141,6 +149,9 @@ func csvField(s string) string {
 
 // Summary, raporun tek satırlık metin özetidir (zamanlanmış görev logu / bildirim).
 func (d Data) Summary() string {
+	if d.CountersOmitted {
+		return fmt.Sprintf("cihaz=%d çevrimiçi=%d uyumsuz=%d", d.DevicesTotal, d.DevicesOnline, d.NonCompliant)
+	}
 	return fmt.Sprintf("cihaz=%d çevrimiçi=%d uyumsuz=%d tespit=%d alarm=%d(bastırılan %d) ioc=%d",
 		d.DevicesTotal, d.DevicesOnline, d.NonCompliant, d.Detections, d.AlertsRaised, d.AlertsSuppressed, d.IocHits)
 }

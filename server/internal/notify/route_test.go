@@ -156,3 +156,18 @@ func TestTenantStamper(t *testing.T) {
 		t.Fatalf("default kiracı damgalanmamalı, %q", c2.got[0].Tenant)
 	}
 }
+
+// Uyarı zaten sunucu-tarafı bir kiracı taşıyorsa (cihaz/olay kiracısı) dağıtım kiracısı onun
+// üzerine YAZILMAZ; kiracısız uyarı dağıtım kiracısını alır.
+func TestTenantStamperKeepsPresetTenant(t *testing.T) {
+	c := &collector{}
+	st := NewTenantStamper("deploy", c)
+	st.Notify(Alert{DeviceID: "d1", Tenant: "acme"})
+	st.Notify(Alert{DeviceID: "d2"})
+	if c.got[0].Tenant != "acme" {
+		t.Fatalf("önceden atanmış kiracı korunmalı: %q", c.got[0].Tenant)
+	}
+	if c.got[1].Tenant != "deploy" {
+		t.Fatalf("kiracısız uyarı dağıtım kiracısını almalı: %q", c.got[1].Tenant)
+	}
+}

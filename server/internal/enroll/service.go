@@ -37,8 +37,11 @@ type Store interface {
 
 	// UpsertEnrollingDevice, cihazı mac blind index'e göre oluşturur veya
 	// bulur ve şifreli alanlarını günceller. Atanmış device_id döner.
-	// KİRACI DUVARI: eşleşen mevcut cihazın kiracısı in.TenantID ile AYNI değilse
-	// ErrTenantMismatch döner ve satır DEĞİŞMEZ (cihaz kiracılar arası taşınmaz).
+	// KİRACI DUVARI: MAC yolunda tekillik KİRACI BAŞINADIR (kanonik kiracı + MAC; W1b-1):
+	// aynı MAC başka kiracıda AYRI bir satırdır ve mevcut satıra DOKUNULMAZ (re-home yok) —
+	// bu yolda ErrTenantMismatch dönmez. ErrTenantMismatch yalnız token'a ÖNCEDEN BAĞLI cihaz
+	// yolunda (PreferredDeviceID) döner: bağlı cihazın kiracısı in.TenantID ile AYNI değilse
+	// satır DEĞİŞMEZ (cihaz kiracılar arası taşınmaz).
 	// Mevcut cihazın güvenlik durumu (QUARANTINE_PENDING/QUARANTINED) yeniden
 	// kayıtla ACTIVE'e düşürülmez; yalnız PENDING_ENROLLMENT/OFFLINE/UNINSTALLED
 	// cihazlar ACTIVE olur.

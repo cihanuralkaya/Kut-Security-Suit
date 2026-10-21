@@ -26,6 +26,14 @@ func opCtx() (context.Context, context.CancelFunc) {
 }
 
 func (t *tokenStore) Create(scope string, ttl time.Duration) (string, string, error) {
+	return t.CreateForTenant(scope, "", ttl)
+}
+
+func (t *tokenStore) CreateForTenant(scope, tenantID string, ttl time.Duration) (string, string, error) {
+	tenantID, err := authtoken.ValidateTenantBinding(scope, tenantID)
+	if err != nil {
+		return "", "", err
+	}
 	secret, err := authtoken.NewSecret()
 	if err != nil {
 		return "", "", err
@@ -39,8 +47,8 @@ func (t *tokenStore) Create(scope string, ttl time.Duration) (string, string, er
 	defer cancel()
 	var id string
 	err = t.pool.QueryRow(ctx,
-		`INSERT INTO tokens (token_hash, scope, expires_at) VALUES ($1, $2, $3) RETURNING id::text`,
-		authtoken.HashSecret(secret), scope, expires).Scan(&id)
+		`INSERT INTO tokens (token_hash, scope, tenant_id, expires_at) VALUES ($1, $2, $3, $4) RETURNING id::text`,
+		authtoken.HashSecret(secret), scope, tenantID, expires).Scan(&id)
 	if err != nil {
 		return "", "", fmt.Errorf("db: token oluşturma: %w", err)
 	}
@@ -48,8 +56,13 @@ func (t *tokenStore) Create(scope string, ttl time.Duration) (string, string, er
 }
 
 func (t *tokenStore) Verify(scope, presented string) bool {
+	tn, ok := t.VerifyTenant(scope, presented)
+	return ok && tn == ""
+}
+
+func (t *tokenStore) VerifyTenant(scope, presented string) (string, bool) {
 	if presented == "" {
-		return false
+		return "", false
 	}
 	ctx, cancel := opCtx()
 	defer cancel()
@@ -60,12 +73,12 @@ func (t *tokenStore) Verify(scope, presented string) bool {
 		UPDATE tokens SET last_used_at = now()
 		 WHERE token_hash = $1 AND scope = $2 AND revoked_at IS NULL
 		   AND (expires_at IS NULL OR expires_at > now())
-	 RETURNING id`
-	var id string
-	if err := t.pool.QueryRow(ctx, q, authtoken.HashSecret(presented), scope).Scan(&id); err != nil {
-		return false
+	 RETURNING tenant_id`
+	var tenantID string
+	if err := t.pool.QueryRow(ctx, q, authtoken.HashSecret(presented), scope).Scan(&tenantID); err != nil {
+		return "", false
 	}
-	return true
+	return tenantID, true
 }
 
 func (t *tokenStore) Revoke(id string) error {
@@ -85,7 +98,7 @@ func (t *tokenStore) Revoke(id string) error {
 func (t *tokenStore) List(scope string) ([]authtoken.Token, error) {
 	ctx, cancel := opCtx()
 	defer cancel()
-	q := `SELECT id::text, scope, created_at, expires_at, revoked_at, last_used_at FROM tokens`
+	q := `SELECT id::text, scope, tenant_id, created_at, expires_at, revoked_at, last_used_at FROM tokens`
 	args := []any{}
 	if scope != "" {
 		q += ` WHERE scope = $1`
@@ -100,7 +113,7 @@ func (t *tokenStore) List(scope string) ([]authtoken.Token, error) {
 	var out []authtoken.Token
 	for rows.Next() {
 		var tok authtoken.Token
-		if err := rows.Scan(&tok.ID, &tok.Scope, &tok.CreatedAt, &tok.ExpiresAt, &tok.RevokedAt, &tok.LastUsedAt); err != nil {
+		if err := rows.Scan(&tok.ID, &tok.Scope, &tok.Tenant, &tok.CreatedAt, &tok.ExpiresAt, &tok.RevokedAt, &tok.LastUsedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, tok)

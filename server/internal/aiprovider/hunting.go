@@ -53,14 +53,29 @@ func (a *HuntingAgent) GenerateHypotheses(ctx context.Context, focusTactic strin
 	}, nil
 }
 
-// ExecuteHunt traverses the entitygraph for anomalous relationships matching the hypothesis.
-func (a *HuntingAgent) ExecuteHunt(ctx context.Context, h HuntHypothesis) ([]HuntFinding, error) {
+// HuntScope, bir av koşusunun kiracı kapsamıdır. Kapsam ZORUNLUDUR (ExecuteHunt'ın zorunlu
+// parametresi): kiracıya bağlı çağıran kendi kiracısıyla kısıtlanır; yalnız platform admini
+// AllTenants ile tüm kiracıları tarayabilir. Kiracı SUNUCU-TARAFI çözülür (istemciden asla).
+type HuntScope struct {
+	Tenant     string // kiracıya bağlı kapsam: yalnız bu kiracının düğümleri
+	AllTenants bool   // true: kiracı sınırını aşar (YALNIZ platform admini); Tenant yok sayılır
+}
+
+// ExecuteHunt traverses the entitygraph for anomalous relationships matching the hypothesis,
+// restricted to scope's tenant (Z5-03). Kapsam kiracıya bağlıysa başka kiracının düğümleri
+// ve onların kenarları (süreç adları, cihaz kimlikleri, uzak IP'ler) ASLA döndürülmez.
+func (a *HuntingAgent) ExecuteHunt(ctx context.Context, h HuntHypothesis, scope HuntScope) ([]HuntFinding, error) {
 	if a.Graph == nil {
 		return nil, fmt.Errorf("graf bulunamadı")
 	}
 
 	var findings []HuntFinding
-	nodes := a.Graph.NodesByKind(h.TargetKind)
+	var nodes []entitygraph.Node
+	if scope.AllTenants {
+		nodes = a.Graph.NodesByKind(h.TargetKind)
+	} else {
+		nodes = a.Graph.NodesByKindFor(h.TargetKind, scope.Tenant)
+	}
 	for _, node := range nodes {
 		edges := a.Graph.OutEdges(node)
 		if len(edges) > 0 {
