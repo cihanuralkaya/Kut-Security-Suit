@@ -25,14 +25,14 @@ func TestCommandAuthorizer_AllowedAndDenied(t *testing.T) {
 	ctx := context.Background()
 
 	// WIPE, kapsamdaki kiracı için açıkça etkin → izin.
-	d, err := ca.Authorize(ctx, commandplane.ActionRequest{Subject: "admin", Action: "wipe", Object: "dev-1"})
+	d, err := ca.Authorize(ctx, commandplane.ActionRequest{Subject: "admin", Action: "WIPE", Object: "dev-1"})
 	if err != nil || !d.Allowed {
 		t.Fatalf("beklenen izin, alındı allowed=%v reason=%q err=%v", d.Allowed, d.Reason, err)
 	}
 
 	// Kapsam dışı kiracı → red (hedef izin verilen scope dışında).
 	caOther := NewCommandAuthorizer(allowEngine(), "t2")
-	d2, _ := caOther.Authorize(ctx, commandplane.ActionRequest{Subject: "admin", Action: "wipe", Object: "dev-1"})
+	d2, _ := caOther.Authorize(ctx, commandplane.ActionRequest{Subject: "admin", Action: "WIPE", Object: "dev-1"})
 	if d2.Allowed {
 		t.Errorf("kapsam dışı kiracı için komut reddedilmeliydi")
 	}
@@ -40,7 +40,7 @@ func TestCommandAuthorizer_AllowedAndDenied(t *testing.T) {
 
 func TestCommandAuthorizer_NilEngineFailsClosed(t *testing.T) {
 	ca := NewCommandAuthorizer(nil, "t1")
-	d, _ := ca.Authorize(context.Background(), commandplane.ActionRequest{Action: "wipe", Object: "dev-1"})
+	d, _ := ca.Authorize(context.Background(), commandplane.ActionRequest{Action: "WIPE", Object: "dev-1"})
 	if d.Allowed {
 		t.Errorf("motor yokken komut fail-closed reddedilmeli")
 	}

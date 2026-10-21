@@ -65,6 +65,8 @@ func NewCommandAuthorizerMode(eng *scope.Engine, tenant string, enforce bool) *C
 // KULLANILMAZ (Z2-02: UNQUARANTINE/COLLECT_FILE/RUN_SIGNED_SCRIPT eskiden bilinmeyen
 // aksiyon sayılıp Destructive'e düşerek hep reddediliyordu).
 //
+//   - Ad TAM eşleşir (kanonik BÜYÜK harf): küçük harf, boşluklu ya da başka biçim "bilinmeyen"
+//     sayılır; commandplane.Validate ile aynı kural (eskiden burada kırpılıp büyütülüyordu).
 //   - Tabloda olmayan tip → HER ZAMAN red (fail-closed; scope motoruna hiç sorulmaz).
 //   - ScopeExempt tip (UNQUARANTINE, COLLECT_DIAGNOSTICS) → izin; admin.guardScope ile
 //     aynı kural: kısıt kaldıran/salt-okuma tipler scope DIŞLAMASINA takılmaz. RBAC ve
@@ -73,7 +75,7 @@ func NewCommandAuthorizerMode(eng *scope.Engine, tenant string, enforce bool) *C
 //     ENFORCE'ta red, AUDIT'te izin (would-deny sayılır). WIPE/UNINSTALL "wipe" olarak
 //     Destructive kalır (açık ROE ister).
 func (c *CommandAuthorizer) Authorize(ctx context.Context, req commandplane.ActionRequest) (commandplane.AuthorizationDecision, error) {
-	spec, ok := cmdenvelope.Lookup(strings.ToUpper(strings.TrimSpace(req.Action)))
+	spec, ok := cmdenvelope.Lookup(req.Action)
 	if !ok {
 		return commandplane.AuthorizationDecision{Allowed: false, Reason: fmt.Sprintf("bilinmeyen komut tipi %q — reddedildi (fail-closed)", req.Action)}, nil
 	}
