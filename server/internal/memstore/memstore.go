@@ -1047,6 +1047,7 @@ func (s *Store) QueryEvents(_ context.Context, f adminread.EventFilter) ([]admin
 		out = append(out, adminread.EventRow{
 			ID: e.id, DeviceID: e.deviceID, Category: e.category, Severity: e.severity,
 			Message: e.message, OccurredAt: e.occurredAt, CreatedAt: e.createdAt, Details: details,
+			TenantID: e.tenant,
 		})
 		if f.Limit > 0 && len(out) >= f.Limit {
 			break

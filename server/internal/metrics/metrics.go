@@ -51,6 +51,23 @@ var (
 	verifyVerified   atomic.Int64 // remediation-doğrulama: sinyal doğrulanabilir biçimde kalktı (VERIFIED)
 	verifyRegressed  atomic.Int64 // remediation-doğrulama: sinyal hâlâ tetikliyor (REGRESSED)
 	verifyInconcl    atomic.Int64 // remediation-doğrulama: değerlendirilemedi — telemetri yok (INCONCLUSIVE)
+
+	// Sınırlı bellek-içi durum (W1b-2, Z3-03/Z5-18): ajan/ingest kaynaklı graf + sekans modeli
+	// + agentsec grafı SERT tavanlıdır; tavan yüzünden reddedilen (dropped) ve LRU/TTL ile
+	// atılan (evicted/pruned) girdiler burada sayılır. Artış = bir kiracı/cihaz tavana dayandı.
+	graphDropped      atomic.Int64 // entitygraph: tavan/uzunluk/çapraz-kiracı nedeniyle reddedilen gözlem
+	graphEvicted      atomic.Int64 // entitygraph: kiracı tavanı aşılınca LRU ile atılan kenar
+	graphPruned       atomic.Int64 // entitygraph: TTL süpürmesiyle atılan kenar
+	graphEdges        atomic.Int64 // gauge: toplam kenar
+	graphNodes        atomic.Int64 // gauge: toplam düğüm
+	seqDropped        atomic.Int64 // sekans modeli: tavan/uzunluk nedeniyle öğrenilmeyen geçiş
+	seqEvicted        atomic.Int64 // sekans modeli: LRU ile atılan kaynak token
+	seqPruned         atomic.Int64 // sekans modeli: TTL süpürmesiyle atılan kaynak token
+	seqSources        atomic.Int64 // gauge: toplam kaynak token
+	agentSecDropped   atomic.Int64 // aisec: tavan/uzunluk nedeniyle reddedilen düğüm/kenar
+	analyzerSkipped   atomic.Int64 // arka plan analizörü bulgusu: kiracı çözülemedi → atlandı (fail-closed)
+	incidentCaseSkip  atomic.Int64 // otomatik vaka açılışı: kiracı çözülemedi → atlandı (fail-closed)
+	incidentCaseError atomic.Int64 // otomatik vaka açılışı: depo hatası (sessizce yutulmaz)
 )
 
 // certExpiryDays, CA+sunucu sertifikalarının EN AZ kalan günü (gauge). Sentinel 9999
@@ -92,6 +109,10 @@ func Counters() map[string]int64 {
 		"chain_fired":         chainFired.Load(),
 		"lateral_movement":    lateralMovement.Load(),
 		"dns_tunnel":          dnsTunnel.Load(),
+		"graph_dropped":       graphDropped.Load(),
+		"graph_evicted":       graphEvicted.Load(),
+		"seqmodel_dropped":    seqDropped.Load(),
+		"analyzer_skipped":    analyzerSkipped.Load(),
 		"brute_force":         bruteForce.Load(),
 		"brute_force_win":     bruteForceWin.Load(),
 		"saved_search_hits":   savedSearchHits.Load(),
@@ -141,6 +162,36 @@ func IncLateralMovement() { lateralMovement.Add(1) }
 
 // IncDNSTunnel, DNS tünelleme tespit sayacını artırır.
 func IncDNSTunnel() { dnsTunnel.Add(1) }
+
+// SetGraphStats, varlık grafının kümülatif sayaçlarını ve anlık boyutunu yayınlar (mutlak
+// değerler; graf kendi sayaçlarını tutar, app periyodik eşitler).
+func SetGraphStats(dropped, evicted, pruned, edges, nodes int64) {
+	graphDropped.Store(dropped)
+	graphEvicted.Store(evicted)
+	graphPruned.Store(pruned)
+	graphEdges.Store(edges)
+	graphNodes.Store(nodes)
+}
+
+// SetSeqModelStats, sekans modelinin kümülatif sayaçlarını ve anlık boyutunu yayınlar.
+func SetSeqModelStats(dropped, evicted, pruned, sources int64) {
+	seqDropped.Store(dropped)
+	seqEvicted.Store(evicted)
+	seqPruned.Store(pruned)
+	seqSources.Store(sources)
+}
+
+// AddAgentSecDropped, aisec grafının tavan nedeniyle reddettiği düğüm/kenar sayısını artırır.
+func AddAgentSecDropped(n int) { agentSecDropped.Add(int64(n)) }
+
+// IncAnalyzerSkipped, kiracısı çözülemediği için atlanan arka plan analizörü bulgusunu sayar.
+func IncAnalyzerSkipped() { analyzerSkipped.Add(1) }
+
+// IncIncidentCaseSkipped, kiracı çözülemediği için açılmayan otomatik vakayı sayar.
+func IncIncidentCaseSkipped() { incidentCaseSkip.Add(1) }
+
+// IncIncidentCaseError, otomatik vaka açılışındaki depo hatasını sayar.
+func IncIncidentCaseError() { incidentCaseError.Add(1) }
 
 // IncBruteForce, kaba-kuvvet / parola-püskürtme tespit sayacını artırır.
 func IncBruteForce() { bruteForce.Add(1) }
@@ -298,6 +349,40 @@ func Write(w io.Writer, s Snapshot) {
 	fmt.Fprintf(w, "# HELP kut_dns_tunnel_total DNS tünelleme tespitleri.\n")
 	fmt.Fprintf(w, "# TYPE kut_dns_tunnel_total counter\n")
 	fmt.Fprintf(w, "kut_dns_tunnel_total %d\n", dnsTunnel.Load())
+
+	fmt.Fprintf(w, "# HELP kut_graph_dropped_total Varlık grafı: tavan/uzunluk/çapraz-kiracı nedeniyle reddedilen gözlemler.\n")
+	fmt.Fprintf(w, "# TYPE kut_graph_dropped_total counter\n")
+	fmt.Fprintf(w, "kut_graph_dropped_total %d\n", graphDropped.Load())
+	fmt.Fprintf(w, "# HELP kut_graph_evicted_total Varlık grafı: kiracı tavanı aşılınca LRU ile atılan kenarlar.\n")
+	fmt.Fprintf(w, "# TYPE kut_graph_evicted_total counter\n")
+	fmt.Fprintf(w, "kut_graph_evicted_total %d\n", graphEvicted.Load())
+	fmt.Fprintf(w, "# HELP kut_graph_pruned_total Varlık grafı: TTL süpürmesiyle atılan kenarlar.\n")
+	fmt.Fprintf(w, "# TYPE kut_graph_pruned_total counter\n")
+	fmt.Fprintf(w, "kut_graph_pruned_total %d\n", graphPruned.Load())
+	fmt.Fprintf(w, "# HELP kut_graph_size Varlık grafı boyutu (kenar/düğüm).\n")
+	fmt.Fprintf(w, "# TYPE kut_graph_size gauge\n")
+	fmt.Fprintf(w, "kut_graph_size{kind=\"edges\"} %d\n", graphEdges.Load())
+	fmt.Fprintf(w, "kut_graph_size{kind=\"nodes\"} %d\n", graphNodes.Load())
+	fmt.Fprintf(w, "# HELP kut_seqmodel_dropped_total Sekans modeli: tavan/uzunluk nedeniyle öğrenilmeyen geçişler.\n")
+	fmt.Fprintf(w, "# TYPE kut_seqmodel_dropped_total counter\n")
+	fmt.Fprintf(w, "kut_seqmodel_dropped_total %d\n", seqDropped.Load())
+	fmt.Fprintf(w, "# HELP kut_seqmodel_evicted_total Sekans modeli: LRU/TTL ile atılan kaynak tokenlar.\n")
+	fmt.Fprintf(w, "# TYPE kut_seqmodel_evicted_total counter\n")
+	fmt.Fprintf(w, "kut_seqmodel_evicted_total{reason=\"lru\"} %d\n", seqEvicted.Load())
+	fmt.Fprintf(w, "kut_seqmodel_evicted_total{reason=\"ttl\"} %d\n", seqPruned.Load())
+	fmt.Fprintf(w, "# HELP kut_seqmodel_sources Sekans modeli kaynak token sayısı.\n")
+	fmt.Fprintf(w, "# TYPE kut_seqmodel_sources gauge\n")
+	fmt.Fprintf(w, "kut_seqmodel_sources %d\n", seqSources.Load())
+	fmt.Fprintf(w, "# HELP kut_agentsec_dropped_total Agent causality grafı: tavan/uzunluk nedeniyle reddedilen düğüm/kenar.\n")
+	fmt.Fprintf(w, "# TYPE kut_agentsec_dropped_total counter\n")
+	fmt.Fprintf(w, "kut_agentsec_dropped_total %d\n", agentSecDropped.Load())
+	fmt.Fprintf(w, "# HELP kut_analyzer_skipped_total Kiracısı çözülemediği için atlanan arka plan analizörü bulguları (fail-closed).\n")
+	fmt.Fprintf(w, "# TYPE kut_analyzer_skipped_total counter\n")
+	fmt.Fprintf(w, "kut_analyzer_skipped_total %d\n", analyzerSkipped.Load())
+	fmt.Fprintf(w, "# HELP kut_incident_case_total Otomatik vaka açılışı: atlanan (kiracı çözülemedi) ve hatalı.\n")
+	fmt.Fprintf(w, "# TYPE kut_incident_case_total counter\n")
+	fmt.Fprintf(w, "kut_incident_case_total{result=\"skipped\"} %d\n", incidentCaseSkip.Load())
+	fmt.Fprintf(w, "kut_incident_case_total{result=\"error\"} %d\n", incidentCaseError.Load())
 
 	fmt.Fprintf(w, "# HELP kut_brute_force_total Kaba-kuvvet / parola-püskürtme tespitleri.\n")
 	fmt.Fprintf(w, "# TYPE kut_brute_force_total counter\n")

@@ -43,6 +43,10 @@ type EventRow struct {
 	Message    string
 	OccurredAt time.Time
 	CreatedAt  time.Time
+	// TenantID, olayın SUNUCU-TARAFI damgalı kiracısıdır (depodan). Yalnız sunucu içi
+	// tüketiciler içindir (arka plan analizörleri bulguyu bu kiracıya atfeder); DTO'da/API'de
+	// görünmez. Boş = legacy/kiracısız satır.
+	TenantID string
 	// Details, olayın yapılandırılmış ek verisidir (ham JSON). Ayrıntı yoksa nil.
 	Details json.RawMessage
 }
@@ -273,6 +277,8 @@ type EventDTO struct {
 	OccurredAt time.Time       `json:"occurred_at"`
 	CreatedAt  time.Time       `json:"created_at"`
 	Details    json.RawMessage `json:"details,omitempty"`
+	// TenantID yalnız sunucu içi tüketim içindir (analizör kiracı atfı); JSON'a ASLA yazılmaz.
+	TenantID string `json:"-"`
 	// Kanonik olay meta verisi (§5). SchemaVersion daima; diğerleri details'ten
 	// yükseltilir (varsa) — 1.0 tüketicileri geriye uyumlu (omitempty).
 	SchemaVersion string  `json:"schema_version,omitempty"`
@@ -508,6 +514,7 @@ func newEventDTO(r EventRow) EventDTO {
 		OccurredAt:    r.OccurredAt,
 		CreatedAt:     r.CreatedAt,
 		Details:       r.Details,
+		TenantID:      r.TenantID,
 		SchemaVersion: model.EventSchemaVersion,
 	}
 	promoteCanonical(&dto)

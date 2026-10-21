@@ -405,7 +405,13 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 	if err != nil {
 		return nil, status.Error(codes.Internal, "heartbeat kaydedilemedi")
 	}
-	h.publishDevice(h.tenant, deviceID) // konsola canlı: cihaz görüldü (kiracı-atıflı)
+	// Konsola canlı: cihaz görüldü. Bildirim CİHAZIN kiracısına atfedilir (Z3-06) — sunucu
+	// varsayılan kiracısına DEĞİL: aksi halde B kiracısının cihaz canlılığı "default" abonelerine
+	// sızar ve B'nin kendi konsolu bildirimi hiç almaz. Kiracı çözülemezse (hata ya da zorlama
+	// açıkken kiracısız cihaz) bildirim YAYINLANMAZ (fail-closed); heartbeat'i etkilemez.
+	if nt, ok := h.noticeTenant(ctx, deviceID); ok {
+		h.publishDevice(nt, deviceID)
+	}
 
 	// Öz-tasdik (#4): ajanın ikili hash'i sürüm değişmeden değiştiyse (takas/yama)
 	// KRİTİK kurcalama olayı üret. Best-effort; heartbeat'i kesmez.
@@ -462,6 +468,23 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 		PolicyUpdateAvailable: serverPolicyVersion != "" && serverPolicyVersion != req.GetCurrentPolicyVersion(),
 		PendingCommands:       cmds,
 	}, nil
+}
+
+// noticeTenant, bir cihaz bildiriminin (SSE) atfedileceği kiracıyı SUNUCU-TARAFI çözer:
+// cihazın kayıtlı kiracısı; kayıtsız/legacy cihazda sunucu varsayılanı — YALNIZ zorlama
+// kapalıyken. Arama hatası ya da zorlama açıkken kiracısız cihaz → ok=false (yayınlama).
+func (h *AgentHandler) noticeTenant(ctx context.Context, deviceID string) (string, bool) {
+	t, err := h.devices.TenantForDevice(ctx, deviceID)
+	if err != nil {
+		return "", false
+	}
+	if t != "" {
+		return t, true
+	}
+	if h.tenantEnforce {
+		return "", false
+	}
+	return h.tenant, true
 }
 
 // commandTypeName, proto komut tipini kuyruk-türü string'ine çevirir (EnqueueCommand
@@ -542,7 +565,7 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 				if err := h.responder.AutoQuarantine(stream.Context(), deviceID, reason); err == nil {
 					autoTriggered = true
 					metrics.IncAutoQuarantine()
-					h.publishDevice(h.tenant, deviceID) // konsol durumu tazelesin
+					h.publishDevice(effTenant, deviceID) // konsol durumu tazelesin (cihazın kiracısına atıflı, Z3-06)
 				}
 			}
 		}
