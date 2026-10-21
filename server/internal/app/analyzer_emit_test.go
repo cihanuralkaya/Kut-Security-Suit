@@ -224,3 +224,26 @@ func TestTenantHintsFromEvents(t *testing.T) {
 		t.Fatal("kiracısız olay ipucu üretmemeli")
 	}
 }
+
+// Kalıcı fail-closed cihaz her turda yeniden denenir: sayaç her atlamada artar ama günlük
+// satırı cihaz başına skipLogEvery'de en fazla bir kez yazılır.
+func TestAnalyzerSkipLogRateLimited(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	fe := &findingEmitter{nowFn: func() time.Time { return now }}
+	if !fe.shouldLogSkip("dev-a") {
+		t.Fatal("ilk atlama günlüğe yazılmalı")
+	}
+	for i := 0; i < 100; i++ {
+		now = now.Add(time.Second)
+		if fe.shouldLogSkip("dev-a") {
+			t.Fatal("aralık içinde tekrar günlüklenmemeli")
+		}
+	}
+	if !fe.shouldLogSkip("dev-b") {
+		t.Fatal("başka cihaz bağımsız günlüklenmeli")
+	}
+	now = now.Add(skipLogEvery)
+	if !fe.shouldLogSkip("dev-a") {
+		t.Fatal("aralık sonrası yeniden günlüklenmeli")
+	}
+}

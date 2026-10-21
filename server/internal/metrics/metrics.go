@@ -56,6 +56,7 @@ var (
 	// + agentsec grafı SERT tavanlıdır; tavan yüzünden reddedilen (dropped) ve LRU/TTL ile
 	// atılan (evicted/pruned) girdiler burada sayılır. Artış = bir kiracı/cihaz tavana dayandı.
 	graphDropped      atomic.Int64 // entitygraph: tavan/uzunluk/çapraz-kiracı nedeniyle reddedilen gözlem
+	graphDevDropped   atomic.Int64 // entitygraph: cihaz bütçesi dolduğu için düşen yeni kenar (graph_dropped alt kümesi)
 	graphEvicted      atomic.Int64 // entitygraph: kiracı tavanı aşılınca LRU ile atılan kenar
 	graphPruned       atomic.Int64 // entitygraph: TTL süpürmesiyle atılan kenar
 	graphFeedDropped  atomic.Int64 // besleyici: aşırı uzun dizge / derin zincir nedeniyle grafa girmeyen gözlem
@@ -173,6 +174,10 @@ func SetGraphStats(dropped, evicted, pruned, edges, nodes int64) {
 	graphEdges.Store(edges)
 	graphNodes.Store(nodes)
 }
+
+// SetGraphDeviceDropped, cihaz başına kenar bütçesi dolduğu için düşen yeni kenarların kümülatif
+// sayısını yayınlar (mutlak değer; tek bir ajanın graf selinin göstergesi).
+func SetGraphDeviceDropped(n int64) { graphDevDropped.Store(n) }
 
 // SetSeqModelStats, sekans modelinin kümülatif sayaçlarını ve anlık boyutunu yayınlar.
 func SetSeqModelStats(dropped, evicted, pruned, sources int64) {
@@ -357,6 +362,9 @@ func Write(w io.Writer, s Snapshot) {
 	fmt.Fprintf(w, "# HELP kut_graph_dropped_total Varlık grafı: tavan/uzunluk/çapraz-kiracı nedeniyle reddedilen gözlemler.\n")
 	fmt.Fprintf(w, "# TYPE kut_graph_dropped_total counter\n")
 	fmt.Fprintf(w, "kut_graph_dropped_total %d\n", graphDropped.Load())
+	fmt.Fprintf(w, "# HELP kut_graph_device_dropped_total Varlık grafı: cihaz başına kenar bütçesi dolduğu için düşen yeni kenarlar (ajan sel göstergesi).\n")
+	fmt.Fprintf(w, "# TYPE kut_graph_device_dropped_total counter\n")
+	fmt.Fprintf(w, "kut_graph_device_dropped_total %d\n", graphDevDropped.Load())
 	fmt.Fprintf(w, "# HELP kut_graph_feed_dropped_total Graf besleyicisi: aşırı uzun dizge / derin parent_chain nedeniyle atlanan gözlemler.\n")
 	fmt.Fprintf(w, "# TYPE kut_graph_feed_dropped_total counter\n")
 	fmt.Fprintf(w, "kut_graph_feed_dropped_total %d\n", graphFeedDropped.Load())

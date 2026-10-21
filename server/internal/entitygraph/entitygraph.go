@@ -68,7 +68,12 @@ type Edge struct {
 	// zamanıdır ve ileri tarihli olay kenarı kalıcı sabitleyebilirdi) ve kiracı LRU listesindeki yeri.
 	seen time.Time
 	elem *list.Element
+	// owner, kenarı kabul ettiren cihazdır (cihaz başına bütçe için; boş = atfedilmemiş).
+	owner string
 }
+
+// ownerKey, cihaz başına bütçenin anahtarıdır (kiracı + cihaz kimliği).
+type ownerKey struct{ tenant, id string }
 
 type edgeKey struct {
 	to  Node
@@ -76,18 +81,26 @@ type edgeKey struct {
 }
 
 // Limits, grafın SERT bellek tavanlarıdır (Z3-03 / Z5-18). Girdi (cihaz-kontrollü alan adı,
-// IP, süreç adı) sınırsız çeşitlilikte olabileceğinden graf büyümesi kiracı BAŞINA tavanlıdır:
-// bir kiracı/cihaz yalnız KENDİ kovasını doldurur ve eskiden-yeniye (LRU) kenar tahliyesi
-// yalnız o kiracının kenarlarını etkiler. Sıfır/negatif alan varsayılanı alır.
+// IP, süreç adı) sınırsız çeşitlilikte olabileceğinden graf büyümesi iki katmanda tavanlıdır:
+//   - kiracı BAŞINA kenar/düğüm tavanı: eskiden-yeniye (LRU) tahliye yalnız o kiracının
+//     kenarlarını etkiler;
+//   - cihaz BAŞINA kenar bütçesi (MaxEdgesPerDevice): ele geçirilmiş tek bir ajan benzersiz
+//     alan adı/IP seliyle kiracı tavanını doldurup diğer cihazların (ve kendi ESKİ C2)
+//     kenarlarını LRU ile tahliye ettiremez. Bütçesi dolan cihazın YENİ kenarları hiçbir şey
+//     tahliye edilmeden düşürülür ve sayılır (Stats.DeviceDropped); mevcut kenarlar TTL
+//     süpürmesine (pencere) kadar korunur.
+//
+// Sıfır/negatif alan varsayılanı alır.
 type Limits struct {
 	MaxEdgesPerTenant int // kiracı başına kenar tavanı
 	MaxNodesPerTenant int // kiracı başına (en az bir kenara bağlı) düğüm tavanı
+	MaxEdgesPerDevice int // cihaz başına (TTL penceresi içinde) azami benzersiz kenar; aşan YENİ kenar düşer
 	MaxIDLen          int // düğüm kimliği azami uzunluğu (bayt); aşan gözlem reddedilir
 }
 
 // DefaultLimits, makul üretim varsayılanlarını döner.
 func DefaultLimits() Limits {
-	return Limits{MaxEdgesPerTenant: 100_000, MaxNodesPerTenant: 100_000, MaxIDLen: 256}
+	return Limits{MaxEdgesPerTenant: 100_000, MaxNodesPerTenant: 100_000, MaxEdgesPerDevice: 10_000, MaxIDLen: 256}
 }
 
 func (l Limits) normalized() Limits {
@@ -98,6 +111,9 @@ func (l Limits) normalized() Limits {
 	if l.MaxNodesPerTenant <= 0 {
 		l.MaxNodesPerTenant = d.MaxNodesPerTenant
 	}
+	if l.MaxEdgesPerDevice <= 0 {
+		l.MaxEdgesPerDevice = d.MaxEdgesPerDevice
+	}
 	if l.MaxIDLen <= 0 {
 		l.MaxIDLen = d.MaxIDLen
 	}
@@ -106,11 +122,12 @@ func (l Limits) normalized() Limits {
 
 // Stats, grafın anlık boyutu ve kümülatif sayaçlarıdır (/metrics için).
 type Stats struct {
-	Edges   int
-	Nodes   int
-	Dropped int64 // tavan/uzunluk/çapraz-kiracı nedeniyle reddedilen gözlemler
-	Evicted int64 // kiracı tavanı aşılınca LRU ile atılan kenarlar
-	Pruned  int64 // TTL süpürmesiyle atılan kenarlar
+	Edges         int
+	Nodes         int
+	Dropped       int64 // tavan/uzunluk/çapraz-kiracı/cihaz-bütçesi nedeniyle reddedilen gözlemler
+	DeviceDropped int64 // Dropped'ın alt kümesi: cihaz bütçesi dolduğu için düşen YENİ kenarlar (sel göstergesi)
+	Evicted       int64 // kiracı tavanı aşılınca LRU ile atılan kenarlar
+	Pruned        int64 // TTL süpürmesiyle atılan kenarlar
 }
 
 // maxEvictPerObserve, tek bir yeni-kenar kabulünde yapılabilecek azami LRU tahliyesidir
@@ -127,24 +144,26 @@ type Graph struct {
 	now  func() time.Time
 	size int
 
-	lim      Limits
-	lru      map[string]*list.List // kiracı → kenar listesi (ön = en son gözlenen)
-	deg      map[Node]int          // düğüme bağlı kenar sayısı (giren+çıkan)
-	tenNodes map[string]int        // kiracı → düğüm sayısı (deg>0)
+	lim        Limits
+	lru        map[string]*list.List // kiracı → kenar listesi (ön = en son gözlenen)
+	deg        map[Node]int          // düğüme bağlı kenar sayısı (giren+çıkan)
+	tenNodes   map[string]int        // kiracı → düğüm sayısı (deg>0)
+	ownerEdges map[ownerKey]int      // (kiracı,cihaz) → bu cihazın kabul ettirdiği canlı kenar sayısı
 
-	dropped, evicted, pruned int64
+	dropped, evicted, pruned, devDropped int64
 }
 
 // New, boş bir graf oluşturur (varsayılan Limits ile).
 func New() *Graph {
 	return &Graph{
-		out:      map[Node]map[edgeKey]*Edge{},
-		in:       map[Node]map[edgeKey]*Edge{},
-		now:      time.Now,
-		lim:      DefaultLimits(),
-		lru:      map[string]*list.List{},
-		deg:      map[Node]int{},
-		tenNodes: map[string]int{},
+		out:        map[Node]map[edgeKey]*Edge{},
+		in:         map[Node]map[edgeKey]*Edge{},
+		now:        time.Now,
+		lim:        DefaultLimits(),
+		lru:        map[string]*list.List{},
+		deg:        map[Node]int{},
+		tenNodes:   map[string]int{},
+		ownerEdges: map[ownerKey]int{},
 	}
 }
 
@@ -160,7 +179,7 @@ func (g *Graph) SetLimits(l Limits) {
 func (g *Graph) Stats() Stats {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return Stats{Edges: g.size, Nodes: len(g.deg), Dropped: g.dropped, Evicted: g.evicted, Pruned: g.pruned}
+	return Stats{Edges: g.size, Nodes: len(g.deg), Dropped: g.dropped, Evicted: g.evicted, Pruned: g.pruned, DeviceDropped: g.devDropped}
 }
 
 // Observe, from→to (rel) ilişkisini kaydeder veya var olanı günceller (LastSeen,
@@ -171,6 +190,19 @@ func (g *Graph) Stats() Stats {
 // uzun kimlik ya da tavan yüzünden yer açılamayan kenar REDDEDİLİR (sayılır). Yeni kenar
 // kiracı tavanını aşacaksa o kiracının en eski-gözlenen kenarı (LRU) tahliye edilir.
 func (g *Graph) Observe(from, to Node, rel Relation, ts time.Time) {
+	owner := ""
+	if from.Kind == Device {
+		owner = from.ID // cihaz-kaynaklı kenar kendi cihazına atfedilir
+	}
+	g.ObserveBy(owner, from, to, rel, ts)
+}
+
+// ObserveBy, Observe gibidir; ek olarak YENİ kenarı owner cihazına atfeder ve cihaz başına
+// bütçeyi (Limits.MaxEdgesPerDevice) uygular: bütçesi dolu cihazın yeni kenarı hiçbir şey
+// tahliye edilmeden düşürülür ve sayılır (başka cihazların ve cihazın kendi önceki
+// kenarlarının sel ile atılması engellenir). owner boşsa yalnız kiracı tavanları geçerlidir.
+// Mevcut bir kenarın tekrar gözlemi sahibini değiştirmez ve bütçe harcamaz.
+func (g *Graph) ObserveBy(owner string, from, to Node, rel Relation, ts time.Time) {
 	if ts.IsZero() {
 		ts = g.now()
 	}
@@ -184,6 +216,11 @@ func (g *Graph) Observe(from, to Node, rel Relation, ts time.Time) {
 	fk := edgeKey{to: to, rel: rel}
 	e := g.out[from][fk]
 	if e == nil {
+		if owner != "" && g.ownerEdges[ownerKey{from.Tenant, owner}] >= g.lim.MaxEdgesPerDevice {
+			g.dropped++
+			g.devDropped++
+			return
+		}
 		if !g.admit(from, to) {
 			g.dropped++
 			return
@@ -191,7 +228,7 @@ func (g *Graph) Observe(from, to Node, rel Relation, ts time.Time) {
 		if g.out[from] == nil {
 			g.out[from] = map[edgeKey]*Edge{}
 		}
-		e = &Edge{From: from, To: to, Rel: rel, FirstSeen: ts, LastSeen: ts, Count: 0}
+		e = &Edge{From: from, To: to, Rel: rel, FirstSeen: ts, LastSeen: ts, Count: 0, owner: owner}
 		g.out[from][fk] = e
 		bk := edgeKey{to: from, rel: rel}
 		if g.in[to] == nil {
@@ -202,6 +239,9 @@ func (g *Graph) Observe(from, to Node, rel Relation, ts time.Time) {
 		g.addDeg(from)
 		g.addDeg(to)
 		e.elem = g.tenantList(from.Tenant).PushFront(e)
+		if owner != "" {
+			g.ownerEdges[ownerKey{from.Tenant, owner}]++
+		}
 	} else {
 		g.tenantList(from.Tenant).MoveToFront(e.elem)
 	}
@@ -293,6 +333,12 @@ func (g *Graph) removeEdge(e *Edge) {
 			}
 		}
 		e.elem = nil
+	}
+	if e.owner != "" {
+		k := ownerKey{e.From.Tenant, e.owner}
+		if g.ownerEdges[k]--; g.ownerEdges[k] <= 0 {
+			delete(g.ownerEdges, k)
+		}
 	}
 	g.size--
 	g.decDeg(e.From)

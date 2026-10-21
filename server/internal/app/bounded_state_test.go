@@ -47,3 +47,15 @@ func TestSweepBoundedStateAndMetrics(t *testing.T) {
 	}
 	publishBoundedMetrics(g, sm)
 }
+
+// KUT_GRAPH_TTL: ayarsız → varsayılan; "0" → süpürme KAPALI (0); geçersiz/negatif → varsayılan.
+func TestGraphTTLFromEnv(t *testing.T) {
+	def := 720 * time.Hour
+	cases := map[string]time.Duration{"": def, "0": 0, "0s": 0, "48h": 48 * time.Hour, "-5h": def, "junk": def}
+	for in, want := range cases {
+		t.Setenv("KUT_GRAPH_TTL", in)
+		if got := graphTTLFromEnv(def); got != want {
+			t.Errorf("KUT_GRAPH_TTL=%q → %v, want %v", in, got, want)
+		}
+	}
+}

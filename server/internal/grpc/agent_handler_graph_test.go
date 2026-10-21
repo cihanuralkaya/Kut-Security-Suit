@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -155,5 +156,24 @@ func TestObserveGraphSeqModelIsPerTenant(t *testing.T) {
 	}
 	if s := m.Score("globex", chain); s.Score < 80 {
 		t.Fatalf("globex acme'nin taban çizgisinden etkilenmemeli: %v", s.Score)
+	}
+}
+
+// S4 (kablolama): graf besleyicisi kenarları GÖNDEREN cihaza atfeder; bütçesi dolan cihazın
+// (süreç soyağacı dahil) yeni kenarları düşer, başka cihazın kenarları etkilenmez.
+func TestObserveGraphChargesDeviceBudget(t *testing.T) {
+	g := entitygraph.New()
+	g.SetLimits(entitygraph.Limits{MaxEdgesPerDevice: 5})
+	h := &AgentHandler{graph: g}
+	for i := 0; i < 50; i++ {
+		h.observeGraph("bad", model.Event{Details: `{"domain":"junk` + strconv.Itoa(i) + `.evil"}`, OccurredAt: time.Now()})
+		h.observeGraph("bad", model.Event{Details: `{"process":"p` + strconv.Itoa(i) + `.exe","parent_chain":["x` + strconv.Itoa(i) + `.exe"]}`, OccurredAt: time.Now()})
+	}
+	h.observeGraph("good", model.Event{Details: `{"domain":"fine.example"}`, OccurredAt: time.Now()})
+	if st := g.Stats(); st.Edges != 5+1 || st.DeviceDropped != 95 || st.Evicted != 0 {
+		t.Fatalf("bad cihazı bütçesini aşmamalı, good etkilenmemeli: %+v", st)
+	}
+	if got := g.Targets(entitygraph.Node{Kind: entitygraph.Device, ID: "good"}, entitygraph.Resolved); len(got) != 1 {
+		t.Fatalf("good cihazın kenarı korunmalı: %+v", got)
 	}
 }

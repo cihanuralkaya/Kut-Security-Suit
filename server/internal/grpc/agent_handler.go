@@ -226,10 +226,10 @@ func (h *AgentHandler) observeGraph(deviceID string, e model.Event) {
 		// sınırını geçmez ve pivot/anomali yalnız çağıranın kiracısını görür.
 		dev := entitygraph.Node{Kind: entitygraph.Device, ID: deviceID, Tenant: e.TenantID}
 		if s, ok := d["domain"].(string); ok && graphStr(s) {
-			h.graph.Observe(dev, entitygraph.Node{Kind: entitygraph.Domain, ID: s, Tenant: e.TenantID}, entitygraph.Resolved, e.OccurredAt)
+			h.graph.ObserveBy(deviceID, dev, entitygraph.Node{Kind: entitygraph.Domain, ID: s, Tenant: e.TenantID}, entitygraph.Resolved, e.OccurredAt)
 		}
 		if s, ok := d["remote_ip"].(string); ok && graphStr(s) {
-			h.graph.Observe(dev, entitygraph.Node{Kind: entitygraph.IP, ID: s, Tenant: e.TenantID}, entitygraph.Connected, e.OccurredAt)
+			h.graph.ObserveBy(deviceID, dev, entitygraph.Node{Kind: entitygraph.IP, ID: s, Tenant: e.TenantID}, entitygraph.Connected, e.OccurredAt)
 		}
 	}
 	// Süreç soyağacı: PROCESS olayının process + parent_chain (en yakın ata önce).
@@ -256,7 +256,7 @@ func (h *AgentHandler) observeGraph(deviceID string, e model.Event) {
 			continue
 		}
 		if h.graph != nil {
-			h.graph.Observe(
+			h.graph.ObserveBy(deviceID,
 				entitygraph.Node{Kind: entitygraph.Process, ID: child, Tenant: e.TenantID},
 				entitygraph.Node{Kind: entitygraph.Process, ID: parent, Tenant: e.TenantID},
 				entitygraph.ChildOf, e.OccurredAt)

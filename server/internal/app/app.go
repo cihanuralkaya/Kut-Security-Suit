@@ -365,10 +365,12 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	// kenarlar beslenir; aynı örnek admin API'ye salt-okunur pivot uçları için verilir.
 	entGraph := entitygraph.New()
 	// Ajan-kontrollü dizgelerden beslendiği için graf kiracı başına SERT tavanlıdır (Z3-03/Z5-18);
-	// KUT_GRAPH_MAX_EDGES / KUT_GRAPH_MAX_NODES (kiracı başına) ile ayarlanır, 0/boş = varsayılan.
+	// KUT_GRAPH_MAX_EDGES / KUT_GRAPH_MAX_NODES (kiracı başına) ve KUT_GRAPH_MAX_EDGES_PER_DEVICE
+	// (cihaz başına; tek ajanın sel ile diğer cihazların kenarlarını tahliye etmesini önler) ile ayarlanır, 0/boş = varsayılan.
 	entGraph.SetLimits(entitygraph.Limits{
 		MaxEdgesPerTenant: atoiEnv("KUT_GRAPH_MAX_EDGES"),
 		MaxNodesPerTenant: atoiEnv("KUT_GRAPH_MAX_NODES"),
+		MaxEdgesPerDevice: atoiEnv("KUT_GRAPH_MAX_EDGES_PER_DEVICE"),
 	})
 	agentHandler.SetEntityGraph(entGraph)
 	// Süreç-zinciri sekans nadirlik modeli: ajan hattı canlı öğrenir, admin API
@@ -377,9 +379,9 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	seqModel.SetLimits(aibrain.SeqLimits{MaxSources: atoiEnv("KUT_SEQMODEL_MAX_SOURCES")})
 	agentHandler.SetSeqModel(seqModel)
 	// TTL süpürmesi: KUT_GRAPH_TTL (varsayılan 720h = 30 gün) kadar gözlenmeyen kenar/kaynaklar
-	// atılır (Graph.Prune'un üretimde çağıranı yoktu). KUT_GRAPH_SWEEP_INTERVAL varsayılan 10dk.
+	// atılır (Graph.Prune'un üretimde çağıranı yoktu). KUT_GRAPH_SWEEP_INTERVAL varsayılan 10dk.  KUT_GRAPH_TTL=0 süpürmeyi kapatır.
 	runBoundedStateMaintenance(ctx, entGraph, seqModel,
-		getdurEnv("KUT_GRAPH_TTL", 720*time.Hour), getdurEnv("KUT_GRAPH_SWEEP_INTERVAL", 10*time.Minute))
+		graphTTLFromEnv(720*time.Hour), getdurEnv("KUT_GRAPH_SWEEP_INTERVAL", 10*time.Minute))
 	// Paylaşımlı SOC vaka deposu: korelasyon incident'leri otomatik vaka açar
 	// (incidentcase dekoratörü) ve admin API aynı depoyu sunar (/api/cases). DB
 	// modunda kalıcı (cases tablosu, write-through), demo modunda bellek-içi.

@@ -7,6 +7,8 @@ package app
 
 import (
 	"context"
+	"os"
+	"strings"
 	"time"
 
 	"kut.corp/suite/server/internal/aibrain"
@@ -31,11 +33,23 @@ func publishBoundedMetrics(g *entitygraph.Graph, sm *aibrain.SeqModels) {
 	if g != nil {
 		st := g.Stats()
 		metrics.SetGraphStats(st.Dropped, st.Evicted, st.Pruned, int64(st.Edges), int64(st.Nodes))
+		metrics.SetGraphDeviceDropped(st.DeviceDropped)
 	}
 	if sm != nil {
 		st := sm.Stats()
 		metrics.SetSeqModelStats(st.Dropped, st.Evicted, st.Pruned, int64(st.Sources))
 	}
+}
+
+// graphTTLFromEnv, KUT_GRAPH_TTL'yi okur: ayarsız/geçersiz/negatif → def; açıkça "0" (ya da "0s")
+// → 0 = TTL süpürmesi KAPALI (kenarlar yalnız tavan/LRU ile atılır).
+func graphTTLFromEnv(def time.Duration) time.Duration {
+	if v := strings.TrimSpace(os.Getenv("KUT_GRAPH_TTL")); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d == 0 {
+			return 0
+		}
+	}
+	return getdurEnv("KUT_GRAPH_TTL", def)
 }
 
 // runBoundedStateMaintenance, bakım döngüsünü başlatır: her sweepEvery'de TTL süpürmesi, her

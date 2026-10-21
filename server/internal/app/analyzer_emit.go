@@ -24,6 +24,8 @@ import (
 	"log"
 	"math"
 	"strings"
+	"sync"
+	"time"
 
 	"kut.corp/suite/server/internal/adminread"
 	"kut.corp/suite/server/internal/metrics"
@@ -114,6 +116,36 @@ type findingEmitter struct {
 	tenants analyzerTenants
 	publish func(tenantID, deviceID, severity, message string)
 	notify  func(a notify.Alert)
+
+	// Kiracı-çözülemedi günlüğünün hız sınırı (kalıcı fail-closed cihaz her tur aynı satırı
+	// yazmasın): cihaz başına skipLogEvery'de en fazla bir satır. Sayaç (metrics) her atlamada artar.
+	logMu   sync.Mutex
+	logSeen map[string]time.Time
+	nowFn   func() time.Time // test için; nil → time.Now
+}
+
+// skipLogEvery, aynı cihaz için "kiracı çözülemedi" günlüğünün asgari aralığıdır.
+const skipLogEvery = 10 * time.Minute
+
+// maxSkipLogDevices, hız-sınırı tablosunun üst sınırıdır (aşılırsa sıfırlanır → bellek sınırlı).
+const maxSkipLogDevices = 4096
+
+// shouldLogSkip, deviceID için atlama satırının şimdi yazılıp yazılmayacağını döner.
+func (f *findingEmitter) shouldLogSkip(deviceID string) bool {
+	now := time.Now()
+	if f.nowFn != nil {
+		now = f.nowFn()
+	}
+	f.logMu.Lock()
+	defer f.logMu.Unlock()
+	if last, ok := f.logSeen[deviceID]; ok && now.Sub(last) < skipLogEvery {
+		return false
+	}
+	if f.logSeen == nil || len(f.logSeen) >= maxSkipLogDevices {
+		f.logSeen = map[string]time.Time{}
+	}
+	f.logSeen[deviceID] = now
+	return true
 }
 
 // emit, bulguyu kaydeder. Dönen tenantID, bulgunun yazıldığı kiracıdır; ok=true YALNIZ kayıt
@@ -125,7 +157,10 @@ func (f *findingEmitter) emit(ctx context.Context, deviceID, hint string, ev mod
 	tn, ok := f.tenants.resolve(ctx, deviceID, hint)
 	if !ok {
 		metrics.IncAnalyzerSkipped()
-		log.Printf("[analyzer] cihaz %s: kiracı çözülemedi — bulgu atlandı (fail-closed)", deviceID)
+		if f.shouldLogSkip(deviceID) {
+			log.Printf("[analyzer] cihaz %s: kiracı çözülemedi — bulgu atlandı (fail-closed; günlük %s'de bir)", deviceID, skipLogEvery)
+		}
+
 		return "", false
 	}
 	ev.TenantID = tn
