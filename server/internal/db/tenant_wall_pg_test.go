@@ -14,6 +14,7 @@ import (
 
 	"kut.corp/suite/server/internal/admin"
 	"kut.corp/suite/server/internal/enroll"
+	"kut.corp/suite/server/internal/security"
 )
 
 func pgStore(t *testing.T) (*Store, context.Context) {
@@ -155,4 +156,156 @@ func TestPGTokenTenantAndAdminListScoped(t *testing.T) {
 	if err != nil || len(listA) != 1 || listA[0].Email != emailA {
 		t.Fatalf("yalnız %s kiracısının yöneticisi beklenirdi: %+v %v", tA, listA, err)
 	}
+}
+
+func devTenant(ctx context.Context, t *testing.T, s *Store, id string) string {
+	t.Helper()
+	var tn string
+	if err := s.pool.QueryRow(ctx, `SELECT tenant_id FROM devices WHERE id = $1::uuid`, id).Scan(&tn); err != nil {
+		t.Fatal(err)
+	}
+	return tn
+}
+
+// S-2 (PG): kiracı öncesi (legacy) cihazların tenant_id'si boştur (şema varsayılanı). Örtük
+// "default" token'ıyla yeniden kayıt (hem MAC/ON CONFLICT hem PreferredDeviceID yolu)
+// reddedilmez ve kiracıyı default'a normalleştirir; gerçek kiracılar için taşıma engelli kalır.
+func TestPGLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
+	s, ctx := pgStore(t)
+	other := uniq(t, "tx-")
+
+	// MAC yolu (ON CONFLICT).
+	mac := []byte(uniq(t, "mac-legacy-"))
+	in := enroll.DeviceEnrollment{
+		MACBlindIndex: mac, HostnameEnc: []byte("old"), MACEnc: []byte("m"), OSInfoEnc: []byte("o"),
+		OSPlatform: "linux", AgentVersion: "1", TenantID: "",
+	}
+	id, err := s.UpsertEnrollingDevice(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, id) })
+	if tn := devTenant(ctx, t, s, id); tn != "" {
+		t.Fatalf("legacy cihaz boş kiracıyla başlamalı: %q", tn)
+	}
+
+	// NEGATIF: gerçek kiracı legacy cihazı devralamaz; satır değişmez.
+	evil := in
+	evil.TenantID, evil.HostnameEnc = other, []byte("EVIL")
+	if _, err := s.UpsertEnrollingDevice(ctx, evil); !errors.Is(err, enroll.ErrTenantMismatch) {
+		t.Fatalf("gerçek kiracı legacy cihazı devralamaz: %v", err)
+	}
+	if tn := devTenant(ctx, t, s, id); tn != "" {
+		t.Fatalf("reddedilen kayıt kiracıyı değiştirmemeli: %q", tn)
+	}
+
+	// POZITIF: "default" token'ı aynı cihazı günceller + kiracıyı normalleştirir.
+	def := in
+	def.TenantID, def.HostnameEnc = "default", []byte("new")
+	got, err := s.UpsertEnrollingDevice(ctx, def)
+	if err != nil || got != id {
+		t.Fatalf("default token'ı legacy cihazı yeniden kaydetmeli: %q %v", got, err)
+	}
+	if tn := devTenant(ctx, t, s, id); tn != "default" {
+		t.Fatalf("kiracı default'a normalleşmeli: %q", tn)
+	}
+	var host []byte
+	if err := s.pool.QueryRow(ctx, `SELECT hostname_encrypted FROM devices WHERE id = $1::uuid`, id).Scan(&host); err != nil || string(host) != "new" {
+		t.Fatalf("alanlar güncellenmeli: %q %v", host, err)
+	}
+	// Normalleşmeden sonra da gerçek kiracı için duvar aynı.
+	if _, err := s.UpsertEnrollingDevice(ctx, evil); !errors.Is(err, enroll.ErrTenantMismatch) {
+		t.Fatalf("normalleşmiş cihaz başka kiracıya taşınamaz: %v", err)
+	}
+
+	// PreferredDeviceID yolu: ikinci bir legacy cihaz.
+	in2 := in
+	in2.MACBlindIndex = []byte(uniq(t, "mac-legacy2-"))
+	id2, err := s.UpsertEnrollingDevice(ctx, in2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, id2) })
+	pref := in2
+	pref.PreferredDeviceID, pref.TenantID = id2, other
+	if _, err := s.UpsertEnrollingDevice(ctx, pref); !errors.Is(err, enroll.ErrTenantMismatch) {
+		t.Fatalf("preferred yolunda gerçek kiracı legacy cihazı devralamaz: %v", err)
+	}
+	pref.TenantID = "default"
+	if got, err := s.UpsertEnrollingDevice(ctx, pref); err != nil || got != id2 {
+		t.Fatalf("preferred yolunda default token'ı geçmeli: %q %v", got, err)
+	}
+	if tn := devTenant(ctx, t, s, id2); tn != "default" {
+		t.Fatalf("preferred yolunda da default'a normalleşmeli: %q", tn)
+	}
+}
+
+// S-7 (PG): bekleyen sır AYRI sütunda tutulur; ActivateMFA tek UPDATE ile takas yapar;
+// bekleyen pencerede etkin sır + enrolled=true korunur; Disable ikisini de temizler.
+func TestPGMFAPendingSecretSwap(t *testing.T) {
+	s, ctx := pgStore(t)
+	master := make([]byte, 32)
+	if _, err := rand.Read(master); err != nil {
+		t.Fatal(err)
+	}
+	cipher, err := security.NewFieldCipher(security.DeriveKey(master, security.LabelFieldEncryption))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetFieldCipher(cipher)
+
+	id, err := s.CreateAdmin(ctx, uniq(t, "mfa-")+"@x", "h", admin.RoleOperator, uniq(t, "tm-"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM admins WHERE id = $1::uuid`, id) })
+
+	look := func(wantSecret string, wantOn bool, wantPending string) {
+		t.Helper()
+		sec, on, err := s.LookupMFA(ctx, id)
+		if err != nil || sec != wantSecret || on != wantOn {
+			t.Fatalf("LookupMFA = %q/%v/%v, beklenen %q/%v", sec, on, err, wantSecret, wantOn)
+		}
+		p, err := s.LookupPendingMFA(ctx, id)
+		if err != nil || p != wantPending {
+			t.Fatalf("LookupPendingMFA = %q/%v, beklenen %q", p, err, wantPending)
+		}
+	}
+
+	look("", false, "")
+	// Bekleyen sır etkin görünmez.
+	if err := s.SetPendingMFASecret(ctx, id, "SECRETONE"); err != nil {
+		t.Fatal(err)
+	}
+	look("", false, "SECRETONE")
+	// Bekleyen sırrı etkinleştir (ilk kayıt).
+	if err := s.ActivateMFA(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	look("SECRETONE", true, "")
+
+	// Yeniden kayıt: yeni sır bekleyen kalırken eski sır + enrolled=true AYNEN korunur.
+	if err := s.SetPendingMFASecret(ctx, id, "SECRETTWO"); err != nil {
+		t.Fatal(err)
+	}
+	look("SECRETONE", true, "SECRETTWO")
+	// Atomik takas: yeni sır etkin, bekleyen temizlenir, eski sır gider.
+	if err := s.ActivateMFA(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	look("SECRETTWO", true, "")
+	// Bekleyen yokken tekrar ActivateMFA hiçbir şeyi değiştirmez.
+	if err := s.ActivateMFA(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	look("SECRETTWO", true, "")
+
+	// Disable etkin + bekleyen sırrı temizler.
+	if err := s.SetPendingMFASecret(ctx, id, "SECRETTHREE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DisableMFA(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	look("", false, "")
 }
