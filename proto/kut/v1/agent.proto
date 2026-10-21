@@ -80,7 +80,7 @@ message HeartbeatResponse {
   repeated Command pending_commands = 4;
   // W2: ajanın epoch'undan sonraki güven bildirimleri (artan sırada). Ajan bunları bu
   // yanıtın komutlarını doğrulamadan ÖNCE uygular.
-  repeated TrustStatement trust_statements = 5;
+  repeated DsseEnvelope trust_statements = 5;
   // Yalnız bootstrap yanıtında (sunucu opt-in): cihazın kiracı bağı.
   TenantBinding tenant_binding = 6;
 }
@@ -106,17 +106,13 @@ message Command {
   int64 expires_at_unix = 7;    // zarf geçerlilik sonu (UnixNano)
   string issued_by = 8;         // imzalayan/talep eden kimlik (audit)
 
-  // Zarf v2 (W2, docs/COMMAND-FABRIC.md). v2'de 4-8 şöyle okunur: signature = birincil
-  // Ed25519 imzası, nonce = 32 küçük harfli hex, issued_at_unix/expires_at_unix =
-  // UnixNano, issued_by = requested_by (imzalı). cihaz kimliği TELDE YOKTUR: ajan
-  // kendi sertifika CN'ini (küçük harf) imza girdisine koyar.
-  string tenant_id = 9;             // sunucuda cihaz satırından çözülür; "" = platform
-  uint32 envelope_version = 10;     // 0 = zarfsız, 2 = v2; diğer değerler reddedilir
-  string key_id = 11;               // birincil imza anahtarı: hex(sha256(pub)[:16])
-  string correlation_id = 12;       // opak istek kimliği (imzalı)
-  uint64 sequence = 13;             // cihaz başına monoton (imzalı)
-  string approved_by = 14;          // çift-kontrol onaylayanı (imzalı); "" = yok
-  repeated CommandSignature extra_signatures = 15; // aynı ileti, kendi key_id'siyle
+  // Zarf v2 (W2, docs/COMMAND-FABRIC.md): imzalı komut bir DSSE zarfıdır. Gövde (payload)
+  // command_id, tenant_id, type, requested_by, approved_by, correlation_id, sequence, nonce,
+  // issued/expires ve params özetini taşır; imzalar PAE(payload_type, payload) üzerindedir.
+  // Zarf varsa ajan YALNIZ gövdedeki değerlere güvenir; 1-3 numaralı alanlar (command_id, type,
+  // params) gövdeyle çapraz denetlenir, 4-8 (eski v1 alanları) v2'de yok sayılır. Zarfsız komut
+  // = eski/imzasız. cihaz kimliği gövdededir ve ajan KENDİ sertifika CN'ine eşitliğini zorlar.
+  DsseEnvelope envelope = 9;
 
   enum CommandType {
     COMMAND_TYPE_UNSPECIFIED = 0;
@@ -130,13 +126,6 @@ message Command {
     COMMAND_TYPE_RESTART = 8;       // Uzaktan yeniden başlatma (MDM).
     COMMAND_TYPE_WIPE = 9;          // Uzaktan veri silme (MDM; ADMIN + audit).
   }
-}
-
-// CommandSignature, zarfın ek imzasıdır (rotasyon örtüşmesi ve ileride 2-of-N sınıfı).
-// Her imza aynı iletiyi KENDİ key_id'si yerleştirilerek imzalar.
-message CommandSignature {
-  string key_id = 1;
-  bytes signature = 2;
 }
 
 // CommandStatus, bir komutun YÜRÜTME sonucudur (ACK/alındı DEĞİL — gerçek sonuç).
@@ -157,7 +146,7 @@ message CommandResult {
   // yapar: sunucu effective-state kararını (ör. QUARANTINE SUCCEEDED → QUARANTINED)
   // komut-geçmişi araması yapmadan verir.
   Command.CommandType command_type = 4;
-  // envelope_digest = sha256(imzalanan ileti): sunucu yürütülen komutu verilen zarfla
+  // envelope_digest = sha256(PAE(payload_type, payload)): sunucu yürütülen komutu verilen zarfla
   // ilişkilendirir. Zarfsız (eski) komutlarda boş.
   bytes envelope_digest = 5;
 }

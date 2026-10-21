@@ -86,7 +86,7 @@ func FuzzParseStatement(f *testing.F) {
 }
 
 // FuzzVerifyV2: rastgele alan değerleriyle VerifyV2 panik atmaz; kabul edilen zarf, güvenilen
-// anahtarın GERÇEKTEN o ileti üzerinde attığı imzayı taşır (sahte kabul yok).
+// anahtarın GERÇEKTEN PAE üzerinde attığı imzayı taşır (sahte kabul yok).
 func FuzzVerifyV2(f *testing.F) {
 	f.Add("a1b2c3d4-e5f6-4a07-98a9-b0c1d2e3f4a5", "acme", "QUARANTINE", "admin:x", "", "corr", uint64(1), "00112233445566778899aabbccddeeff", "k", "v", true)
 	f.Add("", "", "", "", "", "", uint64(0), "", "", "", false)
@@ -95,29 +95,63 @@ func FuzzVerifyV2(f *testing.F) {
 	keys := tCmdKeys("cmdA")
 	f.Fuzz(func(t *testing.T, cmdID, tenant, typ, req, appr, corr string, seq uint64, nonce, pk, pv string, withSig bool) {
 		e := Envelope{
-			Version: 2, KeyID: KeyID(tPub("cmdA")), CommandID: cmdID, TenantID: tenant, Type: typ,
+			CommandID: cmdID, TenantID: tenant, Type: typ,
 			RequestedBy: req, ApprovedBy: appr, CorrelationID: corr, Sequence: seq, Nonce: nonce,
 			IssuedAtNS: tBase, ExpiresAtNS: tBase + int64(time.Hour), Params: []Param{StringParam(pk, pv)},
 		}
+		var d DSSE
 		if withSig {
-			if s, err := SignV2(signer, tDevice, e); err == nil {
-				e = s
-			} else {
-				e.Signature = make([]byte, SignatureLen)
+			s, err := SignV2(signer, tDevice, e)
+			if err != nil {
+				return
 			}
+			d = s
+		} else {
+			d = DSSE{PayloadType: PayloadTypeCommand, Payload: []byte(cmdID + tenant), Signatures: []DSSESignature{{KeyID: KeyID(tPub("cmdA")), Sig: make([]byte, SignatureLen)}}}
 		}
-		v, err := VerifyV2(e, VerifyInput{DeviceID: tDevice, Keys: keys, Now: tNow()})
+		v, err := VerifyV2(d, e.Params, VerifyInput{DeviceID: tDevice, Keys: keys, Now: tNow()})
 		if err != nil {
 			return
 		}
-		// Kabul edildi: alanlar geçerli ve imza gerçekten bu iletiye ait olmalı.
-		msg, cerr := CanonicalV2(tDevice, e)
-		if cerr != nil {
-			t.Fatalf("kabul edilen zarfın kanonik baytı kurulamıyor: %v", cerr)
-		}
-		if len(v.KeyIDs) == 0 || !VerifySignature(tPub("cmdA"), msg, e.Signature) {
+		if len(v.KeyIDs) == 0 || !VerifySignature(tPub("cmdA"), PAE(d.PayloadType, d.Payload), d.Signatures[0].Sig) {
 			t.Fatal("imzasız/yanlış imzalı zarf kabul edildi")
 		}
+	})
+}
+
+// FuzzParseDSSEJSON: DSSE JSON ayrıştırıcısı panik atmaz; kabul edilen girdi yeniden kodlanıp
+// ayrıştırıldığında AYNI zarfı verir ve biçim sınırlarını aşmaz.
+func FuzzParseDSSEJSON(f *testing.F) {
+	d, _ := CoSign(tKey("cmdB"), func() DSSE { x, _ := SignV2(tKey("cmdA"), tDevice, tEnv()); return x }())
+	if raw, err := d.MarshalJSON(); err == nil {
+		f.Add(raw)
+		f.Add(raw[:len(raw)/2])
+	}
+	f.Add([]byte(`{"payloadType":"t","payload":"AA==","signatures":[]}`))
+	f.Add([]byte(`{"payloadType":"t","payload":"AA==","signatures":[],"x":1}`))
+	f.Add([]byte(``))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		d, err := ParseDSSEJSON(b)
+		if err != nil {
+			return
+		}
+		if len(d.Payload) > MaxDSSEPayloadBytes || len(d.Signatures) > MaxDSSESignatures {
+			t.Fatalf("sınır aşıldı: %d bayt, %d imza", len(d.Payload), len(d.Signatures))
+		}
+		raw, err := d.MarshalJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		d2, err := ParseDSSEJSON(raw)
+		if err != nil {
+			t.Fatalf("yeniden kodlanan JSON ayrıştırılamadı: %v", err)
+		}
+		if d2.PayloadType != d.PayloadType || !bytes.Equal(d2.Payload, d.Payload) || len(d2.Signatures) != len(d.Signatures) {
+			t.Fatal("gidiş-dönüş eşit değil")
+		}
+		// Yük/imza işleyicileri rastgele zarfta panik atmamalı.
+		_, _ = VerifyV2(d, nil, VerifyInput{DeviceID: tDevice, Keys: tCmdKeys("cmdA"), Now: tNow()})
+		_, _ = ParseStatementDSSE(d)
 	})
 }
 

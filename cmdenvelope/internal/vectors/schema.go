@@ -1,16 +1,17 @@
-// Package vectors, komut zarfı v2 ve güven bildirimi için ALTIN VEKTÖR dosyasının
-// (cmdenvelope/testdata/v2_vectors.json) şemasını ve deterministik üreticisini içerir.
+// Package vectors, komut zarfı v2 (DSSE) ve güven bildirimi için ALTIN VEKTÖR dosyasının
+// (contracts/testvectors/cmdenvelope/v2_vectors.json) şemasını ve deterministik üreticisini içerir.
 //
 // Vektörler SABİT tohumlardan üretilir (Ed25519 imzaları deterministiktir); dosya her
 // çalıştırmada bayt-bayt aynı çıkar. Aynı JSON dosyasını ajan testleri de (W2-S6) okur:
 // sunucu ve ajan aynı baytları üretip aynı kararı vermelidir. Dosyayı yeniden üretmek
 // bir TEL DEĞİŞİKLİĞİDİR ve bilinçli yapılmalıdır:
 //
-//	go test ./cmdenvelope -run TestGoldenVectors -update
+//	go test ./cmdenvelope -run TestGoldenVectors_BytePinned -update
 package vectors
 
 import (
 	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 
@@ -18,13 +19,14 @@ import (
 )
 
 // FormatVersion, vektör dosyası şemasının sürümüdür.
-const FormatVersion = 1
+const FormatVersion = 2
 
 // File, vektör dosyasının kökü.
 type File struct {
 	Format      int            `json:"format"`
 	Description string         `json:"description"`
 	Seeds       []SeedJSON     `json:"seeds"`
+	PAE         []PAECase      `json:"pae"`
 	Envelopes   []EnvelopeCase `json:"envelopes"`
 	Params      []ParamsCase   `json:"params"`
 	ParamMaps   []ParamMapCase `json:"param_maps"`
@@ -36,12 +38,20 @@ type SeedJSON struct {
 	Name    string `json:"name"`
 	SeedHex string `json:"seed_hex"`
 	PubHex  string `json:"pub_hex"`
-	KeyID   string `json:"key_id"`
+	KeyID   string `json:"keyid"`
 }
 
-// KeyJSON, güven bildirimindeki ya da güvenilen kümedeki bir anahtardır.
+// PAECase, DSSE PAE kodlamasının sabit örneğidir.
+type PAECase struct {
+	Name        string `json:"name"`
+	PayloadType string `json:"payload_type"`
+	PayloadHex  string `json:"payload_hex"`
+	PAEHex      string `json:"pae_hex"`
+}
+
+// KeyJSON, güvenilen kümedeki ya da bildirimdeki bir anahtardır.
 type KeyJSON struct {
-	KeyID       string `json:"key_id"`
+	KeyID       string `json:"keyid"`
 	PubHex      string `json:"pub_hex"`
 	Role        string `json:"role"` // "ROOT" | "COMMAND"
 	NotBeforeNS int64  `json:"not_before_ns"`
@@ -56,47 +66,59 @@ type ParamJSON struct {
 	IsList bool     `json:"is_list,omitempty"`
 }
 
-// SigJSON, bir imza.
-type SigJSON struct {
-	KeyID  string `json:"key_id"`
-	SigHex string `json:"sig_hex"`
+// DSSESigJSON ve DSSEJSON, standart DSSE JSON alan adlarını kullanır (payloadType, payload
+// = dolgulu standart base64, signatures[keyid, sig = base64]).
+type DSSESigJSON struct {
+	KeyID string `json:"keyid"`
+	Sig   string `json:"sig"`
 }
 
-// EnvelopeJSON, telde taşınan zarf alanlarıdır (cihaz kimliği YOK).
-type EnvelopeJSON struct {
-	Version         uint32      `json:"envelope_version"`
-	KeyID           string      `json:"key_id"`
-	CommandID       string      `json:"command_id"`
-	TenantID        string      `json:"tenant_id"`
-	Type            string      `json:"type"`
-	RequestedBy     string      `json:"requested_by"`
-	ApprovedBy      string      `json:"approved_by"`
-	CorrelationID   string      `json:"correlation_id"`
-	Sequence        uint64      `json:"sequence"`
-	Nonce           string      `json:"nonce"`
-	IssuedAtNS      int64       `json:"issued_at_ns"`
-	ExpiresAtNS     int64       `json:"expires_at_ns"`
-	Params          []ParamJSON `json:"params"`
-	SignatureHex    string      `json:"signature_hex"`
-	ExtraSignatures []SigJSON   `json:"extra_signatures"`
+// DSSEJSON, DSSE zarfı.
+type DSSEJSON struct {
+	PayloadType string        `json:"payloadType"`
+	Payload     string        `json:"payload"`
+	Signatures  []DSSESigJSON `json:"signatures"`
 }
 
-// EnvelopeCase, tek bir zarf doğrulama vektörüdür.
+// BodyJSON, komut gövdesinin ÇÖZÜLMÜŞ (bilgilendirici, test tarafından doğrulanan) görünümüdür.
+type BodyJSON struct {
+	CommandID       string `json:"command_id"`
+	DeviceID        string `json:"device_id"`
+	TenantID        string `json:"tenant_id"`
+	Type            string `json:"type"`
+	RequestedBy     string `json:"requested_by"`
+	ApprovedBy      string `json:"approved_by"`
+	CorrelationID   string `json:"correlation_id"`
+	Sequence        uint64 `json:"sequence"`
+	Nonce           string `json:"nonce"`
+	IssuedAtNS      int64  `json:"issued_at_ns"`
+	ExpiresAtNS     int64  `json:"expires_at_ns"`
+	ParamsDigestHex string `json:"params_digest_hex"`
+}
+
+// EnvelopeCase, tek bir komut zarfı doğrulama vektörüdür.
 type EnvelopeCase struct {
 	Name string `json:"name"`
 	Doc  string `json:"doc"`
-	// DeviceID, DOĞRULAYANIN kendi kimliğidir (imza girdisine bu konur).
+	// DeviceID, DOĞRULAYANIN kendi kimliğidir; gövdedeki device_id buna eşit olmalıdır.
 	DeviceID string `json:"device_id"`
 	// NowNS: 0 = saat senkronsuz.
 	NowNS int64 `json:"now_ns"`
+	// MinSignatures: 0 = tipin varsayılanı (1).
+	MinSignatures int `json:"min_signatures,omitempty"`
+	// WireCommandID / WireType: telde gövde dışında taşınan değerler (boş = gövdeyle aynı).
+	WireCommandID string `json:"wire_command_id,omitempty"`
+	WireType      string `json:"wire_type,omitempty"`
 	// Keys: doğrulayanın güvendiği anahtarlar (rol ve pencereyle).
-	Keys     []KeyJSON    `json:"keys"`
-	Envelope EnvelopeJSON `json:"envelope"`
-	// CanonicalHex: imzanın kapsadığı bayt dizisi (kurulamıyorsa boş). ParamsDigestHex ve
-	// DigestHex yalnız kanonik bayt kurulabiliyorsa dolu.
-	CanonicalHex    string `json:"canonical_hex"`
-	ParamsDigestHex string `json:"params_digest_hex"`
-	DigestHex       string `json:"envelope_digest_hex"`
+	Keys   []KeyJSON   `json:"keys"`
+	DSSE   DSSEJSON    `json:"dsse"`
+	Params []ParamJSON `json:"params"`
+	// PayloadHex/PAEHex: gövde ve imzalanan PAE baytları. Body: gövde ayrıştırılabiliyorsa
+	// çözülmüş görünüm. DigestHex: sha256(PAE) (beklenen envelope_digest).
+	PayloadHex string    `json:"payload_hex"`
+	PAEHex     string    `json:"pae_hex"`
+	Body       *BodyJSON `json:"body,omitempty"`
+	DigestHex  string    `json:"envelope_digest_hex"`
 	// Expect: "ok" ya da cmdenvelope.Reason adı.
 	Expect string `json:"expect"`
 }
@@ -118,7 +140,7 @@ type ParamMapCase struct {
 	Expect string `json:"expect"` // "ok" | "malformed_params"
 }
 
-// StatementJSON, güven bildirimi.
+// StatementJSON, güven bildirimi gövdesinin (imzasız) çözülmüş görünümüdür.
 type StatementJSON struct {
 	Epoch         uint64    `json:"epoch"`
 	Keys          []KeyJSON `json:"keys"`
@@ -126,27 +148,27 @@ type StatementJSON struct {
 	IssuedAtNS    int64     `json:"issued_at_ns"`
 	MinVerifyMode uint32    `json:"min_verify_mode"`
 	MinAgentBuild uint64    `json:"min_agent_build"`
-	Signatures    []SigJSON `json:"signatures"`
 }
 
-// StepCase, bir senaryodaki tek ApplyStatement adımıdır. Başarılı adım yerel durumu
+// StepCase, bir senaryodaki tek ApplyStatementDSSE adımıdır. Başarılı adım yerel durumu
 // ilerletir; başarısız adım durumu DEĞİŞTİRMEZ.
 type StepCase struct {
-	Name         string        `json:"name"`
-	Doc          string        `json:"doc"`
-	NowNS        int64         `json:"now_ns"`
-	Statement    StatementJSON `json:"statement"`
-	CanonicalHex string        `json:"canonical_hex"`
-	Expect       string        `json:"expect"` // "ok" | Reason
-	Mode         string        `json:"mode,omitempty"`
-	EpochJump    bool          `json:"epoch_jump,omitempty"`
-	EpochAfter   uint64        `json:"epoch_after"`
+	Name       string         `json:"name"`
+	Doc        string         `json:"doc"`
+	NowNS      int64          `json:"now_ns"`
+	DSSE       DSSEJSON       `json:"dsse"`
+	PayloadHex string         `json:"payload_hex"`
+	Body       *StatementJSON `json:"body,omitempty"`
+	Expect     string         `json:"expect"` // "ok" | Reason
+	Mode       string         `json:"mode,omitempty"`
+	EpochJump  bool           `json:"epoch_jump,omitempty"`
+	EpochAfter uint64         `json:"epoch_after"`
 }
 
 // KeyCheckCase, senaryo sonunda yerel durumda bir anahtarın komut imzalamaya uygunluğu.
 type KeyCheckCase struct {
 	Name   string `json:"name"`
-	KeyID  string `json:"key_id"`
+	KeyID  string `json:"keyid"`
 	NowNS  int64  `json:"now_ns"`
 	Expect string `json:"expect"` // "ok" | Reason
 }
@@ -211,80 +233,70 @@ func Entries(ks []KeyJSON) ([]cmdenvelope.KeyEntry, error) {
 	return out, nil
 }
 
-// Envelope, EnvelopeJSON'u cmdenvelope.Envelope'a çevirir.
-func (j EnvelopeJSON) Envelope() (cmdenvelope.Envelope, error) {
-	sig, err := hex.DecodeString(j.SignatureHex)
+// ToDSSE, DSSEJSON'u cmdenvelope.DSSE'ye çevirir.
+func (j DSSEJSON) ToDSSE() (cmdenvelope.DSSE, error) {
+	payload, err := base64.StdEncoding.DecodeString(j.Payload)
 	if err != nil {
-		return cmdenvelope.Envelope{}, err
+		return cmdenvelope.DSSE{}, err
 	}
-	e := cmdenvelope.Envelope{
-		Version: j.Version, KeyID: j.KeyID, CommandID: j.CommandID, TenantID: j.TenantID, Type: j.Type,
-		RequestedBy: j.RequestedBy, ApprovedBy: j.ApprovedBy, CorrelationID: j.CorrelationID,
-		Sequence: j.Sequence, Nonce: j.Nonce, IssuedAtNS: j.IssuedAtNS, ExpiresAtNS: j.ExpiresAtNS,
-		Signature: sig,
-	}
-	for _, p := range j.Params {
-		e.Params = append(e.Params, cmdenvelope.Param{Key: p.Key, Value: p.Value, List: p.List, IsList: p.IsList})
-	}
-	for _, x := range j.ExtraSignatures {
-		s, err := hex.DecodeString(x.SigHex)
+	d := cmdenvelope.DSSE{PayloadType: j.PayloadType, Payload: payload}
+	for _, s := range j.Signatures {
+		sig, err := base64.StdEncoding.DecodeString(s.Sig)
 		if err != nil {
-			return cmdenvelope.Envelope{}, err
+			return cmdenvelope.DSSE{}, err
 		}
-		e.ExtraSignatures = append(e.ExtraSignatures, cmdenvelope.Signature{KeyID: x.KeyID, Sig: s})
+		d.Signatures = append(d.Signatures, cmdenvelope.DSSESignature{KeyID: s.KeyID, Sig: sig})
 	}
-	return e, nil
+	return d, nil
 }
 
-// EnvelopeToJSON, cmdenvelope.Envelope'u EnvelopeJSON'a çevirir.
-func EnvelopeToJSON(e cmdenvelope.Envelope) EnvelopeJSON {
-	j := EnvelopeJSON{
-		Version: e.Version, KeyID: e.KeyID, CommandID: e.CommandID, TenantID: e.TenantID, Type: e.Type,
-		RequestedBy: e.RequestedBy, ApprovedBy: e.ApprovedBy, CorrelationID: e.CorrelationID,
-		Sequence: e.Sequence, Nonce: e.Nonce, IssuedAtNS: e.IssuedAtNS, ExpiresAtNS: e.ExpiresAtNS,
-		SignatureHex: hex.EncodeToString(e.Signature), Params: []ParamJSON{}, ExtraSignatures: []SigJSON{},
-	}
-	for _, p := range e.Params {
-		j.Params = append(j.Params, ParamJSON{Key: p.Key, Value: p.Value, List: p.List, IsList: p.IsList})
-	}
-	for _, x := range e.ExtraSignatures {
-		j.ExtraSignatures = append(j.ExtraSignatures, SigJSON{KeyID: x.KeyID, SigHex: hex.EncodeToString(x.Sig)})
+// DSSEToJSON, cmdenvelope.DSSE'yi DSSEJSON'a çevirir.
+func DSSEToJSON(d cmdenvelope.DSSE) DSSEJSON {
+	j := DSSEJSON{PayloadType: d.PayloadType, Payload: base64.StdEncoding.EncodeToString(d.Payload), Signatures: []DSSESigJSON{}}
+	for _, s := range d.Signatures {
+		j.Signatures = append(j.Signatures, DSSESigJSON{KeyID: s.KeyID, Sig: base64.StdEncoding.EncodeToString(s.Sig)})
 	}
 	return j
 }
 
-// Statement, StatementJSON'u cmdenvelope.Statement'a çevirir.
+// ToParams, ParamJSON listesini çevirir.
+func ToParams(ps []ParamJSON) []cmdenvelope.Param {
+	var out []cmdenvelope.Param
+	for _, p := range ps {
+		out = append(out, cmdenvelope.Param{Key: p.Key, Value: p.Value, List: p.List, IsList: p.IsList})
+	}
+	return out
+}
+
+// ParamsToJSON, cmdenvelope.Param listesini çevirir.
+func ParamsToJSON(ps []cmdenvelope.Param) []ParamJSON {
+	out := []ParamJSON{}
+	for _, p := range ps {
+		out = append(out, ParamJSON{Key: p.Key, Value: p.Value, List: p.List, IsList: p.IsList})
+	}
+	return out
+}
+
+// Statement, StatementJSON'u (imzasız) cmdenvelope.Statement'a çevirir.
 func (j StatementJSON) Statement() (cmdenvelope.Statement, error) {
 	keys, err := Entries(j.Keys)
 	if err != nil {
 		return cmdenvelope.Statement{}, err
 	}
-	st := cmdenvelope.Statement{
+	return cmdenvelope.Statement{
 		Epoch: j.Epoch, Keys: keys, RootThreshold: j.RootThreshold, IssuedAtNS: j.IssuedAtNS,
 		MinVerifyMode: j.MinVerifyMode, MinAgentBuild: j.MinAgentBuild,
-	}
-	for _, s := range j.Signatures {
-		b, err := hex.DecodeString(s.SigHex)
-		if err != nil {
-			return cmdenvelope.Statement{}, err
-		}
-		st.Signatures = append(st.Signatures, cmdenvelope.StatementSignature{KeyID: s.KeyID, Sig: b})
-	}
-	return st, nil
+	}, nil
 }
 
-// StatementToJSON, cmdenvelope.Statement'ı StatementJSON'a çevirir.
+// StatementToJSON, cmdenvelope.Statement'ın imzasız görünümünü döner.
 func StatementToJSON(st cmdenvelope.Statement) StatementJSON {
 	j := StatementJSON{
 		Epoch: st.Epoch, RootThreshold: st.RootThreshold, IssuedAtNS: st.IssuedAtNS,
-		MinVerifyMode: st.MinVerifyMode, MinAgentBuild: st.MinAgentBuild,
-		Keys: []KeyJSON{}, Signatures: []SigJSON{},
+		MinVerifyMode: st.MinVerifyMode, MinAgentBuild: st.MinAgentBuild, Keys: []KeyJSON{},
 	}
 	for _, k := range st.Keys {
 		j.Keys = append(j.Keys, KeyToJSON(k))
-	}
-	for _, s := range st.Signatures {
-		j.Signatures = append(j.Signatures, SigJSON{KeyID: s.KeyID, SigHex: hex.EncodeToString(s.Sig)})
 	}
 	return j
 }

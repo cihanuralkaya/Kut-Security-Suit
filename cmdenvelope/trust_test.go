@@ -96,7 +96,7 @@ func TestRotationChainHops(t *testing.T) {
 	wantReason(t, err, ReasonThresholdNotMet)
 	// Sahte imza (bir bit bozuk) sayılmaz.
 	forged := tSign(t, tStmt(2, 2, tRoot("root1"), tRoot("root2"), tRoot("root3"), tCmd("cmdB", tBase, tCmdEnd)), "root1", "root2")
-	forged.Signatures = append([]StatementSignature(nil), forged.Signatures...)
+	forged.Signatures = append([]DSSESignature(nil), forged.Signatures...)
 	forged.Signatures[1].Sig = append([]byte(nil), forged.Signatures[1].Sig...)
 	forged.Signatures[1].Sig[0] ^= 1
 	_, err = ApplyStatement(&g, forged, nil, tAt())
@@ -348,7 +348,7 @@ func TestStatementValidate(t *testing.T) {
 		"duplicate key":         func(s *Statement) { s.Keys = append(s.Keys, s.Keys[0]) },
 		"window inverted":       func(s *Statement) { s.Keys[1].NotAfterNS = s.Keys[1].NotBeforeNS - 1 },
 		"negative not_before":   func(s *Statement) { s.Keys[0].NotBeforeNS = -1 },
-		"bad sig shape":         func(s *Statement) { s.Signatures = []StatementSignature{{KeyID: "zz", Sig: nil}} },
+		"bad sig shape":         func(s *Statement) { s.Signatures = []DSSESignature{{KeyID: "zz", Sig: nil}} },
 		"too many keys": func(s *Statement) {
 			for i := 0; i < MaxStatementKeys; i++ {
 				p := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{byte(i + 1)}, 32)).Public().(ed25519.PublicKey)
@@ -436,7 +436,7 @@ func TestStatementCanonicalAndStrictParse(t *testing.T) {
 		t.Fatal("yinelenen anahtar kabul edildi")
 	}
 	// Başka alan etiketi.
-	env, _ := CanonicalV2(tDevice, tSigned(t))
+	env := tSigned(t).Payload
 	if _, err := ParseStatement(env); err == nil {
 		t.Fatal("zarf baytları bildirim olarak ayrıştı")
 	}
@@ -450,5 +450,98 @@ func TestSignStatementReplacesSameSigner(t *testing.T) {
 	}
 	if _, err := SignStatement(ed25519.PrivateKey{1}, st); err == nil {
 		t.Fatal("kısa özel anahtar imzaladı")
+	}
+}
+
+// Güven bildirimi DSSE zarfıdır: payloadType trust.v2, gövde = kanonik bildirim, imzalar = KÖK
+// anahtarlar; imza PAE üzerindedir.
+func TestStatementDSSE(t *testing.T) {
+	g := tGenesis(t)
+	d, err := g.DSSE()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.PayloadType != PayloadTypeTrust || len(d.Signatures) != 2 {
+		t.Fatalf("zarf: %v", d)
+	}
+	body, _ := CanonicalStatement(g)
+	if !bytes.Equal(d.Payload, body) {
+		t.Fatal("gövde kanonik bildirim değil")
+	}
+	for _, s := range d.Signatures {
+		var pub ed25519.PublicKey
+		for _, k := range g.Keys {
+			if k.KeyID == s.KeyID {
+				pub = k.Pub
+			}
+		}
+		if !ed25519.Verify(pub, PAE(PayloadTypeTrust, d.Payload), s.Sig) {
+			t.Fatalf("%s imzası PAE üzerinde değil", s.KeyID)
+		}
+	}
+	acc, err := ApplyStatementDSSE(nil, d, nil, tAt())
+	if err != nil || acc.Mode != AcceptBootstrap {
+		t.Fatalf("DSSE genesis: %v %v", acc.Mode, err)
+	}
+	// Yanlış yük türü / sürüm.
+	for pt, want := range map[string]Reason{
+		PayloadTypeCommand: ReasonBadPayloadType, "": ReasonBadPayloadType, "application/vnd.kut.trust.v1": ReasonUnsupportedVersion,
+		"application/vnd.kut.trust.v3": ReasonUnsupportedVersion,
+	} {
+		x := d
+		x.PayloadType = pt
+		_, err := ParseStatementDSSE(x)
+		if ReasonOf(err) != want {
+			t.Errorf("payloadType %q: neden %q, beklenen %q", pt, ReasonOf(err), want)
+		}
+	}
+	// PAE'siz (ham gövde üzerinde) imzalar kota saymaz.
+	raw := d
+	raw.Signatures = nil
+	for _, n := range []string{"root1", "root2"} {
+		raw.Signatures = append(raw.Signatures, DSSESignature{KeyID: KeyID(tPub(n)), Sig: ed25519.Sign(tKey(n), d.Payload)})
+	}
+	_, err = ApplyStatementDSSE(nil, raw, nil, tAt())
+	wantReason(t, err, ReasonThresholdNotMet)
+	// Başka yük türü altında atılmış imzalar (komut türü) kota saymaz.
+	cross := d
+	cross.Signatures = nil
+	for _, n := range []string{"root1", "root2"} {
+		cross.Signatures = append(cross.Signatures, mustSig(t, n, PayloadTypeCommand, d.Payload))
+	}
+	_, err = ApplyStatementDSSE(nil, cross, nil, tAt())
+	wantReason(t, err, ReasonThresholdNotMet)
+	// keyid ipucu yanlış: root1'in imzası root3 keyid'siyle sunulur → root3 anahtarıyla doğrulanmaz.
+	hint := d
+	hint.Signatures = []DSSESignature{d.Signatures[0], {KeyID: KeyID(tPub("root3")), Sig: d.Signatures[1].Sig}}
+	_, err = ApplyStatementDSSE(nil, hint, nil, tAt())
+	wantReason(t, err, ReasonThresholdNotMet)
+	// Yinelenen keyid bir kez sayılır (eşik 2).
+	dup := d
+	dup.Signatures = []DSSESignature{d.Signatures[0], d.Signatures[0]}
+	_, err = ApplyStatementDSSE(nil, dup, nil, tAt())
+	wantReason(t, err, ReasonThresholdNotMet)
+	// Bilinmeyen ek imzacı yok sayılır; kota kökle sağlanır.
+	unk := d
+	unk.Signatures = append(append([]DSSESignature(nil), d.Signatures...), mustSig(t, "evil", PayloadTypeTrust, d.Payload))
+	if _, err := ApplyStatementDSSE(nil, unk, nil, tAt()); err != nil {
+		t.Fatalf("bilinmeyen ek imzacı engel olmamalı: %v", err)
+	}
+	// 9 imza biçim hatası.
+	many := d
+	many.Signatures = nil
+	for i := 0; i < 9; i++ {
+		many.Signatures = append(many.Signatures, d.Signatures[0])
+	}
+	_, err = ApplyStatementDSSE(nil, many, nil, tAt())
+	wantReason(t, err, ReasonMalformedStatement)
+	// JSON gidiş-dönüş.
+	raw2, _ := d.MarshalJSON()
+	back, err := ParseDSSEJSON(raw2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyStatementDSSE(nil, back, nil, tAt()); err != nil {
+		t.Fatalf("JSON'dan gelen zarf: %v", err)
 	}
 }

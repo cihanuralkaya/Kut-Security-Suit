@@ -29,6 +29,7 @@ TARGETS=(
   "./cmdenvelope/:FuzzParseStatement"
   "./cmdenvelope/:FuzzVerifyV2"
   "./cmdenvelope/:FuzzApplyStatement"
+  "./cmdenvelope/:FuzzParseDSSEJSON"
 )
 
 fail=0

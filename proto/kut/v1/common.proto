@@ -47,38 +47,23 @@ message AgentIdentity {
   reserved 5;
 }
 
-// KeyRole, güven bildirimindeki bir anahtarın rolüdür (W2 komut dokusu).
-enum KeyRole {
-  KEY_ROLE_UNSPECIFIED = 0;
-  KEY_ROLE_ROOT = 1;    // Yalnız güven bildirimi imzalar; çevrimdışı tutulur.
-  KEY_ROLE_COMMAND = 2; // Yalnız komut zarfı imzalar; not_after_ns ZORUNLU.
+// DsseEnvelope, DSSE (Dead Simple Signing Envelope) zarfıdır. Komut zarfı v2 ve güven
+// bildirimi bununla taşınır (docs/COMMAND-FABRIC.md):
+//   * payload_type: "application/vnd.kut.cmd.v2" (komut) ya da "application/vnd.kut.trust.v2"
+//     (güven bildirimi). Sürüm yük türünde taşınır.
+//   * payload: kanonik gövde baytları (tüm imzacılar için aynı).
+//   * signatures: her biri Ed25519(PAE(payload_type, payload)); keyid doğrulanmamış ipucudur.
+// JSON eşlemesi standart DSSE alan adlarıyla uyumludur (payloadType, payload, signatures[keyid, sig]).
+message DsseEnvelope {
+  string payload_type = 1;
+  bytes payload = 2;
+  repeated DsseSignature signatures = 3; // en çok 8
 }
 
-// KeyEntry, güven bildirimindeki tek anahtardır. key_id = hex(sha256(pubkey)[:16]).
-message KeyEntry {
-  string key_id = 1;
-  bytes pubkey = 2;          // Ed25519, 32 bayt.
-  KeyRole role = 3;
-  int64 not_before_ns = 4;   // UnixNano; 0 = sınırsız.
-  int64 not_after_ns = 5;    // UnixNano; 0 = süresiz (yalnız ROOT için geçerli).
-}
-
-// TrustSignature, bir ROOT anahtarın bildirim imzasıdır.
-message TrustSignature {
-  string key_id = 1;
-  bytes signature = 2;
-}
-
-// TrustStatement, ajanın hangi anahtarlara güveneceğini söyleyen imzalı bildirimdir.
-// Kanonik imza baytları ve kabul kuralları cmdenvelope/trust.go + docs/COMMAND-FABRIC.md.
-message TrustStatement {
-  uint64 epoch = 1;
-  repeated KeyEntry keys = 2;
-  uint32 root_threshold = 3;
-  int64 issued_at_ns = 4;
-  uint32 min_verify_mode = 5;   // 0 none, 1 warn, 2 enforce (yalnız yukarı ratchet).
-  uint64 min_agent_build = 6;
-  repeated TrustSignature signatures = 7;
+// DsseSignature, DSSE zarfındaki tek imza girdisidir.
+message DsseSignature {
+  string keyid = 1; // hex(sha256(pubkey)[:16]); doğrulanmamış ipucu
+  bytes sig = 2;    // Ed25519, 64 bayt
 }
 
 // TenantBinding, cihazın hangi kiracıya ait olduğunu bildirir (ajan sabitler).
