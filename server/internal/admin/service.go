@@ -20,6 +20,7 @@ import (
 	"kut.corp/suite/server/internal/metrics"
 	"kut.corp/suite/server/internal/scope"
 	"kut.corp/suite/server/internal/security"
+	"kut.corp/suite/server/internal/tenant"
 )
 
 // Role, yönetici yetki seviyesidir.
@@ -46,6 +47,12 @@ func rank(r Role) int {
 
 // ErrForbidden, çağıran yöneticinin yetkisi yetersiz olduğunda döner.
 var ErrForbidden = errors.New("admin: yetki yetersiz")
+
+// ErrUnknownAdmin, kimliği çözülemeyen ya da PASİF bir yönetici için kiracı sorgulandığında
+// döner (Store.AdminTenant). ErrForbidden'ı sarar (HTTP 403): "" kiracısı PLATFORM kapsamıdır,
+// bu yüzden bilinmeyen/pasif bir yöneticinin sessizce platform admini gibi davranması (fail-open
+// birleştirme, Z4b-09) yerine çağıranlar bu hatayı yayar ve isteği reddeder.
+var ErrUnknownAdmin = fmt.Errorf("%w: bilinmeyen veya pasif yönetici", ErrForbidden)
 
 // ErrInvalidRule, kural girdisi doğrulamayı geçemediğinde döner (istemci hatası).
 var ErrInvalidRule = errors.New("admin: geçersiz kural")
@@ -74,8 +81,11 @@ type Store interface {
 	AdminRole(ctx context.Context, adminID string) (Role, error)
 	SaveEnrollmentToken(ctx context.Context, tokenIndex []byte, createdBy, tenantID string, expiresAt time.Time) error
 	// RevokeEnrollmentToken, kullanılmamış bir enrollment token'ı iptal eder
-	// (used_at damgalar). Zaten kullanılmış/yok token için sessizdir (no-op).
-	RevokeEnrollmentToken(ctx context.Context, tokenID string) error
+	// (used_at damgalar). Zaten kullanılmış/yok token için sessizdir (no-op). tenantID
+	// boş değilse SQL yazımı DA token'ın kiracısıyla daraltılır (derinlemesine savunma: servis
+	// katmanı hatası kiracı sınırını aşamaz); kiracıya bağlı çağıran için eşleşen token yoksa
+	// ErrForbidden döner. Boş tenantID = platform kapsamı (süzme yok).
+	RevokeEnrollmentToken(ctx context.Context, tokenID, tenantID string) error
 	// EnrollmentTokenTenant, enrollment token'ın mühürlü kiracısını döner (iptal
 	// yazma-yolunun kiracı zorunlu-kılması için). Token yoksa found=false.
 	EnrollmentTokenTenant(ctx context.Context, tokenID string) (tenantID string, found bool, err error)
@@ -86,8 +96,9 @@ type Store interface {
 	// SetDeviceStatus, cihazın durum sütununu doğrudan ayarlar (komut kuyruğa
 	// girdikten sonra durumun UI'da yansıması için).
 	SetDeviceStatus(ctx context.Context, deviceID, status string) error
-	// SetDeviceTags, cihazın etiketlerini (filo gruplama) değiştirir.
-	SetDeviceTags(ctx context.Context, deviceID string, tags []string) error
+	// SetDeviceTags, cihazın etiketlerini (filo gruplama) değiştirir. tenantID boş değilse
+	// yazım cihazın kiracısıyla daraltılır (eşleşen cihaz yoksa ErrForbidden); boş = platform.
+	SetDeviceTags(ctx context.Context, deviceID string, tags []string, tenantID string) error
 	RevokeDeviceCerts(ctx context.Context, deviceID, reason string) error
 	// EraseDeviceData, KVKK veri silme talebi için cihazın davranışsal/telemetri
 	// verisini (olay logları, komut geçmişi) siler ve sertifikalarını iptal eder
@@ -101,7 +112,12 @@ type Store interface {
 	// SetEventCase, bir olayın vaka alanlarını (sorumlu + not) ayarlar (upsert;
 	// durum sütununa dokunmaz). Vaka yönetimi (#9).
 	SetEventCase(ctx context.Context, eventID, adminID, assignee, note string) error
-	CreatePolicy(ctx context.Context, name, version string) (policyID string, err error)
+	// CreatePolicy, yeni politika oluşturur. tenantID politikanın sahibi kiracıdır ("" =
+	// platform/paylaşımlı; kiracıya bağlı admin için salt-okunur). Çağıran sunucu-tarafı çözer.
+	CreatePolicy(ctx context.Context, name, version, tenantID string) (policyID string, err error)
+	// PolicyTenant, politikanın sahibi kiracıyı döner ("" = platform/paylaşımlı). Politika
+	// yoksa found=false (hata değil). Politika erişim kapısı ve atama değişmezi bunu kullanır.
+	PolicyTenant(ctx context.Context, policyID string) (tenantID string, found bool, err error)
 	AssignPolicy(ctx context.Context, deviceID, policyID string) error
 	// AddPolicyRule, politikaya yeni bir kural ekler.
 	AddPolicyRule(ctx context.Context, policyID string, in RuleInput) error
@@ -116,7 +132,9 @@ type Store interface {
 	// bağlı olduğu kiracıdır (boş → platform admini, tüm kiracıları görür).
 	CreateAdmin(ctx context.Context, email, passwordHash string, role Role, tenantID string) (string, error)
 	// AdminTenant, bir yöneticinin bağlı olduğu kiracıyı döner (okuma izolasyonu ve
-	// ayrıcalık-yükseltme koruması için). Boş → platform admini.
+	// ayrıcalık-yükseltme koruması için). Boş → platform admini. Bilinmeyen veya PASİF yönetici
+	// için "" DÖNMEZ: ErrUnknownAdmin (403) döner — çağıranlar fail-closed reddeder, asla
+	// platform kapsamına düşmez (Z4b-09).
 	AdminTenant(ctx context.Context, adminID string) (string, error)
 	// TenantForDevice, cihazın bağlı olduğu kiracıyı döner (aksiyon/yazma-yolu kiracı
 	// zorunlu-kılması için). Cihaz yoksa boş döner.
@@ -124,10 +142,13 @@ type Store interface {
 	// EventTenant, bir olayın (event_logs.id) kiracısını döner (olay triyaj yazma-yolu
 	// kiracı zorunlu-kılması için). Olay yoksa boş döner.
 	EventTenant(ctx context.Context, eventID string) (string, error)
-	// SetAdminRole, bir yöneticinin rolünü değiştirir.
-	SetAdminRole(ctx context.Context, id string, role Role) error
-	// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false).
-	DeactivateAdmin(ctx context.Context, id string) error
+	// SetAdminRole, bir yöneticinin rolünü değiştirir. tenantID boş değilse yazım hedefin
+	// kiracısıyla daraltılır (derinlemesine savunma; eşleşen yönetici yoksa ErrForbidden);
+	// boş = platform kapsamı (süzme yok).
+	SetAdminRole(ctx context.Context, id string, role Role, tenantID string) error
+	// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false). tenantID semantiği
+	// SetAdminRole ile aynıdır.
+	DeactivateAdmin(ctx context.Context, id, tenantID string) error
 	// ListAdmins, yöneticileri döner (parola hash'i olmadan). tenantID boş değilse
 	// YALNIZ o kiracının yöneticileri döner (platform adminleri dahil DEĞİL); boş →
 	// tüm yöneticiler (yalnız platform admini çağırır — service katmanı zorunlu kılar).
@@ -393,7 +414,7 @@ func (s *Service) RevokeEnrollmentToken(ctx context.Context, adminID, tokenID st
 			return ErrForbidden
 		}
 	}
-	if err := s.store.RevokeEnrollmentToken(ctx, tokenID); err != nil {
+	if err := s.store.RevokeEnrollmentToken(ctx, tokenID, callerTenant); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "REVOKE_ENROLLMENT_TOKEN", "token", tokenID)
@@ -525,11 +546,12 @@ func (s *Service) SetDeviceTags(ctx context.Context, adminID, deviceID string, t
 		return err
 	}
 	// KİRACI DUVARI: diğer cihaz mutasyonları gibi — yalnız kendi kiracısının cihazı.
-	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
+	callerTenant, err := s.deviceCallerTenant(ctx, adminID, deviceID)
+	if err != nil {
 		return err
 	}
 	clean := normalizeTags(tags)
-	if err := s.store.SetDeviceTags(ctx, deviceID, clean); err != nil {
+	if err := s.store.SetDeviceTags(ctx, deviceID, clean, callerTenant); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "SET_TAGS", "device", deviceID)
@@ -794,21 +816,29 @@ var commandScopeAction = map[string]scope.Action{
 // gibi YIKICI aksiyonlarını (çapraz-kiracı WRITE IDOR) engeller. Kiracı SUNUCU-TARAFI
 // çözülür (adminID → admins.tenant_id; deviceID → devices.tenant_id), istekten DEĞİL.
 func (s *Service) enforceDeviceTenant(ctx context.Context, adminID, deviceID string) error {
+	_, err := s.deviceCallerTenant(ctx, adminID, deviceID)
+	return err
+}
+
+// deviceCallerTenant, enforceDeviceTenant ile aynı kapıdır ve ek olarak çağıranın (sunucu-
+// tarafı çözülmüş) kiracısını döner; yazma-yolu SQL'inin kiracı predicate'ine (S-4) verilir.
+// Bilinmeyen/pasif çağıran ErrUnknownAdmin (403) alır — asla platform kapsamına düşmez.
+func (s *Service) deviceCallerTenant(ctx context.Context, adminID, deviceID string) (string, error) {
 	adminTenant, err := s.store.AdminTenant(ctx, adminID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if adminTenant == "" {
-		return nil // platform admini: tüm kiracıların cihazlarına yetkili
+		return "", nil // platform admini: tüm kiracıların cihazlarına yetkili
 	}
 	devTenant, err := s.store.TenantForDevice(ctx, deviceID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if devTenant != adminTenant {
-		return ErrForbidden
+		return "", ErrForbidden
 	}
-	return nil
+	return adminTenant, nil
 }
 
 // enforceEventTenant, çağıran yöneticinin bir OLAYIN triyajını (ack/resolve/vaka)
@@ -939,12 +969,70 @@ func (s *Service) RevokeDevice(ctx context.Context, adminID, deviceID string) er
 	return nil
 }
 
-// CreatePolicy, yeni bir politika oluşturur (ADMIN).
-func (s *Service) CreatePolicy(ctx context.Context, adminID, name, version string) (string, error) {
+// policyOwner, politika erişim kapısıdır (Z4a-04 / Z4b-04). Politikanın sahibi kiracıyı döner
+// ("" = platform/paylaşımlı). Kural:
+//   - bilinmeyen politika → ErrForbidden (varlık sızdırılmaz);
+//   - platform admini (boş kiracı) her politikayı okuyabilir/değiştirebilir;
+//   - kiracıya bağlı admin KENDİ kiracısının politikasını okuyabilir/değiştirebilir;
+//     platform/paylaşımlı politikayı yalnız OKUYABİLİR (write=false), değiştiremez;
+//     başka kiracının politikasına hiçbir şekilde erişemez.
+//
+// Çağıran kiracısı sunucu-tarafı çözülür (AdminTenant), istekten DEĞİL.
+func (s *Service) policyOwner(ctx context.Context, adminID, policyID string, write bool) (string, error) {
+	callerTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return "", err
+	}
+	pt, found, err := s.store.PolicyTenant(ctx, policyID)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", ErrForbidden
+	}
+	if callerTenant == "" {
+		return pt, nil // platform admini: kısıtsız
+	}
+	if pt == callerTenant || (!write && pt == "") {
+		return pt, nil
+	}
+	return "", ErrForbidden
+}
+
+// policyFitsDevice, politikanın cihaza ATANABİLİR olup olmadığını söyler: politika
+// platform/paylaşımlı ("") ya da cihazla AYNI kiracıya aittir (boş cihaz kiracısı legacy
+// 'default' ile eşdeğerdir). Bu bir bütünlük değişmezidir: platform admini dahil kimse bir
+// kiracının politikasını başka kiracının cihazına atayamaz (kural itmesi yalnız sahibine ulaşır).
+func policyFitsDevice(policyTenant, deviceTenant string) bool {
+	return policyTenant == "" || tenant.Equivalent(policyTenant, deviceTenant)
+}
+
+// CreatePolicy, yeni bir politika oluşturur (ADMIN). Sahip kiracı SUNUCU-TARAFI belirlenir:
+// kiracıya bağlı admin HER ZAMAN kendi kiracısı için oluşturur (boş istek = "kendi kiracım";
+// başka bir değer ErrForbidden). Yalnız platform admini kiracı seçebilir (doğrulanır:
+// tenant.Normalize) ya da boş bırakıp platform/paylaşımlı politika oluşturabilir.
+func (s *Service) CreatePolicy(ctx context.Context, adminID, name, version, tenantID string) (string, error) {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
 		return "", err
 	}
-	id, err := s.store.CreatePolicy(ctx, name, version)
+	callerTenant, err := s.store.AdminTenant(ctx, adminID)
+	if err != nil {
+		return "", err
+	}
+	owner := callerTenant
+	if callerTenant == "" {
+		// Platform admini: boş = paylaşımlı; dolu = doğrulanmış belirli kiracı.
+		if t := strings.TrimSpace(tenantID); t != "" {
+			n, err := tenant.Normalize(t)
+			if err != nil {
+				return "", ErrInvalidInput
+			}
+			owner = string(n)
+		}
+	} else if tenantID != "" && tenantID != callerTenant {
+		return "", ErrForbidden
+	}
+	id, err := s.store.CreatePolicy(ctx, name, version, owner)
 	if err != nil {
 		return "", err
 	}
@@ -952,13 +1040,26 @@ func (s *Service) CreatePolicy(ctx context.Context, adminID, name, version strin
 	return id, nil
 }
 
-// AssignPolicy, bir politikayı cihaza atar (ADMIN).
+// AssignPolicy, bir politikayı cihaza atar (ADMIN). Cihaz çağıranın kiracısında olmalı
+// (enforceDeviceTenant) VE politika platform/paylaşımlı ya da cihazın kiracısına ait olmalı
+// (policyFitsDevice); aksi halde ErrForbidden.
 func (s *Service) AssignPolicy(ctx context.Context, adminID, deviceID, policyID string) error {
 	if err := s.require(ctx, adminID, RoleAdmin); err != nil {
 		return err
 	}
 	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return err
+	}
+	pt, err := s.policyOwner(ctx, adminID, policyID, false)
+	if err != nil {
+		return err
+	}
+	devTenant, err := s.store.TenantForDevice(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+	if !policyFitsDevice(pt, devTenant) {
+		return ErrForbidden
 	}
 	// G-04/F-A: politika atama, ardından pub.Publish ile cihaza ANLIK push tetikler —
 	// yani DOLAYLI bir executor edge'i. Bu yüzden diğer yüksek-etkili cihaz yollarıyla
@@ -992,6 +1093,12 @@ func (s *Service) AddPolicyRule(ctx context.Context, adminID, policyID string, i
 	if in.Type == "APP_TIME_BLOCK" && (in.Start == "" || in.End == "") {
 		return ErrInvalidRule
 	}
+	// Z4a-04: kural itme yetkisi — yalnız KENDİ kiracısının politikası (platform admini hepsi);
+	// platform/paylaşımlı politikayı kiracıya bağlı admin değiştiremez.
+	pt, err := s.policyOwner(ctx, adminID, policyID, true)
+	if err != nil {
+		return err
+	}
 	if err := s.store.AddPolicyRule(ctx, policyID, in); err != nil {
 		return err
 	}
@@ -1007,15 +1114,30 @@ func (s *Service) AddPolicyRule(ctx context.Context, adminID, policyID string, i
 			return err
 		}
 		for _, deviceID := range devices {
+			// Kural itmesi YALNIZ politikanın kiracısındaki cihazlara ulaşır (eski/bozuk bir
+			// çapraz-kiracı atama olsa bile). Paylaşımlı politika atanmış tüm cihazlara gider.
+			if pt != "" {
+				dt, err := s.store.TenantForDevice(ctx, deviceID)
+				if err != nil {
+					return err
+				}
+				if !policyFitsDevice(pt, dt) {
+					continue
+				}
+			}
 			s.pub.Publish(deviceID)
 		}
 	}
 	return nil
 }
 
-// ListPolicyRules, bir politikanın kurallarını döner (OPERATOR+).
+// ListPolicyRules, bir politikanın kurallarını döner (OPERATOR+). Kiracıya bağlı admin
+// yalnız kendi kiracısının ve platform/paylaşımlı politikaların kurallarını okuyabilir.
 func (s *Service) ListPolicyRules(ctx context.Context, adminID, policyID string) ([]RuleView, error) {
 	if err := s.require(ctx, adminID, RoleOperator); err != nil {
+		return nil, err
+	}
+	if _, err := s.policyOwner(ctx, adminID, policyID, false); err != nil {
 		return nil, err
 	}
 	return s.store.ListPolicyRules(ctx, policyID)

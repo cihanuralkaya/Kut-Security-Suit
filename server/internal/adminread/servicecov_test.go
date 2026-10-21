@@ -557,7 +557,7 @@ func TestPolicies(t *testing.T) {
 		{ID: "p1", Name: "Baseline", Version: "v2", RuleCount: 5, DeviceCount: 20},
 	}}
 	svc := NewService(store, newCipher(t))
-	got, err := svc.Policies(context.Background(), 0)
+	got, err := svc.Policies(context.Background(), 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}

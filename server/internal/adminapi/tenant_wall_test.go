@@ -3,6 +3,7 @@ package adminapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -11,8 +12,10 @@ import (
 	"time"
 
 	"kut.corp/suite/server/internal/admin"
+	"kut.corp/suite/server/internal/aisec"
 	"kut.corp/suite/server/internal/authtoken"
 	"kut.corp/suite/server/internal/detect"
+	"kut.corp/suite/server/internal/msp"
 	"kut.corp/suite/server/internal/security"
 )
 
@@ -391,5 +394,242 @@ func TestLastTenantAdminSelfDemotionDeniedHTTP(t *testing.T) {
 	}
 	if code, _ := post(t, ts.URL+"/api/admins/acme-adm/role", acme, map[string]string{"role": "VIEWER"}); code != http.StatusOK {
 		t.Fatalf("ikinci ADMIN varken düşürmek geçmeli: %d", code)
+	}
+}
+
+// --- Z4a-04 / Z4b-04: politika sahipliği HTTP ---
+
+func TestPolicyTenantWallHTTP(t *testing.T) {
+	ts, store := wallServer(t)
+	store.deviceTenant = map[string]string{"d-acme": "acme", "d-globex": "globex"}
+	acme := wallAdmin(t, ts, store, "acme-adm", admin.RoleAdmin, "acme")
+	plat := wallAdmin(t, ts, store, "plat-adm", admin.RoleAdmin, "")
+
+	// Platform: globex'e özel politika + paylaşımlı politika oluşturur.
+	_, gb := post(t, ts.URL+"/api/policies", plat, map[string]string{"name": "G", "version": "v1", "tenant_id": "globex"})
+	_, sb := post(t, ts.URL+"/api/policies", plat, map[string]string{"name": "S", "version": "v1"})
+	globexPol, sharedPol := gb["policy_id"], sb["policy_id"]
+	if globexPol == "" || sharedPol == "" {
+		t.Fatalf("platform politikaları oluşturabilmeli: %v %v", gb, sb)
+	}
+	// acme kendi politikasını oluşturur (gövdedeki tenant boş = kendi kiracısı).
+	code, ab := post(t, ts.URL+"/api/policies", acme, map[string]string{"name": "A", "version": "v1"})
+	acmePol := ab["policy_id"]
+	if code != http.StatusOK || acmePol == "" {
+		t.Fatalf("acme kendi politikasını oluşturabilmeli: %d %v", code, ab)
+	}
+	// NEGATIF: acme başka kiracı adına politika oluşturamaz.
+	if code, _ := post(t, ts.URL+"/api/policies", acme, map[string]string{"name": "X", "version": "v1", "tenant_id": "globex"}); code != http.StatusForbidden {
+		t.Fatalf("başka kiracı adına oluşturma 403 olmalı: %d", code)
+	}
+	// NEGATIF: platform geçersiz kiracı kimliğiyle 400 alır.
+	if code, _ := post(t, ts.URL+"/api/policies", plat, map[string]string{"name": "X", "version": "v1", "tenant_id": "Bad Tenant!"}); code != http.StatusBadRequest {
+		t.Fatalf("geçersiz kiracı kimliği 400 olmalı: %d", code)
+	}
+
+	rule := map[string]any{"type": "APP_BLOCK_ALWAYS", "target": "evil.exe"}
+	// NEGATIF: acme, globex ve paylaşımlı politikaya kural ekleyemez / globex kurallarını okuyamaz.
+	if code, _ := post(t, ts.URL+"/api/policies/"+globexPol+"/rules", acme, rule); code != http.StatusForbidden {
+		t.Fatalf("yabancı politikaya kural 403 olmalı: %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/policies/"+sharedPol+"/rules", acme, rule); code != http.StatusForbidden {
+		t.Fatalf("paylaşımlı politikaya kural (kiracılı admin) 403 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/policies/"+globexPol+"/rules", acme, ""); code != http.StatusForbidden {
+		t.Fatalf("yabancı politika kural listesi 403 olmalı: %d", code)
+	}
+	if len(store.rules[globexPol]) != 0 || len(store.rules[sharedPol]) != 0 {
+		t.Fatal("reddedilen çağrılar kural yazmamalı")
+	}
+	// NEGATIF: yabancı politika atama.
+	if code, _ := post(t, ts.URL+"/api/policies/assign", acme, map[string]string{"device_id": "d-acme", "policy_id": globexPol}); code != http.StatusForbidden {
+		t.Fatalf("yabancı politika atama 403 olmalı: %d", code)
+	}
+	// NEGATIF: platform bile acme politikasını globex cihazına atayamaz.
+	if code, _ := post(t, ts.URL+"/api/policies/assign", plat, map[string]string{"device_id": "d-globex", "policy_id": acmePol}); code != http.StatusForbidden {
+		t.Fatalf("kiracılar arası atama (platform dahil) 403 olmalı: %d", code)
+	}
+	if len(store.assigned) != 0 {
+		t.Fatalf("reddedilen atamalar yazılmamalı: %v", store.assigned)
+	}
+
+	// POZITIF: kendi politikasına kural + okuma + atama; paylaşımlı atama; platform kural.
+	if code, _ := post(t, ts.URL+"/api/policies/"+acmePol+"/rules", acme, rule); code != http.StatusOK {
+		t.Fatalf("kendi politikasına kural 200 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/policies/"+acmePol+"/rules", acme, ""); code != http.StatusOK {
+		t.Fatalf("kendi kuralları 200 olmalı: %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/policies/assign", acme, map[string]string{"device_id": "d-acme", "policy_id": acmePol}); code != http.StatusOK {
+		t.Fatalf("kendi politikası atama 200 olmalı: %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/policies/assign", acme, map[string]string{"device_id": "d-acme", "policy_id": sharedPol}); code != http.StatusOK {
+		t.Fatalf("paylaşımlı politika atama 200 olmalı: %d", code)
+	}
+	if code, _ := post(t, ts.URL+"/api/policies/"+globexPol+"/rules", plat, rule); code != http.StatusOK {
+		t.Fatalf("platform her politikaya kural ekleyebilmeli: %d", code)
+	}
+
+	// Liste: acme yalnız kendi + paylaşımlı; platform hepsi.
+	listIDs := func(token string) map[string]bool {
+		resp, err := authedGET(t, ts.URL+"/api/policies", token)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("politika listesi 200 olmalı: %v %v", resp, err)
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Policies []struct {
+				ID     string `json:"id"`
+				Shared bool   `json:"shared"`
+			} `json:"policies"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatal(err)
+		}
+		ids := map[string]bool{}
+		for _, p := range out.Policies {
+			ids[p.ID] = p.Shared
+		}
+		return ids
+	}
+	got := listIDs(acme)
+	if _, leaked := got[globexPol]; leaked || len(got) != 2 {
+		t.Fatalf("acme yalnız kendi + paylaşımlı politikaları görmeli: %v", got)
+	}
+	if shared, ok := got[sharedPol]; !ok || !shared {
+		t.Fatalf("paylaşımlı politika shared=true ile listelenmeli: %v", got)
+	}
+	if all := listIDs(plat); len(all) != 3 {
+		t.Fatalf("platform admini 3 politikayı görmeli: %v", all)
+	}
+}
+
+// W1b-1 QA: artefakt/delil LİSTELEME uçları (dosya yolları + gözetim-zinciri aktörleri) de
+// adli eşikte (OPERATOR+) olmalı; gözetim-zinciri yazımı yönetici denetim izine de düşmeli.
+func TestForensicsListingsRequireOperatorAndCustodyIsAudited(t *testing.T) {
+	ts, store := wallServer(t)
+	viewer := wallAdmin(t, ts, store, "vw", admin.RoleViewer, "")
+	op := wallAdmin(t, ts, store, "op", admin.RoleOperator, "")
+	aid, _ := store.SaveArtifact(context.Background(), "dev-1", "cmd-1", "C:/Users/bob/notes.txt", "abcd", []byte("icerik"))
+
+	// NEGATIF: VIEWER artefakt / delil listesini göremez.
+	if code := doReq(t, "GET", ts.URL+"/api/devices/dev-1/artifacts", viewer, ""); code != http.StatusForbidden {
+		t.Fatalf("VIEWER artefakt listesi 403 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/devices/dev-1/evidence", viewer, ""); code != http.StatusForbidden {
+		t.Fatalf("VIEWER delil listesi 403 olmalı: %d", code)
+	}
+	// POZITIF: OPERATOR görür.
+	if code := doReq(t, "GET", ts.URL+"/api/devices/dev-1/artifacts", op, ""); code != http.StatusOK {
+		t.Fatalf("OPERATOR artefakt listesi 200 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/devices/dev-1/evidence", op, ""); code != http.StatusOK {
+		t.Fatalf("OPERATOR delil listesi 200 olmalı: %d", code)
+	}
+
+	// NEGATIF: reddedilen (VIEWER) ve geçersiz eylemli (OPERATOR) gözetim yazımı denetim satırı BIRAKMAZ.
+	custodyURL := ts.URL + "/api/devices/dev-1/evidence/" + aid + "/custody"
+	if code, _ := post(t, custodyURL, viewer, map[string]string{"action": "ACCESSED"}); code != http.StatusForbidden {
+		t.Fatalf("VIEWER custody 403 olmalı: %d", code)
+	}
+	if code, _ := post(t, custodyURL, op, map[string]string{"action": "BOGUS"}); code != http.StatusBadRequest {
+		t.Fatalf("geçersiz eylem 400 olmalı: %d", code)
+	}
+	for _, a := range store.auditRows {
+		if strings.HasPrefix(a.Action, "CUSTODY_") {
+			t.Fatalf("başarısız gözetim yazımı denetim satırı bırakmamalı: %+v", a)
+		}
+	}
+	// POZITIF: başarılı yazım hem delil zincirine hem yönetici denetim izine düşer.
+	if code, _ := post(t, custodyURL, op, map[string]string{"action": "ACCESSED"}); code != http.StatusOK {
+		t.Fatalf("OPERATOR custody 200 olmalı: %d", code)
+	}
+	found := false
+	for _, a := range store.auditRows {
+		if a.Action == "CUSTODY_ACCESSED" && a.TargetType == "artifact" && a.TargetID == aid {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("CUSTODY_ACCESSED denetim satırı yazılmalıydı: %+v", store.auditRows)
+	}
+}
+
+// recMSP, MSPAddCustomer'a geçen kiracıyı kaydeden MSP deposudur.
+type recMSP struct {
+	fakeMSPStore
+	tenants []string
+}
+
+func (r *recMSP) MSPAddCustomer(name, tenantID string) (msp.Customer, error) {
+	r.tenants = append(r.tenants, tenantID)
+	return msp.Customer{Name: name, TenantID: tenantID}, nil
+}
+
+// Z4b-08: istekten gelen kiracı değerleri sınırda doğrulanır/normalleştirilir (MSP müşterisi,
+// yönetici oluşturma, ajan-güvenlik ?tenant= filtresi). Boş kiracı yönetici oluşturmada
+// "platform" olarak KALIR ('default'a dönüşmez).
+func TestTenantInputValidatedAtBoundaries(t *testing.T) {
+	srv, store := newServer(t)
+	srv.SetTenantID("deploy-default")
+	rec := &recMSP{}
+	srv.SetMSPStore(rec)
+	srv.SetAgentSec(aisec.NewService())
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	plat := wallAdmin(t, ts, store, "plat", admin.RoleAdmin, "")
+	acme := wallAdmin(t, ts, store, "acme-adm", admin.RoleAdmin, "acme")
+
+	// --- MSP müşterisi ---
+	if code, _ := post(t, ts.URL+"/api/msp/customers", plat, map[string]string{"name": "n", "tenant_id": "  ACME-Corp "}); code != http.StatusCreated {
+		t.Fatalf("geçerli (büyük harfli) kiracı kabul edilmeli: %d", code)
+	}
+	if len(rec.tenants) != 1 || rec.tenants[0] != "acme-corp" {
+		t.Fatalf("MSP kiracısı normalleştirilmeli: %v", rec.tenants)
+	}
+	for _, bad := range []string{"Bad Tenant!", "-lead", strings.Repeat("a", 64)} {
+		if code, _ := post(t, ts.URL+"/api/msp/customers", plat, map[string]string{"name": "n", "tenant_id": bad}); code != http.StatusBadRequest {
+			t.Fatalf("geçersiz MSP kiracısı (%q) 400 olmalı: %d", bad, code)
+		}
+	}
+	if len(rec.tenants) != 1 {
+		t.Fatalf("geçersiz kiracılar depoya ulaşmamalı: %v", rec.tenants)
+	}
+
+	// --- Yönetici oluşturma ---
+	mk := func(token, email, tn string) (int, string) {
+		code, b := post(t, ts.URL+"/api/admins", token, map[string]string{
+			"email": email, "password": "longenough1", "role": "VIEWER", "tenant_id": tn,
+		})
+		return code, b["admin_id"]
+	}
+	if code, id := mk(plat, "g1@x", "GLOBEX"); code != http.StatusOK || store.adminTen[id] != "globex" {
+		t.Fatalf("platform: kiracı normalleşmeli: %d %q", code, store.adminTen[id])
+	}
+	if code, _ := mk(plat, "bad@x", "Bad Tenant!"); code != http.StatusBadRequest {
+		t.Fatalf("platform: geçersiz kiracı 400 olmalı: %d", code)
+	}
+	if code, id := mk(plat, "p2@x", ""); code != http.StatusOK || store.adminTen[id] != "" {
+		t.Fatalf("platform: boş kiracı platform admini KALMALI: %d %q", code, store.adminTen[id])
+	}
+	// Kiracıya bağlı: kendi kiracısının büyük-harf yazımı kabul (normalleşir), başkası/başkasının büyük harfi 403.
+	if code, id := mk(acme, "a1@x", "ACME"); code != http.StatusOK || store.adminTen[id] != "acme" {
+		t.Fatalf("kiracılı: kendi kiracısı (büyük harf) kabul + normalleşmeli: %d %q", code, store.adminTen[id])
+	}
+	for _, other := range []string{"globex", "GLOBEX"} {
+		if code, _ := mk(acme, "x-"+other+"@x", other); code != http.StatusForbidden {
+			t.Fatalf("kiracılı: başka kiracı (%s) 403 olmalı: %d", other, code)
+		}
+	}
+
+	// --- Ajan-güvenlik ?tenant= (yalnız platform için anlamlı) ---
+	if code := doReq(t, "GET", ts.URL+"/api/agentsec/canonical?tenant=Bad%20Tenant!", plat, ""); code != http.StatusBadRequest {
+		t.Fatalf("platform: geçersiz ?tenant= 400 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/agentsec/canonical?tenant=ACME", plat, ""); code != http.StatusOK {
+		t.Fatalf("platform: geçerli ?tenant= 200 olmalı: %d", code)
+	}
+	if code := doReq(t, "GET", ts.URL+"/api/agentsec/canonical?tenant=Bad%20Tenant!", acme, ""); code != http.StatusOK {
+		t.Fatalf("kiracılı: ?tenant= zaten YOK SAYILIR (200): %d", code)
 	}
 }

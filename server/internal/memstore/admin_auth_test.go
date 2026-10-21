@@ -17,7 +17,7 @@ func TestLookupAdminExcludesDeactivated(t *testing.T) {
 		t.Fatalf("aktif admin çözülmeliydi: id=%q hash=%q err=%v", gotID, hash, err)
 	}
 
-	if err := s.DeactivateAdmin(context.Background(), id); err != nil {
+	if err := s.DeactivateAdmin(context.Background(), id, ""); err != nil {
 		t.Fatal(err)
 	}
 

@@ -291,6 +291,7 @@ func TestListPolicyRulesRBAC(t *testing.T) {
 	svc, _ := newService(t, store)
 	ctx := context.Background()
 
+	_, _ = store.CreatePolicy(ctx, "P", "v1", "") // pol-1
 	_ = store.AddPolicyRule(ctx, "pol-1", RuleInput{Type: "APP_BLOCK_ALWAYS", Target: "oyun.exe"})
 
 	if _, err := svc.ListPolicyRules(ctx, "viewer1", "pol-1"); err != ErrForbidden {

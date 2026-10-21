@@ -6,11 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"kut.corp/suite/server/internal/admin"
 	"kut.corp/suite/server/internal/enroll"
 )
 
-// Z4b-02: bir kiracının token'ı, başka kiracıya ait cihazı (aynı MAC blind index)
-// devralamaz; cihaz satırı değişmez.
+// Z4b-02 + S-3: bir kiracının token'ı, başka kiracıya ait cihazı (aynı MAC blind index)
+// devralamaz; cihaz satırı değişmez. MAC tekilliği KİRACI BAŞINA olduğundan, başka kiracı
+// aynı MAC ile KENDİ cihazını alır (MAC-squat DoS yok).
 func TestEnrollCannotRehomeDeviceAcrossTenants(t *testing.T) {
 	ctx := context.Background()
 	s := New()
@@ -21,22 +23,29 @@ func TestEnrollCannotRehomeDeviceAcrossTenants(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// NEGATIF: globex token'ı ile aynı MAC → reddedilir.
-	_, err = s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
-		MACBlindIndex: []byte("mac-1"), HostnameEnc: []byte("host-EVIL"), TenantID: "globex",
+	// NEGATIF (re-home): globex aynı MAC ile enroll olur → acme'nin satırı DEĞİŞMEZ;
+	// globex AYRI bir cihaz alır.
+	idG, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
+		MACBlindIndex: []byte("mac-1"), HostnameEnc: []byte("host-G"), TenantID: "globex",
 	})
-	if !errors.Is(err, enroll.ErrTenantMismatch) {
-		t.Fatalf("çapraz-kiracı yeniden kayıt ErrTenantMismatch olmalı: %v", err)
+	if err != nil {
+		t.Fatalf("aynı MAC başka kiracıda enroll olabilmeli (MAC-squat DoS yok): %v", err)
+	}
+	if idG == idA {
+		t.Fatalf("globex acme'nin cihazını devralmamalı: %q", idG)
 	}
 	if tn, _ := s.TenantForDevice(ctx, idA); tn != "acme" {
 		t.Fatalf("cihaz kiracısı DEĞİŞMEMELİ: %q", tn)
 	}
+	if tn, _ := s.TenantForDevice(ctx, idG); tn != "globex" {
+		t.Fatalf("globex cihazı globex'e ait olmalı: %q", tn)
+	}
 	row, _, _ := s.DeviceByID(ctx, idA)
 	if string(row.HostnameEnc) != "host-A" {
-		t.Fatalf("reddedilen kayıt cihaz alanlarını DEĞİŞTİRMEMELİ: %q", row.HostnameEnc)
+		t.Fatalf("diğer kiracının kaydı cihaz alanlarını DEĞİŞTİRMEMELİ: %q", row.HostnameEnc)
 	}
 
-	// NEGATIF: PreferredDeviceID (token'a bağlı cihaz) yolu da aynı duvara tabi.
+	// NEGATIF: PreferredDeviceID (token'a bağlı cihaz) yolu hâlâ aynı duvara tabi.
 	_, err = s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
 		PreferredDeviceID: idA, MACBlindIndex: []byte("mac-2"), TenantID: "globex",
 	})
@@ -47,10 +56,10 @@ func TestEnrollCannotRehomeDeviceAcrossTenants(t *testing.T) {
 		t.Fatalf("cihaz kiracısı DEĞİŞMEMELİ (preferred yolu): %q", tn)
 	}
 
-	// NEGATIF: kiracılı cihaz, boş kiracılı (varsayılan) token ile de devralınamaz.
-	_, err = s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: []byte("mac-1"), TenantID: ""})
-	if !errors.Is(err, enroll.ErrTenantMismatch) {
-		t.Fatalf("boş kiracı token'ı kiracılı cihazı devralamaz: %v", err)
+	// NEGATIF: boş kiracılı (= default) token acme'nin cihazını devralamaz; kendi satırını alır.
+	idD, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: []byte("mac-1"), TenantID: ""})
+	if err != nil || idD == idA || idD == idG {
+		t.Fatalf("boş kiracı token'ı kiracılı cihazı devralamaz, kendi satırını almalı: id=%q err=%v", idD, err)
 	}
 
 	// POZITIF: aynı kiracıda yeniden kayıt aynı cihazı günceller.
@@ -69,6 +78,38 @@ func TestEnrollCannotRehomeDeviceAcrossTenants(t *testing.T) {
 		PreferredDeviceID: idA, MACBlindIndex: []byte("mac-1"), TenantID: "acme",
 	}); err != nil {
 		t.Fatalf("aynı kiracıda preferred geçmeli: %v", err)
+	}
+}
+
+// S-3: MAC-squat DoS. Kiracı A, B'nin cihazının MAC'ini ÖNCEDEN kaydetse bile B kendi
+// cihazını enroll edebilir; A'nın satırı ve B'nin satırı birbirinden bağımsızdır.
+func TestMACSquatCannotBlockOtherTenant(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	mac := []byte("victim-mac")
+	squat, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: mac, HostnameEnc: []byte("squat"), TenantID: "evil"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	victim, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: mac, HostnameEnc: []byte("real"), TenantID: "victim"})
+	if err != nil {
+		t.Fatalf("kurban kiracı enroll olabilmeli: %v", err)
+	}
+	if victim == squat {
+		t.Fatal("kurban, squat eden kiracının satırını almamalı")
+	}
+	if tn, _ := s.TenantForDevice(ctx, victim); tn != "victim" {
+		t.Fatalf("kurban cihazı kurbana ait olmalı: %q", tn)
+	}
+	// Kurban yeniden kaydolunca KENDİ satırını günceller (squat'ınkini değil).
+	again, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: mac, HostnameEnc: []byte("real2"), TenantID: "victim"})
+	if err != nil || again != victim {
+		t.Fatalf("kurban yeniden kaydı kendi satırını güncellemeli: %q %v", again, err)
+	}
+	// Preferred yolunda başka bir cihazın (aynı kiracı) MAC'ine çakışma reddedilir.
+	other, _ := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: []byte("other"), TenantID: "victim"})
+	if _, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{PreferredDeviceID: other, MACBlindIndex: mac, TenantID: "victim"}); err == nil {
+		t.Fatal("aynı kiracıda çakışan MAC'e preferred ile geçiş reddedilmeli")
 	}
 }
 
@@ -159,12 +200,17 @@ func TestLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 		t.Fatalf("legacy cihaz boş kiracıyla başlamalı: %q", tn)
 	}
 
-	// NEGATIF: gerçek bir kiracı, legacy (boş = default) cihazı devralamaz.
+	// NEGATIF: gerçek bir kiracı, legacy (boş = default) cihazı devralamaz: MAC yolunda
+	// (S-3) kendi AYRI satırını alır, legacy satır değişmez; preferred yolunda reddedilir.
 	for _, tn := range []string{"acme", "globex"} {
-		if _, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
+		other, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
 			MACBlindIndex: []byte("mac-legacy"), HostnameEnc: []byte("EVIL"), TenantID: tn,
-		}); !errors.Is(err, enroll.ErrTenantMismatch) {
-			t.Fatalf("%s token'ı legacy cihazı devralamaz: %v", tn, err)
+		})
+		if err != nil || other == legacy {
+			t.Fatalf("%s token'ı legacy cihazı devralamaz, kendi satırını almalı: id=%q err=%v", tn, other, err)
+		}
+		if got, _ := s.TenantForDevice(ctx, other); got != tn {
+			t.Fatalf("%s cihazı kendi kiracısında olmalı: %q", tn, got)
 		}
 		if _, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
 			PreferredDeviceID: legacy, MACBlindIndex: []byte("m2"), TenantID: tn,
@@ -173,7 +219,10 @@ func TestLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 		}
 	}
 	if tn, _ := s.TenantForDevice(ctx, legacy); tn != "" {
-		t.Fatalf("reddedilen kayıtlar kiracıyı değiştirmemeli: %q", tn)
+		t.Fatalf("diğer kayıtlar legacy kiracıyı değiştirmemeli: %q", tn)
+	}
+	if row, _, _ := s.DeviceByID(ctx, legacy); string(row.HostnameEnc) != "old" {
+		t.Fatalf("legacy cihaz alanları değişmemeli: %q", row.HostnameEnc)
 	}
 
 	// POZITIF: "default" token'ı aynı cihazı günceller ve kiracıyı default'a normalleştirir.
@@ -190,9 +239,9 @@ func TestLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 	if string(row.HostnameEnc) != "new" {
 		t.Fatalf("alanlar güncellenmeli: %q", row.HostnameEnc)
 	}
-	// Normalleşmeden sonra artık gerçek kiracılar için de duvar aynı: acme yine reddedilir.
+	// Normalleşmeden sonra da duvar aynı: acme preferred yoluyla yine taşıyamaz.
 	if _, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
-		MACBlindIndex: []byte("mac-legacy"), TenantID: "acme",
+		PreferredDeviceID: legacy, MACBlindIndex: []byte("mac-legacy"), TenantID: "acme",
 	}); !errors.Is(err, enroll.ErrTenantMismatch) {
 		t.Fatalf("normalleşmiş cihaz acme'ye taşınamaz: %v", err)
 	}
@@ -206,5 +255,85 @@ func TestLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 	}
 	if tn, _ := s.TenantForDevice(ctx, l2); tn != "default" {
 		t.Fatalf("preferred yolunda da normalleşmeli: %q", tn)
+	}
+}
+
+// Z4b-09 / S-5 (memstore, db ile aynı): bilinmeyen veya pasif yönetici platform ("") değil
+// ErrUnknownAdmin; pasif yönetici AdminRole'den de yetkisiz döner.
+func TestAdminTenantUnknownInactiveFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	plat, _ := s.CreateAdmin(ctx, "p@x", "h", admin.RoleAdmin, "")
+	acme, _ := s.CreateAdmin(ctx, "a@x", "h", admin.RoleOperator, "acme")
+
+	if tn, err := s.AdminTenant(ctx, "ghost"); !errors.Is(err, admin.ErrUnknownAdmin) || tn != "" {
+		t.Fatalf("bilinmeyen yönetici ErrUnknownAdmin olmalı: %q %v", tn, err)
+	}
+	if tn, err := s.AdminTenant(ctx, plat); err != nil || tn != "" {
+		t.Fatalf("etkin platform admini '' + nil olmalı: %q %v", tn, err)
+	}
+	if tn, err := s.AdminTenant(ctx, acme); err != nil || tn != "acme" {
+		t.Fatalf("etkin kiracılı admin kendi kiracısı: %q %v", tn, err)
+	}
+	if err := s.DeactivateAdmin(ctx, acme, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AdminTenant(ctx, acme); !errors.Is(err, admin.ErrUnknownAdmin) {
+		t.Fatalf("pasif yönetici ErrUnknownAdmin olmalı: %v", err)
+	}
+	if r, _ := s.AdminRole(ctx, acme); r != "" {
+		t.Fatalf("pasif yönetici rolsüz olmalı: %q", r)
+	}
+}
+
+// S-4 (memstore, db ile aynı): yazma-yolları kiracı predicate'ini taşır; boş kiracı = platform.
+func TestWritePathsCarryTenantPredicate(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	acmeDev, _ := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: []byte("m-a"), TenantID: "acme"})
+	globexDev, _ := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{MACBlindIndex: []byte("m-g"), TenantID: "globex"})
+	globexAdm, _ := s.CreateAdmin(ctx, "g@x", "h", admin.RoleAdmin, "globex")
+	_ = s.SaveEnrollmentToken(ctx, []byte("ig"), "", "globex", time.Now().Add(time.Hour))
+	gTok, _ := s.ListEnrollmentTokens(ctx, 5, "globex")
+
+	// NEGATIF: acme kapsamıyla globex nesnelerine yazma reddedilir ve durum değişmez.
+	if err := s.SetDeviceTags(ctx, globexDev, []string{"x"}, "acme"); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("etiket: %v", err)
+	}
+	if row, _, _ := s.DeviceByID(ctx, globexDev); len(row.Tags) != 0 {
+		t.Fatalf("yabancı cihaz etiketlenmemeli: %v", row.Tags)
+	}
+	if err := s.SetAdminRole(ctx, globexAdm, admin.RoleViewer, "acme"); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("rol: %v", err)
+	}
+	if err := s.DeactivateAdmin(ctx, globexAdm, "acme"); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("pasifleştirme: %v", err)
+	}
+	if r, _ := s.AdminRole(ctx, globexAdm); r != admin.RoleAdmin {
+		t.Fatalf("yabancı yönetici değişmemeli: %q", r)
+	}
+	if err := s.RevokeEnrollmentToken(ctx, gTok[0].ID, "acme"); !errors.Is(err, admin.ErrForbidden) {
+		t.Fatalf("token iptali: %v", err)
+	}
+	if _, _, err := s.ConsumeEnrollmentToken(ctx, []byte("ig"), time.Now()); err != nil {
+		t.Fatalf("yabancı token iptal edilmemiş olmalı (hâlâ tüketilebilir): %v", err)
+	}
+
+	// POZITIF: kendi kiracısı + platform (boş) kapsamı.
+	if err := s.SetDeviceTags(ctx, acmeDev, []string{"ok"}, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetDeviceTags(ctx, globexDev, []string{"plat"}, ""); err != nil {
+		t.Fatalf("platform kapsamı süzülmemeli: %v", err)
+	}
+	if err := s.SetAdminRole(ctx, globexAdm, admin.RoleOperator, "globex"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeactivateAdmin(ctx, globexAdm, ""); err != nil {
+		t.Fatal(err)
+	}
+	// Kendi token'ı (zaten tüketilmiş) için sessiz no-op.
+	if err := s.RevokeEnrollmentToken(ctx, gTok[0].ID, "globex"); err != nil {
+		t.Fatalf("kendi (kullanılmış) token'ı no-op olmalı: %v", err)
 	}
 }

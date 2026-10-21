@@ -12,8 +12,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"kut.corp/suite/server/internal/security"
+	"kut.corp/suite/server/internal/tenant"
 )
 
 // ErrInvalidInput, kullanıcı girdisi doğrulamayı geçemediğinde döner
@@ -66,14 +68,27 @@ func (s *Service) CreateAdmin(ctx context.Context, adminID, email, password stri
 	if err != nil {
 		return "", err
 	}
-	effTenant := tenantID
+	// Z4b-08: istekten gelen kiracı değeri tenant.Normalize ile kırpılır/küçük harfe çevrilir/
+	// doğrulanır (büyük-küçük harf varyantları ayrı kiracı olamaz; VARCHAR(63) taşması 500 olmaz).
+	// Boş istek burada boş KALIR: boş kiracı = platform admini (Normalize'ın "default"una
+	// çevrilmez).
+	effTenant := strings.TrimSpace(tenantID)
 	if creatorTenant != "" {
 		// Kiracıya bağlı admin: başka kiracıya admin ekleyemez (fail-closed, denetlenebilir).
-		if tenantID != "" && tenantID != creatorTenant {
-			return "", ErrForbidden
+		if effTenant != "" {
+			n, nerr := tenant.Normalize(effTenant)
+			if effTenant != creatorTenant && (nerr != nil || string(n) != creatorTenant) {
+				return "", ErrForbidden
+			}
 		}
 		// Boş istek "kendi kiracım" demektir.
 		effTenant = creatorTenant
+	} else if effTenant != "" {
+		n, nerr := tenant.Normalize(effTenant)
+		if nerr != nil {
+			return "", ErrInvalidInput
+		}
+		effTenant = string(n)
 	}
 	hash, err := security.HashPassword(password)
 	if err != nil {
@@ -188,7 +203,7 @@ func (s *Service) SetAdminRole(ctx context.Context, adminID, targetID string, ro
 			return err
 		}
 	}
-	if err := s.store.SetAdminRole(ctx, targetID, role); err != nil {
+	if err := s.store.SetAdminRole(ctx, targetID, role, callerTenant); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "SET_ADMIN_ROLE", "admin", targetID)
@@ -210,7 +225,7 @@ func (s *Service) DeactivateAdmin(ctx context.Context, adminID, targetID string)
 	if err := s.guardLastAdmin(ctx, adminID, targetID, callerTenant); err != nil {
 		return err
 	}
-	if err := s.store.DeactivateAdmin(ctx, targetID); err != nil {
+	if err := s.store.DeactivateAdmin(ctx, targetID, callerTenant); err != nil {
 		return err
 	}
 	s.audit(ctx, adminID, "DEACTIVATE_ADMIN", "admin", targetID)

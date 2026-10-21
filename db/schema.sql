@@ -61,7 +61,7 @@ CREATE TABLE devices (
     os_info_encrypted      BYTEA,
     -- HMAC-SHA256(sunucu_gizli_anahtarı, normalize_edilmiş_mac). MAC uzayı ~48 bit
     -- olduğundan DÜZ hash offline brute-force'a açıktır; keyed HMAC şarttır.
-    mac_address_bidx       BYTEA NOT NULL UNIQUE,
+    mac_address_bidx       BYTEA NOT NULL,            -- tekillik KİRACI BAŞINA: bkz. uq_devices_tenant_mac (W1b-1 S-3)
     agent_version          VARCHAR(50),
     os_platform            VARCHAR(20),               -- "windows" | "linux"
     os_version             VARCHAR(120),              -- okunabilir OS sürümü (filo envanteri)
@@ -121,6 +121,7 @@ CREATE TABLE policies (
     description TEXT,
     version     VARCHAR(64) NOT NULL,        -- ajana itilen sürüm etiketi
     is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    tenant_id   VARCHAR(63) NOT NULL DEFAULT '',  -- çok-tenant: politikanın sahibi kiracı; boş = platform/paylaşımlı (kiracıya bağlı admin için salt-okunur)
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -622,3 +623,28 @@ CREATE TRIGGER trg_audit_log_no_update
 CREATE TRIGGER trg_audit_log_no_delete
     BEFORE DELETE ON audit_log
     FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_mutation();
+
+-- =============================================================================
+-- W1b-1 YÜKSELTME BLOĞU (idempotent, yeniden çalıştırılabilir)
+-- =============================================================================
+-- Taze kurulumda yukarıdaki CREATE TABLE'lar zaten son biçimdedir ve bu blok
+-- no-op'tur. MEVCUT kurulumlarda şema dosyası bütünüyle yeniden çalıştırılamaz
+-- (CREATE TYPE/TABLE); yalnız BEGIN/END arasını uygulayın:
+--   sed -n '/^-- BEGIN W1B1-UPGRADE/,/^-- END W1B1-UPGRADE/p' db/schema.sql | psql "$KUT_DATABASE_URL"
+-- BEGIN W1B1-UPGRADE
+
+-- S-3 (MAC-squat DoS): mac_address_bidx artık KÜRESEL tekil değil, KİRACI başınadır.
+-- Tekillik anahtarı kanonik kiracıdır: kiracı öncesi (legacy) boş kiracı örtük 'default'
+-- ile AYNI kiracı sayılır (tenant.Canonical), böylece '' ve 'default' aynı MAC için iki
+-- satır üretemez. Önce yeni indeks oluşturulur, sonra eski küresel kısıt düşürülür
+-- (mevcut veri zaten küresel tekil olduğundan indeks oluşturma çakışamaz).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_devices_tenant_mac
+    ON devices ((COALESCE(NULLIF(tenant_id, ''), 'default')), mac_address_bidx);
+ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_mac_address_bidx_key;
+
+-- Z4a-04 / Z4b-04: politikalar kiracı sahibi taşır. Boş = platform/paylaşımlı (mevcut
+-- tüm politikalar böyle kalır; kiracıya bağlı admin okuyabilir/atayabilir, değiştiremez).
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(63) NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_policies_tenant ON policies (tenant_id);
+
+-- END W1B1-UPGRADE

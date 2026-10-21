@@ -13,6 +13,7 @@ import (
 	"kut.corp/suite/server/internal/adminapi"
 	"kut.corp/suite/server/internal/evidence"
 	"kut.corp/suite/server/internal/security"
+	"kut.corp/suite/server/internal/tenant"
 )
 
 // Derleme-zamanı arayüz kontrolleri.
@@ -104,36 +105,65 @@ func (s *Store) EventTenant(ctx context.Context, eventID string) (string, error)
 	return tenant, nil
 }
 
+// ackTenant, olayın (event_logs.id) kiracısını KANONİK biçimde ve bulunup bulunmadığıyla
+// döner: bulunamazsa ("", false). Kiracı SUNUCU-TARAFI olaydan okunur, çağıranın girdisinden
+// DEĞİL. Eski (kiracı öncesi) olayların boş kiracısı tenant.Canonical ile 'default'a çevrilir
+// (event_ack/incidents'in şema varsayılanıyla aynı temsil: Z4b-11).
+func (s *Store) ackTenant(ctx context.Context, eventID string) (string, bool) {
+	if !validUUID(eventID) {
+		return "", false
+	}
+	var tn string
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(tenant_id,'') FROM event_logs WHERE id = $1::uuid LIMIT 1`, eventID).Scan(&tn)
+	if err != nil {
+		return "", false
+	}
+	return tenant.Canonical(tn), true
+}
+
+// SetEventAck, olayın triyaj durumunu yazar. Z4b-11: event_ack.tenant_id artık OLAYIN
+// kiracısıyla yazılır (önceden her satır şema varsayılanı 'default' alıyordu). Olay
+// bulunamazsa (ör. bölümü silinmiş) mevcut satırın kiracısı korunur, yeni satır 'default' alır.
 func (s *Store) SetEventAck(ctx context.Context, eventID, adminID, status string) error {
+	tn, _ := s.ackTenant(ctx, eventID) // bulunamazsa "" → aşağıda mevcut korunur / default
 	const q = `
-		INSERT INTO event_ack (event_id, status, admin_id, updated_at)
-		VALUES ($1, $2, NULLIF($3,'')::uuid, now())
+		INSERT INTO event_ack (event_id, tenant_id, status, admin_id, updated_at)
+		VALUES ($1, COALESCE(NULLIF($4,''),'default'), $2, NULLIF($3,'')::uuid, now())
 		ON CONFLICT (event_id) DO UPDATE
-		   SET status = EXCLUDED.status, admin_id = EXCLUDED.admin_id, updated_at = now()`
-	if _, err := s.pool.Exec(ctx, q, eventID, status, adminID); err != nil {
+		   SET status = EXCLUDED.status, admin_id = EXCLUDED.admin_id, updated_at = now(),
+		       tenant_id = COALESCE(NULLIF($4,''), event_ack.tenant_id)`
+	if _, err := s.pool.Exec(ctx, q, eventID, status, adminID, tn); err != nil {
 		return fmt.Errorf("db: olay triyaj durumu: %w", err)
 	}
 	return nil
 }
 
-// SetEventCase, olayın sorumlu+not alanlarını ayarlar (durumu korur; upsert).
+// SetEventCase, olayın sorumlu+not alanlarını ayarlar (durumu korur; upsert). Kiracı
+// SetEventAck ile aynı kuralla olaydan yazılır (Z4b-11).
 func (s *Store) SetEventCase(ctx context.Context, eventID, adminID, assignee, note string) error {
+	tn, _ := s.ackTenant(ctx, eventID)
 	const q = `
-		INSERT INTO event_ack (event_id, assignee, note, admin_id, updated_at)
-		VALUES ($1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,'')::uuid, now())
+		INSERT INTO event_ack (event_id, tenant_id, assignee, note, admin_id, updated_at)
+		VALUES ($1, COALESCE(NULLIF($5,''),'default'), NULLIF($2,''), NULLIF($3,''), NULLIF($4,'')::uuid, now())
 		ON CONFLICT (event_id) DO UPDATE
-		   SET assignee = NULLIF($2,''), note = NULLIF($3,''), admin_id = EXCLUDED.admin_id, updated_at = now()`
-	if _, err := s.pool.Exec(ctx, q, eventID, assignee, note, adminID); err != nil {
+		   SET assignee = NULLIF($2,''), note = NULLIF($3,''), admin_id = EXCLUDED.admin_id, updated_at = now(),
+		       tenant_id = COALESCE(NULLIF($5,''), event_ack.tenant_id)`
+	if _, err := s.pool.Exec(ctx, q, eventID, assignee, note, adminID, tn); err != nil {
 		return fmt.Errorf("db: olay vaka güncelleme: %w", err)
 	}
 	return nil
 }
 
-// OpenIncident, yeni bir korelasyon incident'i açar (correlate.IncidentSink).
+// OpenIncident, yeni bir korelasyon incident'i açar (correlate.IncidentSink). Z4b-11:
+// incidents.tenant_id artık CİHAZIN kiracısıyla yazılır (sunucu-tarafı alt-sorgu; eski
+// cihazın boş kiracısı, cihazsız incident ve bulunamayan cihaz 'default' — tenant.Canonical
+// ile aynı temsil). Okuma yolu hâlâ device→tenant join kullanır; sütun RLS/rapor içindir.
 func (s *Store) OpenIncident(ctx context.Context, deviceID, key, ruleID, technique, severity, message string, at time.Time) (string, error) {
 	const q = `
-		INSERT INTO incidents (device_id, corr_key, rule_id, technique, severity, sample_msg, first_seen, last_seen)
-		VALUES (NULLIF($1,'')::uuid, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), $6, $7, $7)
+		INSERT INTO incidents (device_id, tenant_id, corr_key, rule_id, technique, severity, sample_msg, first_seen, last_seen)
+		VALUES (NULLIF($1,'')::uuid,
+		        COALESCE(NULLIF((SELECT d.tenant_id FROM devices d WHERE d.id = NULLIF($1,'')::uuid), ''), 'default'),
+		        $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), $6, $7, $7)
 		RETURNING id::text`
 	var id string
 	if err := s.pool.QueryRow(ctx, q, deviceID, key, ruleID, technique, severity, message, at).Scan(&id); err != nil {
@@ -284,25 +314,38 @@ func (s *Store) VerifyAuditChain(ctx context.Context) error {
 	return rows.Err()
 }
 
-// CreatePolicy, yeni bir politika oluşturur ve id'sini döner.
-func (s *Store) CreatePolicy(ctx context.Context, name, version string) (string, error) {
-	const q = `INSERT INTO policies (name, version) VALUES ($1, $2) RETURNING id::text`
+// CreatePolicy, yeni bir politika oluşturur ve id'sini döner. tenantID politikanın sahibi
+// kiracıdır ("" = platform/paylaşımlı).
+func (s *Store) CreatePolicy(ctx context.Context, name, version, tenantID string) (string, error) {
+	const q = `INSERT INTO policies (name, version, tenant_id) VALUES ($1, $2, $3) RETURNING id::text`
 	var id string
-	if err := s.pool.QueryRow(ctx, q, name, version).Scan(&id); err != nil {
+	if err := s.pool.QueryRow(ctx, q, name, version, tenantID).Scan(&id); err != nil {
 		return "", fmt.Errorf("db: politika oluşturma: %w", err)
 	}
 	return id, nil
 }
 
-// AssignPolicy, bir politikayı cihaza atar (idempotent).
+// AssignPolicy, bir politikayı cihaza atar (idempotent). Derinlemesine savunma: atama
+// SQL'i de politikanın platform/paylaşımlı ya da CİHAZIN kiracısına ait olmasını şart koşar;
+// aksi halde (ya da cihaz/politika yoksa) satır eklenmez ve ErrForbidden döner — servis
+// katmanı hatası bir kiracının politikasını başka kiracının cihazına bağlayamaz.
 func (s *Store) AssignPolicy(ctx context.Context, deviceID, policyID string) error {
+	if !validUUID(deviceID) || !validUUID(policyID) {
+		return admin.ErrForbidden
+	}
 	const q = `
 		INSERT INTO device_policies (device_id, policy_id)
-		VALUES ($1, $2)
-		ON CONFLICT (device_id, policy_id) DO NOTHING`
-	_, err := s.pool.Exec(ctx, q, deviceID, policyID)
+		SELECT d.id, p.id
+		  FROM devices d, policies p
+		 WHERE d.id = $1::uuid AND p.id = $2::uuid
+		   AND (p.tenant_id = '' OR p.tenant_id = COALESCE(NULLIF(d.tenant_id, ''), 'default'))
+		ON CONFLICT (device_id, policy_id) DO UPDATE SET policy_id = EXCLUDED.policy_id`
+	ct, err := s.pool.Exec(ctx, q, deviceID, policyID)
 	if err != nil {
 		return fmt.Errorf("db: politika atama: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return admin.ErrForbidden
 	}
 	return nil
 }
