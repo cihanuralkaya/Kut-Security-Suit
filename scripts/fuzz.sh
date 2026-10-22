@@ -24,6 +24,12 @@ TARGETS=(
   "./server/internal/detect/:FuzzLoadRules"
   "./server/internal/detect/:FuzzEvaluate"
   "./server/internal/auditexport/:FuzzVerify"
+  "./cmdenvelope/:FuzzParseCanonicalV2"
+  "./cmdenvelope/:FuzzParseParams"
+  "./cmdenvelope/:FuzzParseStatement"
+  "./cmdenvelope/:FuzzVerifyV2"
+  "./cmdenvelope/:FuzzApplyStatement"
+  "./cmdenvelope/:FuzzParseDSSEJSON"
 )
 
 fail=0

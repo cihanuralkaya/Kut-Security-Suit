@@ -26,7 +26,7 @@ func TestTypeConstsCoverTable(t *testing.T) {
 	}
 }
 
-// N15: tablodaki her tip için Validate başarılı + Spec var; kayıtsız tip reddedilir.
+// tablodaki her tip için Validate başarılı + Spec var; kayıtsız tip reddedilir.
 func TestValidateFollowsSharedTable(t *testing.T) {
 	for _, s := range cmdenvelope.All() {
 		r := CommandRequest{DeviceID: "d", Type: CommandType(s.Name), IssuedBy: "u"}

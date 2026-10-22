@@ -42,4 +42,31 @@ message AgentIdentity {
   string agent_version = 2;
   string os_platform = 3;    // "windows", "linux"
   string os_version = 4;     // okunabilir OS sürümü (ör. "Windows 10 22H2", "Ubuntu 22.04")
+
+  // 5: OTA manifest v2 için ayrıldı — os_arch (işletim sistemi/mimari).
+  reserved 5;
+}
+
+// DsseEnvelope, DSSE (Dead Simple Signing Envelope) zarfıdır. Komut zarfı v2 ve güven
+// bildirimi bununla taşınır (docs/COMMAND-FABRIC.md):
+//   * payload_type: "application/vnd.kut.cmd.v2" (komut) ya da "application/vnd.kut.trust.v2"
+//     (güven bildirimi). Sürüm yük türünde taşınır.
+//   * payload: kanonik gövde baytları (tüm imzacılar için aynı).
+//   * signatures: her biri Ed25519(PAE(payload_type, payload)); keyid doğrulanmamış ipucudur.
+// JSON eşlemesi standart DSSE alan adlarıyla uyumludur (payloadType, payload, signatures[keyid, sig]).
+message DsseEnvelope {
+  string payload_type = 1;
+  bytes payload = 2;
+  repeated DsseSignature signatures = 3; // en çok 8
+}
+
+// DsseSignature, DSSE zarfındaki tek imza girdisidir.
+message DsseSignature {
+  string keyid = 1; // hex(sha256(pubkey)[:16]); doğrulanmamış ipucu
+  bytes sig = 2;    // Ed25519, 64 bayt
+}
+
+// TenantBinding, cihazın hangi kiracıya ait olduğunu bildirir (ajan sabitler).
+message TenantBinding {
+  string tenant_id = 1;
 }

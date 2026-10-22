@@ -8,6 +8,11 @@ useDefault = true
 description = "Demo/geliştirme yapıtları — üretim sırrı değildir (yerel çalıştırma çıktısı)"
 paths = [
   '''_demo[\\/].*''',
+  # Komut zarfı v2 altın vektörleri: tohumlar SABİT ve ortaktır (sha256("kut-cmd-vector-seed:"+ad)),
+  # yalnız testte kullanılır; hiçbir üretim anahtarı değildir. Yüksek entropili hex alanları
+  # (keyid, pub_hex, sig, payload_hex...) genel anahtar kuralına takılır. YALNIZ bu tek dosya
+  # (tam yol) muaf tutulur.
+  '''^contracts[\\/]testvectors[\\/]cmdenvelope[\\/]v2_vectors\.json$''',
 ]
 # AWS dokümantasyonundaki herkese açık ÖRNEK anahtar (gerçek kimlik bilgisi
 # değildir); DLP/secret-broker testlerinde sahte girdi olarak kullanılır.
