@@ -28,7 +28,7 @@ const (
 var seedNames = []string{"root1", "root2", "root3", "root4", "root5", "cmdA", "cmdB", "cmdC", "evil"}
 
 func priv(name string) ed25519.PrivateKey {
-	seed := sha256.Sum256([]byte("kut-w2-vector-seed:" + name))
+	seed := sha256.Sum256([]byte("kut-cmd-vector-seed:" + name))
 	return ed25519.NewKeyFromSeed(seed[:])
 }
 
@@ -66,7 +66,7 @@ func Generate() ([]byte, error) {
 			"Sunucu ve ajan testleri bu dosyayı aynen okur.",
 	}
 	for _, n := range seedNames {
-		seed := sha256.Sum256([]byte("kut-w2-vector-seed:" + n))
+		seed := sha256.Sum256([]byte("kut-cmd-vector-seed:" + n))
 		f.Seeds = append(f.Seeds, SeedJSON{Name: n, SeedHex: hex.EncodeToString(seed[:]), PubHex: hex.EncodeToString(pub(n)), KeyID: idOf(n)})
 	}
 	f.PAE = paeCases()

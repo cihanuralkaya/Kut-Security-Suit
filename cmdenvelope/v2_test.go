@@ -19,7 +19,7 @@ const (
 )
 
 func tKey(name string) ed25519.PrivateKey {
-	seed := sha256.Sum256([]byte("kut-w2-test-seed:" + name))
+	seed := sha256.Sum256([]byte("kut-cmd-test-seed:" + name))
 	return ed25519.NewKeyFromSeed(seed[:])
 }
 

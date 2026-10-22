@@ -236,7 +236,7 @@ GrantID taşınmaz (yalnız sunucu içi). Katkısal ekler: `payloadType`, `keyid
 ## 8. Altın vektörler
 
 `contracts/testvectors/cmdenvelope/v2_vectors.json`, sabit tohumlardan
-(`sha256("kut-w2-vector-seed:"+ad)`) deterministik üretilir ve bayt-bayt sabitlenir. İçerik: PAE sabit
+(`sha256("kut-cmd-vector-seed:"+ad)`) deterministik üretilir ve bayt-bayt sabitlenir. İçerik: PAE sabit
 örnekleri; her komut sınıfı için geçerli DSSE zarfları; sıfırdan farklı ve azami `sequence`; çoklu imza
 (iki anahtar güvenilir, yalnız ikincil güvenilir, bilinmeyen ek imzacı, yinelenen `keyid` bir kez sayılır,
 ikinci imza zorunlu/eksik/bozuk); çift kontrollü WIPE'ta onaylayan imzası; yanlış yük türü; PAE olmadan
