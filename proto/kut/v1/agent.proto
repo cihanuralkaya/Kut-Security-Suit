@@ -64,7 +64,7 @@ message HeartbeatRequest {
   // (yalnız teslim/alındı) FARKLI. Sunucu bunu effective-state geçişi için kullanır
   // (ör. QUARANTINE SUCCEEDED → cihaz gerçekten izole; desired≠effective ayrımı).
   repeated CommandResult command_results = 7;
-  // W2 komut dokusu: ajanın kabul ettiği güven bildirimi epoch'u (0 = güven edinilmedi),
+  // Komut dokusu: ajanın kabul ettiği güven bildirimi epoch'u (0 = güven edinilmedi),
   // desteklediği yetenekler ve derleme numarası. Eski sunucu yok sayar.
   uint64 trust_epoch = 8;
   repeated string capabilities = 9;
@@ -78,7 +78,7 @@ message HeartbeatResponse {
   bool update_available = 3;
   // Sunucudan ajana anlık komut (örn. karantinaya al, karantinadan çıkar).
   repeated Command pending_commands = 4;
-  // W2: ajanın epoch'undan sonraki güven bildirimleri (artan sırada). Ajan bunları bu
+  // ajanın epoch'undan sonraki güven bildirimleri (artan sırada). Ajan bunları bu
   // yanıtın komutlarını doğrulamadan ÖNCE uygular.
   repeated DsseEnvelope trust_statements = 5;
   // Yalnız bootstrap yanıtında (sunucu opt-in): cihazın kiracı bağı.
@@ -106,7 +106,7 @@ message Command {
   int64 expires_at_unix = 7;    // zarf geçerlilik sonu (UnixNano)
   string issued_by = 8;         // imzalayan/talep eden kimlik (audit)
 
-  // Zarf v2 (W2, docs/COMMAND-FABRIC.md): imzalı komut bir DSSE zarfıdır. Gövde (payload)
+  // Zarf v2 (docs/COMMAND-FABRIC.md): imzalı komut bir DSSE zarfıdır. Gövde (payload)
   // command_id, tenant_id, type, requested_by, approved_by, correlation_id, sequence, nonce,
   // issued/expires ve params özetini taşır; imzalar PAE(payload_type, payload) üzerindedir.
   // Zarf varsa ajan YALNIZ gövdedeki değerlere güvenir; 1-3 numaralı alanlar (command_id, type,
@@ -163,7 +163,7 @@ message PolicyBundle {
   google.protobuf.Timestamp issued_at = 3;
   bytes signature = 4; // Sunucunun imzası; ajan içeriği doğrular.
 
-  // 5-11: W2-S9b (politika imzası: content_sig, assignment_sig, key_id, revision,
+  // 5-11: sonraki sürüm için ayrılmış (politika imzası: content_sig, assignment_sig, key_id, revision,
   // assign_seq, authored_at_ns, assigned_at_ns) için ayrıldı.
   reserved 5 to 11;
 }
@@ -218,7 +218,7 @@ message UpdateManifest {
   bool mandatory = 6;
   uint32 rollout_percent = 7;  // Kademeli dağıtım (canary).
 
-  // 8-12: W2-S7 (OTA manifest v2: build_number, os, arch, not_after_unix,
+  // 8-12: sonraki sürüm için ayrılmış (OTA manifest v2: build_number, os, arch, not_after_unix,
   // manifest_version) için ayrıldı.
   reserved 8 to 12;
 }

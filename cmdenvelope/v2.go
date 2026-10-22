@@ -1,6 +1,6 @@
 package cmdenvelope
 
-// Komut zarfı v2 — W2 "Signed Command Fabric" tel formatı (S2'de DONDURULDU). İmzalı komut bir
+// Komut zarfı v2 — "Signed Command Fabric" tel formatı (dondurulmuş). İmzalı komut bir
 // DSSE zarfıdır (bkz. dsse.go): payloadType "application/vnd.kut.cmd.v2", gövde = aşağıdaki
 // kanonik ileti, imzalar = Ed25519(PAE(payloadType, gövde)).
 //
@@ -185,7 +185,7 @@ func KeyID(pub ed25519.PublicKey) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-// RequiredSignatures, tipin gerektirdiği asgari GEÇERLİ imza sayısıdır. W2'de her tip
+// RequiredSignatures, tipin gerektirdiği asgari GEÇERLİ imza sayısıdır. Bu sürümde her tip
 // için 1; WIPE/UNINSTALL için ileride 2-of-N sınıfı bu kancadan açılır (wire değişmez).
 func RequiredSignatures(cmdType string) int { return 1 }
 

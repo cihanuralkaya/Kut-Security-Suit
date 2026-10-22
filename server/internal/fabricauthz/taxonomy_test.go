@@ -169,7 +169,7 @@ func TestCommandAuthorizer_NilEngineModes(t *testing.T) {
 }
 
 // Yalnız kanonik (BÜYÜK harf, tam eşleşme) tip adı kabul edilir; küçük harf/boşluklu ad ve scope
-// aksiyon adları ("remote_command") komut tipi sayılmaz (W2-S2: commandplane.Validate ile tutarlı).
+// aksiyon adları ("remote_command") komut tipi sayılmaz (commandplane.Validate ile tutarlı).
 func TestCommandAuthorizer_ExactRegisteredOnly(t *testing.T) {
 	ca := NewCommandAuthorizer(taxonomyEngine(true), "t")
 	if d := decide(t, ca, "WIPE", "dev-in"); !d.Allowed {
@@ -183,7 +183,7 @@ func TestCommandAuthorizer_ExactRegisteredOnly(t *testing.T) {
 	}
 }
 
-// W2-S2 (QA S1 NIT-2): komut adı HER yerde tam eşleşir. Kırpma/büyük harfe çevirme yok;
+// komut adı HER yerde tam eşleşir. Kırpma/büyük harfe çevirme yok;
 // Authorize ile commandplane.Validate aynı biçimleri reddeder.
 func TestCommandName_ExactEverywhere(t *testing.T) {
 	variants := func(name string) []string {

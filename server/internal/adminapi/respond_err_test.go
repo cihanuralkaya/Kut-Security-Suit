@@ -10,7 +10,7 @@ import (
 	"kut.corp/suite/server/internal/admin"
 )
 
-// W2-S2 (QA S1 NIT-4): Scope/ROE guardrail reddi bir yetki sonucudur — 403, 500 değil.
+// Scope/ROE guardrail reddi bir yetki sonucudur — 403, 500 değil.
 func TestRespondErr_OutOfScopeIs403(t *testing.T) {
 	cases := []struct {
 		name string

@@ -253,7 +253,7 @@ func (g *gen) envelopes() []EnvelopeCase {
 		badSecond, e.Params, withKeys(trustedKeys("cmdA", "cmdB")...), withMin(2))
 
 	// Çift kontrollü tipler: onaylayan imzası (ikinci DSSE imzası) ile. approved_by ↔ anahtar
-	// bağı ve 2-of-N'in etkinleştirilmesi sonraki dilimlerdedir (MinSignatures kancası hazır).
+	// bağı ve 2-of-N'in etkinleştirilmesi ayrı bileşenlerin işidir (MinSignatures kancası hazır).
 	e = baseEnv()
 	e.Type = cmdenvelope.TypeWipe
 	e.ApprovedBy = "admin:1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"

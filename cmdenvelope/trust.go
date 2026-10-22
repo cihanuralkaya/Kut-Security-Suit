@@ -1,6 +1,6 @@
 package cmdenvelope
 
-// Güven bildirimi (TrustStatement) — W2 "Signed Command Fabric" (S2'de DONDURULDU).
+// Güven bildirimi (TrustStatement) — "Signed Command Fabric" (dondurulmuş).
 //
 // Bir bildirim, cihazın hangi anahtarlara güveneceğini söyler: KÖK (ROOT) anahtarlar
 // yalnız bildirim imzalar (çevrimdışı tutulur), KOMUT (COMMAND) anahtarlar yalnız
@@ -252,7 +252,7 @@ func (f Floors) Raise(st Statement) Floors {
 }
 
 // ApplyStatement, bir bildirimin yerel durum (local; nil = hiç güven edinilmemiş) üzerine
-// uygulanıp uygulanamayacağına karar veren SAF fonksiyondur. Kurallar (tasarım 2.5):
+// uygulanıp uygulanamayacağına karar veren SAF fonksiyondur. Kurallar:
 //
 //  1. İmzacılar KÖK rolünde olmalı; komut anahtarları bildirim imzalayamaz.
 //  2. Pin kuralı: pins kümesinden ≥1 anahtarın imzası, local'den büyük HER epoch'u kabul

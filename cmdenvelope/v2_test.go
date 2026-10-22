@@ -770,7 +770,7 @@ func TestStrictParsers(t *testing.T) {
 	}
 }
 
-// Çoklu imza (D1: komut imzası + onaylayan imzası): gövde aynı, imzalar DSSE listesinde.
+// Çoklu imza (komut imzası + onaylayan imzası): gövde aynı, imzalar DSSE listesinde.
 func TestMultiSignature(t *testing.T) {
 	d, err := CoSign(tKey("cmdB"), tSigned(t))
 	if err != nil {
@@ -918,7 +918,7 @@ func TestEveryKnownTypeSignsAndVerifies(t *testing.T) {
 		}
 	}
 	if RequiredSignatures(TypeWipe) != 1 {
-		t.Fatal("W2'de gereken imza sayısı 1 olmalı (2-of-N kancası ayrılmıştır)")
+		t.Fatal("Bu sürümde gereken imza sayısı 1 olmalı (2-of-N kancası ayrılmıştır)")
 	}
 }
 

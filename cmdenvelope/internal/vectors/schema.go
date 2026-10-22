@@ -2,7 +2,7 @@
 // (contracts/testvectors/cmdenvelope/v2_vectors.json) şemasını ve deterministik üreticisini içerir.
 //
 // Vektörler SABİT tohumlardan üretilir (Ed25519 imzaları deterministiktir); dosya her
-// çalıştırmada bayt-bayt aynı çıkar. Aynı JSON dosyasını ajan testleri de (W2-S6) okur:
+// çalıştırmada bayt-bayt aynı çıkar. Aynı JSON dosyasını ajan testleri de okur:
 // sunucu ve ajan aynı baytları üretip aynı kararı vermelidir. Dosyayı yeniden üretmek
 // bir TEL DEĞİŞİKLİĞİDİR ve bilinçli yapılmalıdır:
 //

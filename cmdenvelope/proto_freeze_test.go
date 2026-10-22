@@ -10,7 +10,7 @@ import (
 	kutv1 "kut.corp/suite/gen/kut/v1"
 )
 
-// W2-S2 tel dondurma: proto alan numaraları ve türleri değişemez (her değişiklik bir ajan
+// Tel dondurma: proto alan numaraları ve türleri değişemez (her değişiklik bir ajan
 // dağıtımı gerektirir).
 func TestProtoFieldNumbersFrozen(t *testing.T) {
 	type f struct {
@@ -76,7 +76,7 @@ func TestProtoFieldNumbersFrozen(t *testing.T) {
 			t.Errorf("%s.%s tipi %s, beklenen kut.v1.DsseEnvelope", c.md.Name(), c.name, got)
 		}
 	}
-	// Sonraki dilimler için AYRILMIŞ numaralar: başka bir alan bunları kapamamalı.
+	// Sonraki sürümler için AYRILMIŞ numaralar: başka bir alan bunları kapamamalı.
 	reserved := []struct {
 		md       protoreflect.MessageDescriptor
 		from, to protoreflect.FieldNumber
@@ -97,7 +97,7 @@ func TestProtoFieldNumbersFrozen(t *testing.T) {
 	}
 }
 
-// Test içi bağdaştırıcılar (üretim bağdaştırıcıları sonraki dilimlerde): telde gövde DSSE
+// Test içi bağdaştırıcılar (üretim bağdaştırıcıları ayrı bileşenlerde): telde gövde DSSE
 // zarfındadır; params Command.params (structpb) olarak ayrıca taşınır.
 func cmdToProto(t *testing.T, d DSSE, params []Param, commandID, typeName string) *kutv1.Command {
 	t.Helper()

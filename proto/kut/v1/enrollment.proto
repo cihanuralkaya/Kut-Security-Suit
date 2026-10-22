@@ -51,7 +51,7 @@ message EnrollResponse {
   bytes client_cert_pem = 2;       // İmzalanmış istemci sertifikası.
   bytes ca_chain_pem = 3;          // Ajanın sunucuyu doğrulaması için CA zinciri.
   google.protobuf.Timestamp cert_not_after = 4; // Yenileme zamanlaması için.
-  // W2 komut dokusu: yeni kayıtlarda CA ile sabitli kayıt kanalından dağıtılan güven
+  // Komut dokusu: yeni kayıtlarda CA ile sabitli kayıt kanalından dağıtılan güven
   // bildirimi ve cihazın kiracı bağı. Eski sunucu boş bırakır, eski ajan yok sayar.
   DsseEnvelope command_trust = 5;
   TenantBinding tenant_binding = 6;

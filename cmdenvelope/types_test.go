@@ -284,7 +284,7 @@ func TestDriftGuard_DBSchema(t *testing.T) {
 }
 
 // TestSchemaParserSelfCheck: ayrıştırıcı bir eksik tipi gerçekten yakalar ve CREATE TYPE'sız bir
-// göç dosyasındaki ALTER ... ADD VALUE satırlarını da toplar (QA S1 SHOULD-FIX-1).
+// göç dosyasındaki ALTER ... ADD VALUE satırlarını da toplar.
 func TestSchemaParserSelfCheck(t *testing.T) {
 	// Tek dosya: yorum satırındaki değer sayılmaz, ALTER sayılır.
 	set, found := enumFromSQL(map[string]string{
