@@ -61,7 +61,7 @@ func TestGenesisBootstrap(t *testing.T) {
 	one := tSign(t, tStmt(1, 2, tRoot("root1"), tRoot("root2"), tCmd("cmdA", tBase, tCmdEnd)), "root1")
 	_, err = ApplyStatement(nil, one, nil, tAt())
 	wantReason(t, err, ReasonThresholdNotMet)
-	// Pin tanımlıyken kendinden imzalı ilk bildirim reddedilir (N116).
+	// Pin tanımlıyken kendinden imzalı ilk bildirim reddedilir.
 	_, err = ApplyStatement(nil, g, tPins("root3"), tAt())
 	wantReason(t, err, ReasonPinRequired)
 	// Pin imzalı genesis: eşik aranmaz, 1 pin imzası yeter.
@@ -85,11 +85,11 @@ func TestRotationChainHops(t *testing.T) {
 	if _, err := ApplyStatement(&e2, e3, nil, tAt()); err != nil {
 		t.Fatalf("hop 3: %v", err)
 	}
-	// Eşik altı imza (N108).
+	// Eşik altı imza.
 	bad := tSign(t, tStmt(2, 2, tRoot("root1"), tRoot("root2"), tRoot("root3"), tCmd("cmdB", tBase, tCmdEnd)), "root1")
 	_, err = ApplyStatement(&g, bad, nil, tAt())
 	wantReason(t, err, ReasonThresholdNotMet)
-	// Aynı kök iki kez listelenir: bir kez sayılır (N108).
+	// Aynı kök iki kez listelenir: bir kez sayılır.
 	dup := tSign(t, tStmt(2, 2, tRoot("root1"), tRoot("root2"), tRoot("root3"), tCmd("cmdB", tBase, tCmdEnd)), "root1")
 	dup.Signatures = append(dup.Signatures, dup.Signatures[0])
 	_, err = ApplyStatement(&g, dup, nil, tAt())
@@ -101,7 +101,7 @@ func TestRotationChainHops(t *testing.T) {
 	forged.Signatures[1].Sig[0] ^= 1
 	_, err = ApplyStatement(&g, forged, nil, tAt())
 	wantReason(t, err, ReasonThresholdNotMet)
-	// Epoch atlama pin imzası olmadan reddedilir (N109); tekrar/eski epoch (N110).
+	// Epoch atlama pin imzası olmadan reddedilir; tekrar/eski epoch.
 	skip := tSign(t, tStmt(4, 2, tRoot("root1"), tRoot("root2"), tRoot("root3"), tCmd("cmdB", tBase, tCmdEnd)), "root1", "root2")
 	_, err = ApplyStatement(&g, skip, nil, tAt())
 	wantReason(t, err, ReasonEpochSkipped)
@@ -111,7 +111,7 @@ func TestRotationChainHops(t *testing.T) {
 	wantReason(t, err, ReasonStaleEpoch)
 }
 
-// N107: yalnız KOMUT anahtarı imzalayan bildirim reddedilir.
+// yalnız KOMUT anahtarı imzalayan bildirim reddedilir.
 func TestCommandKeyCannotSignStatements(t *testing.T) {
 	g := tGenesis(t)
 	st := tStmt(2, 2, tRoot("root1"), tRoot("root2"), tRoot("root3"), tCmd("cmdA", tBase, tCmdEnd))
@@ -152,7 +152,7 @@ func TestRootSetChangeNeedsNewQuorum(t *testing.T) {
 	}
 }
 
-// N109: pin imzalı bildirim local'den büyük HER epoch'u kabul ettirir.
+// pin imzalı bildirim local'den büyük HER epoch'u kabul ettirir.
 func TestPinSignedEpochJump(t *testing.T) {
 	g := tGenesis(t)
 	jump := tSign(t, tStmt(7, 1, tRoot("root4"), tCmd("cmdB", tBase, tCmdEnd)), "root1")
@@ -175,7 +175,7 @@ func TestPinSignedEpochJump(t *testing.T) {
 	if err != nil || acc.Mode != AcceptPin {
 		t.Fatalf("local=nil pin: %v %v", acc.Mode, err)
 	}
-	// Pin kümesi bildirimden bağımsızdır: sunucu bildirimde pin kökünü düşürse de pin kalır (N74/N115).
+	// Pin kümesi bildirimden bağımsızdır: sunucu bildirimde pin kökünü düşürse de pin kalır.
 	if _, err := ApplyStatement(&g, jump, tPins("root1", "root2"), tAt()); err != nil {
 		t.Fatalf("çoklu pin: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestFloorsOnlyRatchetUp(t *testing.T) {
 	}
 }
 
-// N113: 5 halkalı zincirde 3. halka geçersiz → durum 2. halkada kalır.
+// 5 halkalı zincirde 3. halka geçersiz → durum 2. halkada kalır.
 func TestApplyChainStopsAtInvalidHop(t *testing.T) {
 	keys := func() []KeyEntry {
 		return []KeyEntry{tRoot("root1"), tRoot("root2"), tRoot("root3"), tCmd("cmdA", tBase, tCmdEnd)}

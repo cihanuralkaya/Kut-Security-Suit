@@ -124,7 +124,7 @@ func TestValidatorCatchesBadTables(t *testing.T) {
 	}
 }
 
-// TestProtectedCoversEveryKnownType (N124a): Protected() HER bilinen tip için true döner
+// TestProtectedCoversEveryKnownType: Protected() HER bilinen tip için true döner
 // (COLLECT_DIAGNOSTICS muafiyeti kaldırıldı); bilinmeyen/boş/UNSPECIFIED de fail-closed true.
 func TestProtectedCoversEveryKnownType(t *testing.T) {
 	want := []string{
@@ -186,7 +186,7 @@ func TestLookupAndCopyIsolation(t *testing.T) {
 	}
 }
 
-// TestDriftGuard_ProtoEnum (N20b): proto Command.CommandType enum'u ile tablo birebir aynı
+// TestDriftGuard_ProtoEnum: proto Command.CommandType enum'u ile tablo birebir aynı
 // küme olmalı — iki yönde. UNSPECIFIED tabloda bulunmaz (reddedilir).
 func TestDriftGuard_ProtoEnum(t *testing.T) {
 	protoNames := map[string]int32{}
@@ -241,7 +241,7 @@ func enumFromSQL(files map[string]string) (set map[string]bool, found bool) {
 	return set, found
 }
 
-// TestDriftGuard_DBSchema (N20b): db/*.sql içindeki `command_type` ENUM'u (tüm dosyalardaki
+// TestDriftGuard_DBSchema: db/*.sql içindeki `command_type` ENUM'u (tüm dosyalardaki
 // CREATE + ALTER ... ADD VALUE birleşimi) ve komut adlarından oluşan herhangi bir `IN (...)`/CHECK
 // listesi tabloyla aynı kümede olmalı.
 func TestDriftGuard_DBSchema(t *testing.T) {

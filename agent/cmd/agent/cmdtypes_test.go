@@ -57,7 +57,7 @@ func handleCommandsCases(t *testing.T) map[string]bool {
 	return out
 }
 
-// TestAgentSwitchDrift (N20b): handleCommands anahtarı ile tablo iki yönde uyumlu olmalı.
+// TestAgentSwitchDrift: handleCommands anahtarı ile tablo iki yönde uyumlu olmalı.
 func TestAgentSwitchDrift(t *testing.T) {
 	cases := handleCommandsCases(t)
 	// Anahtardaki her dal tabloda kayıtlı olmalı.

@@ -34,7 +34,7 @@ func decide(t *testing.T, ca *CommandAuthorizer, action, dev string) commandplan
 	return d
 }
 
-// N15: her tablo tipi için sınıflandırma var, scope aksiyonu scope paketinde KAYITLI ve sınıfa
+// her tablo tipi için sınıflandırma var, scope aksiyonu scope paketinde KAYITLI ve sınıfa
 // uygun etki seviyesinde; bilinmeyen tip her modda reddedilir.
 func TestCommandAuthorizer_EveryTableTypeClassified(t *testing.T) {
 	wantImpact := map[cmdenvelope.Class]scope.Impact{
@@ -69,7 +69,7 @@ func TestCommandAuthorizer_EveryTableTypeClassified(t *testing.T) {
 	}
 }
 
-// N16: UNQUARANTINE enforce altında GERÇEK motorla izinli (hariç cihazda da), nil motorda da.
+// UNQUARANTINE enforce altında GERÇEK motorla izinli (hariç cihazda da), nil motorda da.
 func TestCommandAuthorizer_UnquarantineAllowedUnderEnforce(t *testing.T) {
 	ca := NewCommandAuthorizer(taxonomyEngine(false), "t")
 	for _, dev := range []string{"dev-in", "dev-ex", "dev-unknown"} {
@@ -89,7 +89,7 @@ func TestCommandAuthorizer_UnquarantineAllowedUnderEnforce(t *testing.T) {
 	}
 }
 
-// N17: COLLECT_FILE / RUN_SIGNED_SCRIPT kapsamdaki cihazda izinli, hariç cihazda red.
+// COLLECT_FILE / RUN_SIGNED_SCRIPT kapsamdaki cihazda izinli, hariç cihazda red.
 func TestCommandAuthorizer_CollectAndScriptFollowScope(t *testing.T) {
 	ca := NewCommandAuthorizer(taxonomyEngine(false), "t")
 	for _, typ := range []string{"COLLECT_FILE", "RUN_SIGNED_SCRIPT"} {
@@ -109,7 +109,7 @@ func TestCommandAuthorizer_CollectAndScriptFollowScope(t *testing.T) {
 	}
 }
 
-// N18: yıkıcı tipler (WIPE, UNINSTALL) açık ROE olmadan reddedilir, ROE ile izinli.
+// yıkıcı tipler (WIPE, UNINSTALL) açık ROE olmadan reddedilir, ROE ile izinli.
 func TestCommandAuthorizer_DestructiveNeedsROE(t *testing.T) {
 	for _, typ := range []string{"WIPE", "UNINSTALL"} {
 		if d := decide(t, NewCommandAuthorizer(taxonomyEngine(false), "t"), typ, "dev-in"); d.Allowed {
@@ -124,7 +124,7 @@ func TestCommandAuthorizer_DestructiveNeedsROE(t *testing.T) {
 	}
 }
 
-// N19: AUDIT modunda motor reddederse komut izinli döner + would-deny sayacı artar.
+// AUDIT modunda motor reddederse komut izinli döner + would-deny sayacı artar.
 func TestCommandAuthorizer_AuditModeWouldDeny(t *testing.T) {
 	ca := NewCommandAuthorizerMode(taxonomyEngine(false), "t", false)
 	before := metrics.Counters()["cmd_would_deny"]
@@ -151,7 +151,7 @@ func TestCommandAuthorizer_AuditModeWouldDeny(t *testing.T) {
 	}
 }
 
-// N20: nil motor — enforce: red, audit: izin; bilinmeyen tip her zaman red.
+// nil motor — enforce: red, audit: izin; bilinmeyen tip her zaman red.
 func TestCommandAuthorizer_NilEngineModes(t *testing.T) {
 	if d := decide(t, NewCommandAuthorizerMode(nil, "t", true), "QUARANTINE", "dev-in"); d.Allowed {
 		t.Error("nil motor + enforce: red beklenirdi")

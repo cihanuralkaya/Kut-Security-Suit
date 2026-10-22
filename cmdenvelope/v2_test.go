@@ -160,8 +160,8 @@ func TestCanonicalV2_FixedLayout(t *testing.T) {
 	}
 }
 
-// N02: 0x1f içeren requested_by reddedilir; bitişik alanlar arasında bayt kaydırma farklı bayt üretir.
-func TestN02_LengthPrefixedFieldsDoNotAlias(t *testing.T) {
+// 0x1f içeren requested_by reddedilir; bitişik alanlar arasında bayt kaydırma farklı bayt üretir.
+func TestLengthPrefixedFieldsDoNotAlias(t *testing.T) {
 	e := tEnv()
 	e.RequestedBy = "admin:x\x1fy"
 	if _, err := SignV2(tKey("cmdA"), tDevice, e); err == nil {
@@ -177,8 +177,8 @@ func TestN02_LengthPrefixedFieldsDoNotAlias(t *testing.T) {
 	}
 }
 
-// N03/N04/N05: params özet ayrımları.
-func TestN03_N05_ParamsDigest(t *testing.T) {
+// params özet ayrımları.
+func TestParamsDigest(t *testing.T) {
 	d := func(ps ...Param) [32]byte {
 		t.Helper()
 		x, err := ParamsDigest(ps)
@@ -188,16 +188,16 @@ func TestN03_N05_ParamsDigest(t *testing.T) {
 		return x
 	}
 	if d(StringParam("a", "x"), StringParam("b", "y")) == d(StringParam("a", `x";b="y`)) {
-		t.Fatal("N03: ayraç enjeksiyonu çakıştı")
+		t.Fatal("ayraç enjeksiyonu çakıştı")
 	}
 	var nilp []Param
 	x1, _ := ParamsDigest(nilp)
 	x2, _ := ParamsDigest([]Param{})
 	if x1 != x2 {
-		t.Fatal("N04: nil ve boş özet farklı")
+		t.Fatal("nil ve boş özet farklı")
 	}
 	if d(StringParam("k", "x")) == d(ListParam("k", "x")) {
-		t.Fatal("N05: dize ile liste çakıştı")
+		t.Fatal("dize ile liste çakıştı")
 	}
 	if d(StringParam("a", "1"), StringParam("b", "2")) != d(StringParam("b", "2"), StringParam("a", "1")) {
 		t.Fatal("özet giriş sırasına bağlı")
@@ -207,8 +207,8 @@ func TestN03_N05_ParamsDigest(t *testing.T) {
 	}
 }
 
-// N06: sayı/bool/null/iç içe parametreler malformed_params.
-func TestN06_ParamsFromMapRejectsNonStrings(t *testing.T) {
+// sayı/bool/null/iç içe parametreler malformed_params.
+func TestParamsFromMapRejectsNonStrings(t *testing.T) {
 	cases := map[string]map[string]any{
 		"number": {"a": float64(1)}, "int": {"a": 1}, "bool": {"a": true}, "null": {"a": nil},
 		"nested": {"a": map[string]any{"b": "c"}}, "mixed": {"a": []any{"x", float64(2)}}, "listnl": {"a": []any{nil}},
@@ -224,8 +224,8 @@ func TestN06_ParamsFromMapRejectsNonStrings(t *testing.T) {
 	}
 }
 
-// N07: geçersiz UTF-8 / NUL imzalamadan önce ve doğrulamada reddedilir.
-func TestN07_InvalidUTF8AndNUL(t *testing.T) {
+// geçersiz UTF-8 / NUL imzalamadan önce ve doğrulamada reddedilir.
+func TestInvalidUTF8AndNUL(t *testing.T) {
 	for _, s := range []string{"a\x00b", "a\xffb", "\xc0\xaf"} {
 		e := tEnv()
 		e.Params = []Param{StringParam("k", s)}
@@ -246,8 +246,8 @@ func TestN07_InvalidUTF8AndNUL(t *testing.T) {
 	wantReason(t, err, ReasonMalformedParams)
 }
 
-// N08: alanlar-arası ayrım. Yük türü PAE'ye dahildir; başka nesne türü olarak sunulan imza geçmez.
-func TestN08_DomainSeparation(t *testing.T) {
+// alanlar-arası ayrım. Yük türü PAE'ye dahildir; başka nesne türü olarak sunulan imza geçmez.
+func TestDomainSeparation(t *testing.T) {
 	d := tSigned(t)
 	if _, err := ParseStatement(d.Payload); ReasonOf(err) != ReasonMalformedStatement {
 		t.Fatalf("komut gövdesi bildirim olarak ayrıştı: %v", err)
@@ -368,8 +368,8 @@ func TestDSSE_JSONStrict(t *testing.T) {
 	}
 }
 
-// N09: keyid ipucu yanlış anahtarı gösterirse imza doğrulanmaz; bilinmeyen keyid geçici.
-func TestN09_KeyIDHint(t *testing.T) {
+// keyid ipucu yanlış anahtarı gösterirse imza doğrulanmaz; bilinmeyen keyid geçici.
+func TestKeyIDHint(t *testing.T) {
 	d := tSigned(t)
 	d.Signatures = []DSSESignature{{KeyID: KeyID(tPub("cmdB")), Sig: d.Signatures[0].Sig}}
 	_, err := tVerify(d, tDevice, tNow(), "cmdA", "cmdB")
@@ -382,8 +382,8 @@ func TestN09_KeyIDHint(t *testing.T) {
 	}
 }
 
-// N10: imzalı her alanda tek değişiklik → bad_signature (gövde değişir, imza eskisi).
-func TestN10_EveryFieldIsCovered(t *testing.T) {
+// imzalı her alanda tek değişiklik → bad_signature (gövde değişir, imza eskisi).
+func TestEveryFieldIsCovered(t *testing.T) {
 	d := tSigned(t)
 	mut := map[string]func(*Fields){
 		"command_id":     func(f *Fields) { f.CommandID = "a1b2c3d4-e5f6-4a07-98a9-b0c1d2e3f4a6" },
@@ -439,8 +439,8 @@ func TestN10_EveryFieldIsCovered(t *testing.T) {
 	}
 }
 
-// N11: imza/anahtar boyutları ve boş anahtar kümesi panik atmaz.
-func TestN11_SizesAndEmptyKeySet(t *testing.T) {
+// imza/anahtar boyutları ve boş anahtar kümesi panik atmaz.
+func TestSizesAndEmptyKeySet(t *testing.T) {
 	d := tSigned(t)
 	if _, err := VerifyV2(d, tEnv().Params, VerifyInput{DeviceID: tDevice, Now: tNow()}); ReasonOf(err) != ReasonUnknownKey {
 		t.Fatalf("boş küme: %v", err)
@@ -468,8 +468,8 @@ func TestN11_SizesAndEmptyKeySet(t *testing.T) {
 	wantReason(t, err, ReasonUnknownKey)
 }
 
-// N12: sunucu→JSONB→structpb→ajan yolunda özet değişmez.
-func TestN12_DigestSurvivesJSONAndStructpb(t *testing.T) {
+// sunucu→JSONB→structpb→ajan yolunda özet değişmez.
+func TestDigestSurvivesJSONAndStructpb(t *testing.T) {
 	m := map[string]any{
 		"unicode": "çğış-日本語-😀", "long": strings.Repeat("ü", 100000),
 		"list": []string{"b", "a", "", "ü"}, "empty": "",
@@ -503,8 +503,8 @@ func TestN12_DigestSurvivesJSONAndStructpb(t *testing.T) {
 	}
 }
 
-// N13: yük türü sürümü — v1/v3 unsupported_version, başka tür bad_payload_type.
-func TestN13_PayloadTypeVersion(t *testing.T) {
+// yük türü sürümü — v1/v3 unsupported_version, başka tür bad_payload_type.
+func TestPayloadTypeVersion(t *testing.T) {
 	for _, pt := range []string{"application/vnd.kut.cmd.v1", "application/vnd.kut.cmd.v3", "application/vnd.kut.cmd.v2.1", "application/vnd.kut.cmd."} {
 		d := tSigned(t)
 		d.PayloadType = pt
@@ -529,8 +529,8 @@ func TestN13_PayloadTypeVersion(t *testing.T) {
 	wantReason(t, err, ReasonBadSignature)
 }
 
-// N14: ömür sınırları.
-func TestN14_Lifetime(t *testing.T) {
+// ömür sınırları.
+func TestLifetime(t *testing.T) {
 	sign := func(mod func(*Envelope)) error {
 		e := tEnv()
 		mod(&e)
@@ -586,8 +586,8 @@ func TestTimeChecks(t *testing.T) {
 	}
 }
 
-// N136: her imzalı dizge için sınır/karakter kümesi (imzalamadan ÖNCE ve geçerli imzalı gövdede).
-func TestN136_FieldLimits(t *testing.T) {
+// her imzalı dizge için sınır/karakter kümesi (imzalamadan ÖNCE ve geçerli imzalı gövdede).
+func TestFieldLimits(t *testing.T) {
 	type tc struct {
 		name string
 		env  func(*Envelope)
@@ -829,7 +829,7 @@ func TestMultiSignature(t *testing.T) {
 	}
 }
 
-// N111 (zarf yarısı): anahtar penceresi issued_at anına göre değerlendirilir.
+// Zarf yarısı: anahtar penceresi issued_at anına göre değerlendirilir.
 func TestKeyWindowUsesIssuedAt(t *testing.T) {
 	d := tSigned(t) // issued = tBase
 	vi := func(k []KeyEntry) (Verified, error) {
