@@ -9,7 +9,7 @@ import (
 // Aylık partition'lar yaşlarına göre katmanlara ayrılır; böylece sık erişilen taze
 // veri hızlı depoda (hot), eskiyen veri ucuz/sıkıştırılmış depoda (warm→cold) tutulur
 // ve saklama süresi dolanlar düşürülür. Planlama SAF/deterministiktir; fiziksel
-// taşıma (tablespace/DETACH/arşiv) çağırana/DDL'e bırakılır (bkz. docs/STATUS.md).
+// taşıma (tablespace/DETACH/arşiv) çağırana/DDL'e bırakılır.
 
 // Tier, bir partition'ın depolama katmanıdır.
 type Tier string

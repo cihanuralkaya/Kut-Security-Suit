@@ -24,8 +24,7 @@ Yetkili kurumsal ortam için (şirkete ait cihazlar, bildirilmiş kullanım
 politikası, IT yönetimi) tasarlanmış uç nokta güvenlik ve yönetim platformu.
 Tek dil: **Go**. Ajan ↔ C2 iletişimi **gRPC + mTLS** (TLS 1.3).
 
-> **Durum: özellik-tam, CI yeşil, dağıtıma hazır.** Ayrıntılı yetenek matrisi ve
-> ne-nasıl-doğrulandı için **[docs/STATUS.md](docs/STATUS.md)**.
+> **Durum: özellik-tam, CI yeşil, dağıtıma hazır.**
 >
 > - **1088 test (+16 fuzz) / 111 paket** geçiyor; **CI** (`.github/workflows/ci.yml`) her
 >   push'ta `go vet` + `-race` test + **uçtan uca smoke** + **gerçek PostgreSQL'e karşı DB
@@ -126,7 +125,7 @@ Tüm ayarlar ortam değişkenleriyle yapılır. Tam liste + açıklama:
   **çift-kontrol (dört-göz) WIPE varsayılan AÇIK** — tek-admin doğrudan WIPE'a
   izin vermek için `KUT_WIPE_SINGLE_ADMIN_UNSAFE=1` (güvensiz), **Scope/ROE guardrail** (§4):
   `KUT_SCOPE_ENFORCE=1` + `KUT_SCOPE_ALLOW_DEVICES/TENANTS/NETWORKS/DOMAINS/…`
-  ve `KUT_SCOPE_ALLOW_DESTRUCTIVE=1` (bkz. [docs/V2-GAP-ANALYSIS.md](docs/V2-GAP-ANALYSIS.md)).
+  ve `KUT_SCOPE_ALLOW_DESTRUCTIVE=1`.
 - **Ajan:** bağlantı (`KUT_ENROLL_ADDR`/`KUT_AGENT_ADDR`/`KUT_SERVER_NAME`/`KUT_CA_PEM`),
   `KUT_SERVER_SPKI_PIN` (pinning), `KUT_UPDATE_PUBKEY`/`KUT_SCRIPT_PUBKEY` (imza),
   `KUT_ANOMALY_*`, `KUT_SAFE_MODE`, `KUT_LOG_FORMAT`.
@@ -173,8 +172,7 @@ Endpoint security and management platform designed for authorized corporate
 environments (company-owned devices, a notified usage policy, IT management).
 Single language: **Go**. Agent ↔ C2 communication over **gRPC + mTLS** (TLS 1.3).
 
-> **Status: feature-complete, CI green, deployment-ready.** For the detailed
-> capability matrix and what-was-verified-how, see **[docs/STATUS.md](docs/STATUS.md)**.
+> **Status: feature-complete, CI green, deployment-ready.**
 >
 > - **1088 tests (+16 fuzz) / 111 packages** pass; **CI** (`.github/workflows/ci.yml`) runs
 >   `go vet` + `-race` tests + **end-to-end smoke** + **DB test against a real PostgreSQL** +

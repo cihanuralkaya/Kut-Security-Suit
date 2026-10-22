@@ -1,6 +1,6 @@
 // Package privman, güvenlik sonucu doğuran server-side/cihaz side-effect'lerini tek
 // yaptırımlı sınırda toplamak için `PrivilegedMutation` kavramını tanımlar (Milestone A
-// / PR-02; audit docs/security/PR01_DELTA_AUDIT.md §1). Amaç G-02'nin KÖK NEDENİNİ
+// / PR-02). Amaç G-02'nin KÖK NEDENİNİ
 // kapatmaktır: bugün raw Store mutasyonları (EnqueueCommand*, SetDeviceStatus,
 // AssignPolicy, EraseDeviceData, RevokeDeviceCerts...) export edilmiş olduğundan Store'u
 // tutan HERHANGİ bir paket authorization sınırını atlayarak çağırabilir.

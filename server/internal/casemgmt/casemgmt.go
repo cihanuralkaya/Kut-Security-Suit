@@ -1,6 +1,6 @@
 // Package casemgmt, SOC (Güvenlik Operasyon Merkezi) olay/vaka yönetim
 // modelini gerçekler: vNext mimarisinin "SOC Command Center" bileşeninin P2
-// çekirdeğidir (bkz. docs/ARCHITECTURE-vNext.md).
+// çekirdeğidir.
 //
 // Bir vaka (Case), bir durum makinesi (Open→Investigating→Contained→Closed,
 // ayrıca Closed'dan yeniden açma), sahiplik, ilişkili varlıklar/kullanıcılar,
