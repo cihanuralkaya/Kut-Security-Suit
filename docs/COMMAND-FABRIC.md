@@ -92,7 +92,7 @@ Sunucu tarafı imzalama ve doğrulama **aynı** fonksiyonları (`Fields.Validate
 | `requested_by` | 1..128 bayt, yazdırılabilir ASCII (`admin:<uuid>`, `system:auto-response`, `rule:<id>`, `ai:<id>`) |
 | `approved_by` | 0..128 bayt, aynı karakter kümesi; boş değilse `requested_by` ile aynı olamaz. Çift kontrol zorunluluğu bu sürümde uygulanmış değildir; şimdilik doğrulanmamış bir etikettir (bkz. bölüm 2) |
 | `correlation_id` | 0..128 bayt, aynı karakter kümesi; opak istek kimliği (CONTRACTS §5 AuthorizationCorrelationID); GrantID değildir |
-| `sequence` | uint64, cihaz başına monoton (bkz. 3.3) |
+| `sequence` | uint64; cihaz başına tek yönlü sayaç için ayrılmıştır, şimdilik atanmaz ve zorlanmaz (bkz. 3.3) |
 | `nonce` | tam 32 küçük harfli hex (16 rastgele bayt) |
 | `issued_at_ns` / `expires_at_ns` | UnixNano; `issued_at > 0`, `0 < expires - issued <= 31 gün`; saat toleransı 2 dk |
 | `params` | **gövdede değil**, `params_digest` ile bağlanır; değerler yalnız `string` ya da `[]string`; ≤32 anahtar; anahtar `[a-z0-9_]{1,64}`; dize ≤256 KiB; toplam (anahtar+değer baytları) ≤512 KiB; liste ≤64 öğe |
@@ -253,7 +253,7 @@ Ayrılmış: PolicyBundle 5-11, UpdateManifest 8-12, AgentIdentity 5
 
 CommandID ✔ · TenantID ✔ · DeviceID ✔ (gövdede; doğrulayan kendi kimliğine eşitliği zorlar) ·
 Action ✔ (`type`) · ParametersHash ✔ (`params_digest`) · IssuedAt/ExpiresAt ✔ · Nonce ✔ ·
-Signature ✔ (DSSE imzaları) · RequestID/AuthorizationCorrelationID ✔ (`correlation_id`) · Sequence ✔ ·
+Signature ✔ (DSSE imzaları) · RequestID/AuthorizationCorrelationID ✔ (`correlation_id`) · Sequence (yalnız imzalı alan; sıralama zorlanmaz, bkz. 3.3) ·
 GrantID taşınmaz (yalnız sunucu içi). Katkısal ekler: `payloadType`, `keyid`, `requested_by`/`approved_by`,
 çoklu imza.
 
@@ -263,8 +263,9 @@ GrantID taşınmaz (yalnız sunucu içi). Katkısal ekler: `payloadType`, `keyid
   COLLECT_FILE ve silah kurulu cihazlarda WIPE mümkündür. İmzalı betikler bağımsız çevrimdışı betik
   anahtarıyla korunur. WIPE/UNINSTALL için ikinci (onaylayan) imza `MinSignatures` ve onaylayan rolüyle
   **hazırdır** ama bu sürümde zorunlu değildir.
-* **DB yazma yetkisi** olan saldırgan imzalı bir komutu **sahteleyemez, değiştiremez, kırpamaz,
-  sırasını bozamaz (sequence) ya da başka kiracıya taşıyamaz**; ancak teslimi geciktirebilir.
+* **DB yazma yetkisi** olan saldırgan imzalı bir komutu **sahteleyemez, değiştiremez, kırpamaz
+  ya da başka kiracıya taşıyamaz**. `sequence` alanı imzalıdır, bu yüzden fark edilmeden değiştirilemez; ancak sıralama bu
+  sürümde zorlanmaz (bkz. 3.3): komutların sırası bozulabilir. Saldırgan ayrıca teslimi geciktirebilir.
 * Bildirim imzacı penceresi bildirimin **kendi** `issued_at_ns` alanına göre değerlendirilir. Zincir
   kuralı `issued_at_ns >= yerel.issued_at_ns` şartını koştuğundan süresi dolmuş bir kök anahtar, yerel
   bildirim kendi süresinden ÖNCE verilmişse hâlâ geriye tarihli bir halka üretebilir; maruziyet, henüz
