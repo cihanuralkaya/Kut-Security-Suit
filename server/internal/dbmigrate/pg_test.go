@@ -75,7 +75,7 @@ func loadSchemaFile(t *testing.T, ctx context.Context, db *sql.DB) {
 func objects(t *testing.T, ctx context.Context, db *sql.DB) []string {
 	t.Helper()
 	const q = `
-SELECT 'rel ' || c.relkind || ' ' || c.relname FROM pg_class c
+SELECT 'rel ' || c.relkind::text || ' ' || c.relname FROM pg_class c
   JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public'
 UNION ALL SELECT 'col ' || table_name || '.' || column_name || ' ' || data_type
   FROM information_schema.columns WHERE table_schema = 'public'
