@@ -76,6 +76,7 @@ const (
 	ReasonBadPayloadType         Reason = "bad_payload_type"
 	ReasonWrongDevice            Reason = "wrong_device"
 	ReasonInsufficientSignatures Reason = "insufficient_signatures"
+	ReasonWrongTenant            Reason = "wrong_tenant"
 
 	// Güven bildirimi (trust.go) nedenleri.
 	ReasonMalformedStatement Reason = "malformed_statement"
@@ -86,6 +87,7 @@ const (
 	ReasonPinRequired        Reason = "pin_required"
 	ReasonChainIncomplete    Reason = "chain_incomplete"
 	ReasonKeyNotInChain      Reason = "key_not_in_chain"
+	ReasonBackdated          Reason = "backdated_statement"
 )
 
 // Transient, nedenin GEÇİCİ olduğunu (yeniden denenmeli; kalıcı ret olarak kaydedilmez,
@@ -341,8 +343,8 @@ func canonicalUUIDv4(s string) bool {
 }
 
 // ValidDeviceID, imza girdisine giren cihaz kimliğinin kanonik biçimini denetler:
-// 1..64 bayt, yazdırılabilir ASCII, BÜYÜK HARF YOK (ajan sertifika CN'ini küçük harfe
-// çevirerek türetir; karışık harf iki tarafı sessizce ayırırdı).
+// 1..64 bayt, yazdırılabilir ASCII, BÜYÜK HARF YOK (ajan sertifika CN'ini CanonicalDeviceID
+// ile türetir; karışık harf iki tarafı sessizce ayırırdı).
 func ValidDeviceID(s string) bool {
 	if len(s) == 0 || len(s) > MaxDeviceIDLen || !printableASCII(s) {
 		return false
@@ -353,6 +355,30 @@ func ValidDeviceID(s string) bool {
 		}
 	}
 	return true
+}
+
+// CanonicalDeviceID, ham bir cihaz kimliğinden (ör. sertifika CN'i) kanonik cihaz kimliğini
+// türetir: yalnız ASCII büyük harf → küçük harf katlaması yapılır. Bayt 0x21-0x7e dışındaki
+// HER girdi (ASCII olmayan, boşluk, denetim karakteri) ve 1..64 bayt dışı uzunluk reddedilir;
+// ASCII olmayan karakterler katlanmaz, reddedilir (ör. U+212A KELVIN işareti ya da U+0130,
+// Unicode küçük harf dönüşümünde "k" ve "i" olurdu). Kimlik türetmek için strings.ToLower
+// KULLANILMAZ.
+func CanonicalDeviceID(raw string) (string, error) {
+	if len(raw) == 0 || len(raw) > MaxDeviceIDLen || !printableASCII(raw) {
+		return "", newErr(ReasonBadDeviceID, "cihaz kimliği ham biçimi geçersiz (1..%d bayt, yalnız 0x21-0x7e)", MaxDeviceIDLen)
+	}
+	return asciiLower(raw), nil
+}
+
+// asciiLower yalnız A-Z → a-z katlar; diğer baytlara dokunmaz.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }
 
 func validParamKey(k string) bool {
@@ -705,10 +731,18 @@ func SignV2(priv ed25519.PrivateKey, deviceID string, e Envelope) (DSSE, error) 
 
 // VerifyInput, VerifyV2'nin bağlamıdır.
 type VerifyInput struct {
-	// DeviceID, doğrulayanın KENDİ kimliğidir (ajanda sertifika CN'i, küçük harf). Gövdedeki
-	// device_id buna eşit olmalıdır (ReasonWrongDevice).
+	// DeviceID, doğrulayanın KENDİ kimliğidir (ajanda CanonicalDeviceID(sertifika CN'i)).
+	// Gövdedeki device_id buna eşit olmalıdır (ReasonWrongDevice).
 	DeviceID string
-	// Keys, güvenilen anahtarlardır; yalnız KeyRoleCommand girdileri komut doğrular.
+	// ExpectTenant, doğrulayanın kiracısıdır. nil = kiracı denetlenmez (yalnız kiracı sunucuda
+	// başka bir yolla zorlanan çağıranlar için); doluysa gövdedeki tenant_id buna BİREBİR eşit
+	// olmalıdır (ReasonWrongTenant). Platform/tek kiracı için boş dizeyi gösteren bir işaretçi
+	// verilir (bkz. TenantIs). Çok kiracılı kurulumlarda ajan bunu zorunlu doldurmalıdır; değer
+	// yalnız kayıt/önyükleme yanıtından gelir, sonraki bir heartbeat'ten asla.
+	ExpectTenant *string
+	// Keys, güvenilen anahtarlardır; KeyRoleCommand girdileri komut, KeyRoleApprover girdileri
+	// ikinci (onaylayan) imza doğrular. Onaylayan imzası yalnız MinSignatures sayısına katılır;
+	// en az bir KOMUT imzası her zaman gerekir. Zayıf (küçük mertebeli) anahtarlar yok sayılır.
 	Keys []KeyEntry
 	// Now, güvenilir (sunucuya çıpalı) saattir. Sıfır = senkronsuz → geçici ret.
 	Now time.Time
@@ -720,6 +754,9 @@ type VerifyInput struct {
 	WireType      string
 }
 
+// TenantIs, VerifyInput.ExpectTenant için işaretçi üretir.
+func TenantIs(tenant string) *string { return &tenant }
+
 // Verified, başarılı bir doğrulamanın sonucudur.
 type Verified struct {
 	Digest [32]byte // sha256(PAE(payloadType, gövde)) → CommandResult.envelope_digest
@@ -728,7 +765,7 @@ type Verified struct {
 }
 
 // VerifyV2, bir komut DSSE zarfını ve telde ayrıca taşınan params'ı durumsuz doğrular. Sıra:
-// yük türü → biçim → gövde alan sınırları → cihaz/tel eşitliği → params sınırları → anahtar
+// yük türü → biçim → gövde alan sınırları → cihaz/kiracı/tel eşitliği → params sınırları → anahtar
 // araması (keyid ipucu; rol/pencere) → Ed25519(PAE) → params özeti → zaman. Hatalar tiplidir.
 func VerifyV2(d DSSE, params []Param, in VerifyInput) (Verified, error) {
 	if d.PayloadType != PayloadTypeCommand {
@@ -750,6 +787,9 @@ func VerifyV2(d DSSE, params []Param, in VerifyInput) (Verified, error) {
 	if f.DeviceID != in.DeviceID {
 		return Verified{}, newErr(ReasonWrongDevice, "zarf başka bir cihaz için imzalanmış")
 	}
+	if in.ExpectTenant != nil && *in.ExpectTenant != f.TenantID {
+		return Verified{}, newErr(ReasonWrongTenant, "zarf başka bir kiracı için imzalanmış")
+	}
 	if in.WireCommandID != "" && in.WireCommandID != f.CommandID {
 		return Verified{}, newErr(ReasonMalformedEnvelope, "tel command_id gövdedekinden farklı")
 	}
@@ -760,10 +800,11 @@ func VerifyV2(d DSSE, params []Param, in VerifyInput) (Verified, error) {
 		return Verified{}, err
 	}
 
-	keys := commandKeyIndex(in.Keys)
+	keys := signerKeyIndex(in.Keys)
 	msg := PAE(d.PayloadType, d.Payload)
 	good := map[string]bool{}
 	var goodIDs []string
+	var goodCommand int
 	var sawBad, sawExpired bool
 	for _, s := range d.Signatures {
 		k, ok := keys[s.KeyID]
@@ -777,6 +818,9 @@ func VerifyV2(d DSSE, params []Param, in VerifyInput) (Verified, error) {
 		if ed25519.Verify(k.Pub, msg, s.Sig) {
 			good[s.KeyID] = true
 			goodIDs = append(goodIDs, s.KeyID)
+			if k.Role == KeyRoleCommand {
+				goodCommand++
+			}
 		} else {
 			sawBad = true
 		}
@@ -785,10 +829,12 @@ func VerifyV2(d DSSE, params []Param, in VerifyInput) (Verified, error) {
 	if required <= 0 {
 		required = RequiredSignatures(f.Type)
 	}
-	if len(goodIDs) < required {
+	if len(goodIDs) < required || goodCommand < 1 {
 		switch {
 		case sawBad:
 			return Verified{}, newErr(ReasonBadSignature, "imza doğrulanamadı")
+		case len(goodIDs) > 0 && goodCommand == 0:
+			return Verified{}, newErr(ReasonInsufficientSignatures, "%d geçerli imza ama KOMUT anahtarı imzası yok", len(goodIDs))
 		case len(goodIDs) > 0:
 			return Verified{}, newErr(ReasonInsufficientSignatures, "%d geçerli imza, %d gerekli", len(goodIDs), required)
 		case sawExpired:
@@ -815,14 +861,14 @@ func VerifyV2(d DSSE, params []Param, in VerifyInput) (Verified, error) {
 	return Verified{Digest: sha256.Sum256(msg), KeyIDs: goodIDs, Fields: f}, nil
 }
 
-// commandKeyIndex, güvenilen anahtar listesinden yalnız KOMUT rolündeki, kimliği açık
-// anahtardan türeyen girdileri indeksler. Aynı kimlik iki kez görünürse belirsizlik
-// fail-closed çözülür (ikisi de atılır).
-func commandKeyIndex(keys []KeyEntry) map[string]KeyEntry {
+// signerKeyIndex, güvenilen anahtar listesinden yalnız KOMUT ve ONAYLAYAN rolündeki,
+// kimliği açık anahtardan türeyen ve zayıf olmayan girdileri indeksler. Aynı kimlik iki kez
+// görünürse (aynı rolde ya da iki rolde) belirsizlik fail-closed çözülür: ikisi de atılır.
+func signerKeyIndex(keys []KeyEntry) map[string]KeyEntry {
 	idx := make(map[string]KeyEntry, len(keys))
 	dup := map[string]bool{}
 	for _, k := range keys {
-		if k.Role != KeyRoleCommand || len(k.Pub) != ed25519.PublicKeySize {
+		if (k.Role != KeyRoleCommand && k.Role != KeyRoleApprover) || IsWeakPublicKey(k.Pub) {
 			continue
 		}
 		id := KeyID(k.Pub)

@@ -17,7 +17,7 @@ import (
 
 var update = flag.Bool("update", false, "contracts/testvectors/cmdenvelope/v2_vectors.json dosyasını yeniden üret (TEL DEĞİŞİKLİĞİ)")
 
-// vectorsPath: sunucu ve ajan testlerinin ortak okuduğu sözleşme vektörleri.
+// vectorsPath: doğrulayıcı testlerinin ortak okuduğu sözleşme vektörleri.
 const vectorsPath = "../contracts/testvectors/cmdenvelope/v2_vectors.json"
 
 func loadVectors(t *testing.T) vectors.File {
@@ -144,7 +144,7 @@ func TestGoldenVectors_Envelopes(t *testing.T) {
 			}
 			v, verr := cmdenvelope.VerifyV2(d, vectors.ToParams(c.Params), cmdenvelope.VerifyInput{
 				DeviceID: c.DeviceID, Keys: keys, Now: now, MinSignatures: c.MinSignatures,
-				WireCommandID: c.WireCommandID, WireType: c.WireType,
+				WireCommandID: c.WireCommandID, WireType: c.WireType, ExpectTenant: c.ExpectTenant,
 			})
 			if c.Expect == "ok" {
 				if verr != nil {
@@ -364,6 +364,7 @@ func TestGoldenVectors_Coverage(t *testing.T) {
 		cmdenvelope.ReasonKeyExpired, cmdenvelope.ReasonBadSignature, cmdenvelope.ReasonBadDeviceID,
 		cmdenvelope.ReasonClockUnsynced, cmdenvelope.ReasonNotYetValid, cmdenvelope.ReasonExpired,
 		cmdenvelope.ReasonBadPayloadType, cmdenvelope.ReasonWrongDevice, cmdenvelope.ReasonInsufficientSignatures,
+		cmdenvelope.ReasonWrongTenant,
 	} {
 		if !reasons[string(r)] {
 			t.Errorf("ret nedeni %s için vektör yok", r)
@@ -377,6 +378,9 @@ func TestGoldenVectors_Coverage(t *testing.T) {
 		"keyid-hint-points-at-wrong-key", "duplicate-keyid-counted-once", "duplicate-keyid-not-two-signatures", "unknown-extra-signer-ignored",
 		"v1-signature-presented-as-v2", "trust-statement-signature-presented-as-envelope", "dual-control-wipe-approver-signature",
 		"dual-control-wipe-approver-signature-missing", "eight-signatures-ok", "nine-signatures",
+		// anahtar rolleri, zayıf anahtarlar, kiracı
+		"approver-role-signature-counts-toward-min", "approver-role-signature-alone-rejected", "small-order-trusted-key-ignored",
+		"wrong-tenant", "tenant-matches",
 	} {
 		if !have[name] {
 			t.Errorf("zorunlu vektör %q yok", name)
@@ -393,14 +397,17 @@ func TestGoldenVectors_Coverage(t *testing.T) {
 			steps[st.Name] = true
 		}
 	}
-	for _, n := range []string{"genesis-rotation-removal", "pin-signed-jump", "expired-keys", "dsse-signature-handling"} {
+	for _, n := range []string{"genesis-rotation-removal", "pin-signed-jump", "expired-keys", "dsse-signature-handling",
+		"key-roles-and-weak-keys", "backdated-statements", "clock-handling", "clock-handling-pin"} {
 		if !scen[n] {
 			t.Errorf("zorunlu senaryo %q yok", n)
 		}
 	}
 	for _, n := range []string{"genesis", "rotation-add-cmdB", "pin-signed-jump-to-9", "threshold-not-met",
 		"command-key-signs-statement", "hop-signed-by-expired-root", "root-change-both-quorums", "genesis-one-of-one",
-		"wrong-payload-type", "signatures-over-body-without-pae", "keyid-hint-points-at-other-root", "unknown-extra-signer-ignored"} {
+		"wrong-payload-type", "signatures-over-body-without-pae", "keyid-hint-points-at-other-root", "unknown-extra-signer-ignored",
+		"unknown-role-4", "identity-key-as-command-key", "identity-key-as-root-with-forged-signature", "genesis-with-approver-key",
+		"backdated-by-expired-root", "future-genesis-without-clock"} {
 		if !steps[n] {
 			t.Errorf("zorunlu bildirim adımı %q yok", n)
 		}

@@ -242,10 +242,9 @@ func TestStatementFromFutureAndStale(t *testing.T) {
 	g := tGenesis(t)
 	_, err := ApplyStatement(nil, g, nil, time.Unix(0, g.IssuedAtNS-int64(time.Hour)))
 	wantReason(t, err, ReasonNotYetValid)
-	// Saat yoksa (senkronsuz) gelecek denetimi atlanır; imza kuralları yine uygulanır.
-	if _, err := ApplyStatement(nil, g, nil, time.Time{}); err != nil {
-		t.Fatalf("saatsiz bootstrap: %v", err)
-	}
+	// Saat yoksa (senkronsuz) pin dışındaki kabul geçici clock_unsynced ile reddedilir.
+	_, err = ApplyStatement(nil, g, nil, time.Time{})
+	wantReason(t, err, ReasonClockUnsynced)
 }
 
 func TestFloorsOnlyRatchetUp(t *testing.T) {
@@ -342,7 +341,7 @@ func TestStatementValidate(t *testing.T) {
 		"no root":               func(s *Statement) { s.Keys = s.Keys[1:] },
 		"cmd without not_after": func(s *Statement) { s.Keys[1].NotAfterNS = 0 },
 		"role 0":                func(s *Statement) { s.Keys[1].Role = 0 },
-		"role 3":                func(s *Statement) { s.Keys[1].Role = 3 },
+		"role 4":                func(s *Statement) { s.Keys[1].Role = 4 },
 		"key id mismatch":       func(s *Statement) { s.Keys[1].KeyID = KeyID(tPub("evil")) },
 		"short pub":             func(s *Statement) { s.Keys[1].Pub = s.Keys[1].Pub[:5] },
 		"duplicate key":         func(s *Statement) { s.Keys = append(s.Keys, s.Keys[0]) },

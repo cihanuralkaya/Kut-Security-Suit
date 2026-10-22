@@ -27,7 +27,16 @@ type KeyRole uint32
 const (
 	KeyRoleRoot    KeyRole = 1 // yalnız bildirim imzalar
 	KeyRoleCommand KeyRole = 2 // yalnız komut zarfı imzalar; NotAfterNS ZORUNLU
+	// KeyRoleApprover, çift kontrollü komutlarda ikinci (onaylayan) imzayı atar; NotAfterNS
+	// ZORUNLU. Onaylayan imzası yalnız VerifyInput.MinSignatures sayısına katılır: en az bir
+	// KOMUT anahtarı imzası her zaman gerekir, yani onaylayan tek başına komut kabul ettiremez.
+	// Onaylayan anahtarı bildirim imzalayamaz.
+	KeyRoleApprover KeyRole = 3
 )
+
+// Rol uyumluluk kuralı: bilinmeyen bir rol (1, 2, 3 dışı) içeren bildirim TAMAMEN reddedilir
+// (malformed_statement); bildirim kısmen yorumlanmaz. Yeni bir rol eklemek yeni bir yük türü
+// sürümü (trust.v3) gerektirir; eski ajanlar o halkayı atlar (bkz. ApplyChainDSSE).
 
 // KeyEntry, bildirimdeki tek bir anahtardır. NotAfterNS==0 "süresiz" demektir ve yalnız
 // KÖK anahtarlarda geçerlidir.
@@ -75,6 +84,9 @@ func (st Statement) Validate() error {
 		if len(k.Pub) != ed25519.PublicKeySize || k.KeyID != KeyID(k.Pub) {
 			return bad("anahtar kimliği açık anahtardan türemiyor (%q)", k.KeyID)
 		}
+		if IsWeakPublicKey(k.Pub) {
+			return bad("anahtar %s: zayıf (küçük mertebeli ya da kanonik olmayan) açık anahtar", k.KeyID)
+		}
 		if _, dup := seen[k.KeyID]; dup {
 			return bad("yinelenen anahtar %s", k.KeyID)
 		}
@@ -82,9 +94,9 @@ func (st Statement) Validate() error {
 		switch k.Role {
 		case KeyRoleRoot:
 			roots++
-		case KeyRoleCommand:
+		case KeyRoleCommand, KeyRoleApprover:
 			if k.NotAfterNS == 0 {
-				return bad("komut anahtarı %s için not_after zorunlu", k.KeyID)
+				return bad("komut/onaylayan anahtarı %s için not_after zorunlu", k.KeyID)
 			}
 		default:
 			return bad("anahtar %s: bilinmeyen rol %d", k.KeyID, k.Role)
@@ -264,6 +276,11 @@ func (f Floors) Raise(st Statement) Floors {
 //     pin imzasız ilk bildirim reddedilir (ReasonPinRequired).
 //  5. İmzacı penceresi bildirimin KENDİ issued_at_ns anında değerlendirilir (süresi
 //     dolmuş kök anahtarın imzası sayılmaz); issued_at_ns, now+2dk'dan ileride olamaz.
+//     Zincir kuralında ek olarak issued_at_ns, yerel bildirimin issued_at_ns değerinden
+//     küçük olamaz (ReasonBackdated): süresi dolmuş bir anahtar eski bir pencereye geriye
+//     tarihli bildirim imzalayamaz. Pin kuralı bu denetimden muaftır.
+//  6. Güvenilir saat (now) sıfırsa pin dışındaki her kabul geçici ReasonClockUnsynced ile
+//     reddedilir; gelecek-tarih denetimi asla atlanarak kabul verilmez.
 //
 // Epoch hiçbir zaman azalmaz (st.Epoch <= local.Epoch → ReasonStaleEpoch). Eşik ratchet'i
 // için Floors.Raise kullanılır.
@@ -290,11 +307,15 @@ func ApplyStatement(local *Statement, st Statement, pins []ed25519.PublicKey, no
 		return Acceptance{Mode: AcceptPin, EpochJump: st.Epoch != localEpoch+1, Statement: st}, nil
 	}
 
+	if now.IsZero() {
+		return Acceptance{}, newErr(ReasonClockUnsynced, "güvenilir saat yok: pin imzasız bildirim kabul edilemez")
+	}
+
 	if local == nil {
 		if len(pins) > 0 {
 			return Acceptance{}, newErr(ReasonPinRequired, "pin tanımlıyken ilk bildirim pin ile imzalı olmalı")
 		}
-		if err := quorum(msg, st, rootsOf(st.Keys), st.RootThreshold, st.IssuedAtNS, "bildirimin kendi kök kümesi", commandsOf(st.Keys)); err != nil {
+		if err := quorum(msg, st, rootsOf(st.Keys), st.RootThreshold, st.IssuedAtNS, "bildirimin kendi kök kümesi", nonRootsOf(st.Keys)); err != nil {
 			return Acceptance{}, err
 		}
 		return Acceptance{Mode: AcceptBootstrap, Statement: st}, nil
@@ -303,12 +324,15 @@ func ApplyStatement(local *Statement, st Statement, pins []ed25519.PublicKey, no
 	if st.Epoch != local.Epoch+1 {
 		return Acceptance{}, newErr(ReasonEpochSkipped, "epoch %d, beklenen %d (atlama yalnız pin imzasıyla)", st.Epoch, local.Epoch+1)
 	}
+	if st.IssuedAtNS < local.IssuedAtNS {
+		return Acceptance{}, newErr(ReasonBackdated, "issued_at %d, yerel bildirimin %d değerinden önce", st.IssuedAtNS, local.IssuedAtNS)
+	}
 	oldRoots := rootsOf(local.Keys)
-	if err := quorum(msg, st, oldRoots, local.RootThreshold, st.IssuedAtNS, "mevcut kök kümesi", commandsOf(local.Keys)); err != nil {
+	if err := quorum(msg, st, oldRoots, local.RootThreshold, st.IssuedAtNS, "mevcut kök kümesi", nonRootsOf(local.Keys)); err != nil {
 		return Acceptance{}, err
 	}
 	if !sameKeySet(oldRoots, rootsOf(st.Keys)) {
-		if err := quorum(msg, st, rootsOf(st.Keys), st.RootThreshold, st.IssuedAtNS, "yeni kök kümesi", commandsOf(st.Keys)); err != nil {
+		if err := quorum(msg, st, rootsOf(st.Keys), st.RootThreshold, st.IssuedAtNS, "yeni kök kümesi", nonRootsOf(st.Keys)); err != nil {
 			return Acceptance{}, err
 		}
 	}
@@ -330,6 +354,50 @@ func ApplyChain(local *Statement, sts []Statement, pins []ed25519.PublicKey, now
 		cur = &s
 	}
 	return cur, len(sts), nil
+}
+
+// SkippedEntry, ApplyChainDSSE'nin atladığı bir zincir girdisidir.
+type SkippedEntry struct {
+	Index       int    // girdinin zincirdeki sırası (0 tabanlı)
+	PayloadType string // desteklenmeyen yük türü
+	Reason      Reason // unsupported_version (tanınan önek, başka sürüm) ya da bad_payload_type
+}
+
+// ChainResult, ApplyChainDSSE'nin sonucudur.
+type ChainResult struct {
+	State   *Statement     // son başarılı halka (hiç uygulanmadıysa local aynen)
+	Applied int            // uygulanan halka sayısı
+	Skipped []SkippedEntry // atlanan (desteklenmeyen yük türlü) girdiler
+}
+
+// ApplyChainDSSE, DSSE zarflarından oluşan bir zinciri SIRAYLA uygular. Yük türü
+// PayloadTypeTrust olmayan girdiler (ör. gelecekteki bir trust.v3) durumu değiştirmeden ATLANIR ve
+// zincir desteklenen girdilerle sürer: bu ajanın anlayamadığı bir halka, sonraki
+// halkaların uygulanmasını engellemez. Atlama hiçbir şey kabul ettirmez ve epoch
+// ilerletmez; atlanan halkaya bağlı bir sonraki v2 halka epoch kuralından (epoch_skipped)
+// doğal olarak reddedilir. Yük türü DOĞRU ama içeriği geçersiz ya da kabul edilemeyen bir
+// girdi ise zincir orada durur (ApplyChain gibi). Sunucu, ajanın bildirdiği yeteneklere
+// (capabilities) göre yalnız desteklenen halkaları göndermelidir; atlama ikinci savunmadır.
+func ApplyChainDSSE(local *Statement, entries []DSSE, pins []ed25519.PublicKey, now time.Time) (ChainResult, error) {
+	res := ChainResult{State: local}
+	for i, d := range entries {
+		if d.PayloadType != PayloadTypeTrust {
+			reason := ReasonBadPayloadType
+			if strings.HasPrefix(d.PayloadType, payloadTypeTrustPrefix) {
+				reason = ReasonUnsupportedVersion
+			}
+			res.Skipped = append(res.Skipped, SkippedEntry{Index: i, PayloadType: d.PayloadType, Reason: reason})
+			continue
+		}
+		acc, err := ApplyStatementDSSE(res.State, d, pins, now)
+		if err != nil {
+			return res, err
+		}
+		s := acc.Statement
+		res.State = &s
+		res.Applied++
+	}
+	return res, nil
 }
 
 // VerifyChain, sunucunun zincir dosyasını doğrular: epoch'lar tam olarak 1..N olmalı ve
@@ -396,6 +464,9 @@ func pinSigned(msg []byte, sigs []DSSESignature, pins []ed25519.PublicKey) bool 
 	}
 	byID := make(map[string]ed25519.PublicKey, len(pins))
 	for _, p := range pins {
+		if IsWeakPublicKey(p) {
+			continue // zayıf pin güven kümesine alınmaz
+		}
 		if id := KeyID(p); id != "" {
 			byID[id] = p
 		}
@@ -418,10 +489,11 @@ func rootsOf(keys []KeyEntry) map[string]KeyEntry {
 	return m
 }
 
-func commandsOf(keys []KeyEntry) map[string]KeyEntry {
+// nonRootsOf, KÖK olmayan (komut ve onaylayan) anahtarlardır; yalnız signer_not_root teşhisi içindir.
+func nonRootsOf(keys []KeyEntry) map[string]KeyEntry {
 	m := map[string]KeyEntry{}
 	for _, k := range keys {
-		if k.Role == KeyRoleCommand {
+		if k.Role == KeyRoleCommand || k.Role == KeyRoleApprover {
 			m[k.KeyID] = k
 		}
 	}

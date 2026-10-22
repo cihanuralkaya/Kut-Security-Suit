@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ const (
 	day  = 24 * hour
 )
 
-var seedNames = []string{"root1", "root2", "root3", "root4", "root5", "cmdA", "cmdB", "cmdC", "evil"}
+var seedNames = []string{"root1", "root2", "root3", "root4", "root5", "cmdA", "cmdB", "cmdC", "appr", "evil"}
 
 func priv(name string) ed25519.PrivateKey {
 	seed := sha256.Sum256([]byte("kut-cmd-vector-seed:" + name))
@@ -44,7 +45,37 @@ func cmdKey(name string, nb, na int64) cmdenvelope.KeyEntry {
 	return cmdenvelope.KeyEntry{KeyID: cmdenvelope.KeyID(p), Pub: p, Role: cmdenvelope.KeyRoleCommand, NotBeforeNS: nb, NotAfterNS: na}
 }
 
+func apprKey(name string, nb, na int64) cmdenvelope.KeyEntry {
+	k := cmdKey(name, nb, na)
+	k.Role = cmdenvelope.KeyRoleApprover
+	return k
+}
+
 func idOf(name string) string { return cmdenvelope.KeyID(pub(name)) }
+
+// identityPub: kimlik noktası (mertebe 1) kodlaması — zayıf anahtar vektörleri için.
+func identityPub() ed25519.PublicKey {
+	k := make([]byte, ed25519.PublicKeySize)
+	k[0] = 1
+	return k
+}
+
+// forgedIdentitySig: A = kimlik, R = taban noktası, S = 1. Standart Ed25519 doğrulaması bu imzayı
+// HER ileti için geçerli sayar; doğrulayıcı zayıf anahtarı güven kümesine almamalıdır.
+func forgedIdentitySig() []byte {
+	sig := make([]byte, ed25519.SignatureSize)
+	sig[0] = 0x58
+	for i := 1; i < 32; i++ {
+		sig[i] = 0x66
+	}
+	sig[32] = 1
+	return sig
+}
+
+func identityEntry(role cmdenvelope.KeyRole, nb, na int64) cmdenvelope.KeyEntry {
+	p := identityPub()
+	return cmdenvelope.KeyEntry{KeyID: cmdenvelope.KeyID(p), Pub: p, Role: role, NotBeforeNS: nb, NotAfterNS: na}
+}
 
 type gen struct {
 	err error
@@ -63,7 +94,7 @@ func Generate() ([]byte, error) {
 		Format: FormatVersion,
 		Description: "DSSE tabanlı komut zarfı v2 (application/vnd.kut.cmd.v2) ve güven bildirimi " +
 			"(application/vnd.kut.trust.v2) altın vektörleri. Tohumlar sabittir; imzalar deterministiktir. " +
-			"Sunucu ve ajan testleri bu dosyayı aynen okur.",
+			"Doğrulayıcı testleri bu dosyayı aynen okur.",
 	}
 	for _, n := range seedNames {
 		seed := sha256.Sum256([]byte("kut-cmd-vector-seed:" + n))
@@ -128,6 +159,7 @@ func withMin(n int) envOpt       { return func(c *EnvelopeCase) { c.MinSignature
 func withWire(id, typ string) envOpt {
 	return func(c *EnvelopeCase) { c.WireCommandID, c.WireType = id, typ }
 }
+func withExpectTenant(t string) envOpt { return func(c *EnvelopeCase) { c.ExpectTenant = &t } }
 func withKeys(ks ...cmdenvelope.KeyEntry) envOpt {
 	return func(c *EnvelopeCase) {
 		c.Keys = nil
@@ -263,6 +295,41 @@ func (g *gen) envelopes() []EnvelopeCase {
 		withKeys(trustedKeys("cmdA", "cmdB")...), withMin(2))
 	add("dual-control-wipe-approver-signature-missing", "WIPE: yalnız komut imzası var, 2 imza gerekiyor",
 		string(cmdenvelope.ReasonInsufficientSignatures), wipe, e.Params, withKeys(trustedKeys("cmdA", "cmdB")...), withMin(2))
+
+	// Onaylayan rolü: ikinci imza KeyRoleApprover anahtarıyla; en az bir KOMUT imzası her zaman gerekir.
+	withAppr := withKeys(append(trustedKeys("cmdA"), apprKey("appr", BaseNS-hour, BaseNS+90*day))...)
+	apprWipe := g.cosign("appr", wipe)
+	add("approver-role-signature-counts-toward-min", "WIPE: komut imzası + ONAYLAYAN rolündeki anahtarın imzası, 2 imza gerekiyor", "ok", apprWipe, e.Params,
+		withAppr, withMin(2))
+	add("approver-role-signature-extra-on-single-signature", "tek imza yeterken fazladan onaylayan imzası zararsızdır", "ok", apprWipe, e.Params, withAppr)
+	apprOnly := wipe
+	apprOnly.Signatures = []cmdenvelope.DSSESignature{g.rawSig("appr", cmdenvelope.PayloadTypeCommand, wipe.Payload)}
+	add("approver-role-signature-alone-rejected", "yalnız onaylayan imzası: KOMUT imzası olmadan eşik 1 bile olsa kabul edilmez",
+		string(cmdenvelope.ReasonInsufficientSignatures), apprOnly, e.Params, withAppr)
+	apprExpired := withKeys(append(trustedKeys("cmdA"), apprKey("appr", BaseNS+hour, BaseNS+90*day))...)
+	add("approver-role-key-outside-window", "onaylayan anahtarı issued_at anında geçerli değil: imza sayılmaz, 2 imza sağlanmaz",
+		string(cmdenvelope.ReasonInsufficientSignatures), apprWipe, e.Params, apprExpired, withMin(2))
+
+	// Zayıf (küçük mertebeli) güvenilen anahtar: kimlik noktası + sahte imza kabul edilmemeli.
+	idKeyID := cmdenvelope.KeyID(identityPub())
+	weak := g.sign("cmdA", baseEnv())
+	weak.Signatures = []cmdenvelope.DSSESignature{{KeyID: idKeyID, Sig: forgedIdentitySig()}}
+	add("small-order-trusted-key-ignored", "güvenilen kümede kimlik noktası (küçük mertebeli) komut anahtarı ve sahte imza: anahtar yok sayılır",
+		string(cmdenvelope.ReasonUnknownKey), weak, baseEnv().Params, withKeys(identityEntry(cmdenvelope.KeyRoleCommand, BaseNS-hour, BaseNS+90*day)))
+	add("small-order-approver-key-ignored", "aynı sahte imza ONAYLAYAN rolündeki kimlik anahtarıyla: anahtar yok sayılır",
+		string(cmdenvelope.ReasonUnknownKey), weak, baseEnv().Params, withKeys(identityEntry(cmdenvelope.KeyRoleApprover, BaseNS-hour, BaseNS+90*day)))
+
+	// Kiracı denetimi: ExpectTenant doluysa gövdedeki tenant_id'ye BİREBİR eşit olmalı.
+	te := baseEnv()
+	te.TenantID = "acme"
+	tenantSigned := g.sign("cmdA", te)
+	add("tenant-matches", "ExpectTenant gövdedeki kiracıyla aynı", "ok", tenantSigned, te.Params, withExpectTenant("acme"))
+	add("wrong-tenant", "ExpectTenant başka bir kiracı", string(cmdenvelope.ReasonWrongTenant), tenantSigned, te.Params, withExpectTenant("other"))
+	add("wrong-tenant-case-differs", "kiracı karşılaştırması büyük/küçük harfe duyarlı", string(cmdenvelope.ReasonWrongTenant), tenantSigned, te.Params, withExpectTenant("ACME"))
+	add("wrong-tenant-platform-expected", "doğrulayan platform kiracısı ('') bekliyor, zarf bir kiracıya ait",
+		string(cmdenvelope.ReasonWrongTenant), tenantSigned, te.Params, withExpectTenant(""))
+	add("wrong-tenant-platform-envelope", "doğrulayan bir kiracı bekliyor, zarf platform kiracısına ait",
+		string(cmdenvelope.ReasonWrongTenant), g.sign("cmdA", baseEnv()), baseEnv().Params, withExpectTenant("acme"))
 
 	classes := []struct {
 		typ, doc string
@@ -562,6 +629,54 @@ func (g *gen) paramCases() []ParamsCase {
 	return out
 }
 
+func u64(b []byte, n uint64) []byte {
+	return append(b, byte(n>>56), byte(n>>48), byte(n>>40), byte(n>>32), byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
+}
+
+// rawKey ve rawStatement, Validate'in reddedeceği (bilinmeyen rol, zayıf anahtar) bildirim
+// gövdelerini bayt düzeyinde kurar: düzen CanonicalStatement ile aynıdır (key_id sırasıyla).
+type rawKey struct {
+	id  string
+	pub []byte
+	// role bilinen ya da bilinmeyen herhangi bir sayı olabilir.
+	role   uint32
+	nb, na int64
+}
+
+func rawStatement(epoch uint64, threshold uint32, issued int64, keys []rawKey) []byte {
+	ks := append([]rawKey(nil), keys...)
+	sort.Slice(ks, func(i, j int) bool { return ks[i].id < ks[j].id })
+	b := lp(nil, cmdenvelope.DomainTrustV2)
+	b = u64(b, epoch)
+	b = u32(b, threshold)
+	b = u64(b, uint64(issued))
+	b = u32(b, 0)
+	b = u64(b, 0)
+	b = u32(b, uint32(len(ks)))
+	for _, k := range ks {
+		b = lp(b, k.id)
+		b = u32(b, uint32(len(k.pub)))
+		b = append(b, k.pub...)
+		b = u32(b, k.role)
+		b = u64(b, uint64(k.nb))
+		b = u64(b, uint64(k.na))
+	}
+	return b
+}
+
+// checkRawStatement, rawStatement'ın geçerli bir bildirimde CanonicalStatement ile bayt-bayt
+// aynı çıktığını doğrular (ham kurucunun düzeni sapmasın).
+func checkRawStatement(st cmdenvelope.Statement, raw []byte) error {
+	want, err := cmdenvelope.CanonicalStatement(st)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(want, raw) {
+		return fmt.Errorf("rawStatement düzeni CanonicalStatement ile uyuşmuyor")
+	}
+	return nil
+}
+
 func lp(b []byte, s string) []byte {
 	b = append(b, byte(len(s)>>24), byte(len(s)>>16), byte(len(s)>>8), byte(len(s)))
 	return append(b, s...)
@@ -753,6 +868,86 @@ func (g *gen) scenarios() []ScenarioCase {
 			g.dsse(g.signedBy(g.stmt(1, 1, t1, rootKey("root1"), cmdA), "root1"))),
 	}
 	out = append(out, d)
+
+	// --- F: anahtar rolleri, onaylayan anahtarı ve zayıf anahtarlar ---
+	apprT := apprKey("appr", BaseNS, end)
+	genF := g.signedBy(g.stmt(1, 1, t1, rootKey("root1"), cmdA, apprT), "root1")
+	idRoot := identityEntry(cmdenvelope.KeyRoleRoot, 0, 0)
+	rawF := func(epoch uint64, issued int64, keys ...rawKey) []byte { return rawStatement(epoch, 1, issued, keys) }
+	rk := func(k cmdenvelope.KeyEntry, role uint32) rawKey {
+		return rawKey{id: k.KeyID, pub: k.Pub, role: role, nb: k.NotBeforeNS, na: k.NotAfterNS}
+	}
+	rootRaw := rk(rootKey("root1"), 1)
+	cmdRaw := rk(cmdA, 2)
+	g.must(checkRawStatement(g.stmt(1, 1, t1, rootKey("root1"), cmdA, apprT), rawF(1, t1, rootRaw, cmdRaw, rk(apprT, 3))))
+	rawDSSE := func(body []byte, sigs ...cmdenvelope.DSSESignature) cmdenvelope.DSSE {
+		return cmdenvelope.DSSE{PayloadType: cmdenvelope.PayloadTypeTrust, Payload: body, Signatures: sigs}
+	}
+	trustSig := func(name string, body []byte) cmdenvelope.DSSESignature {
+		return g.rawSig(name, cmdenvelope.PayloadTypeTrust, body)
+	}
+	unknownRole := rawF(1, t1, rootRaw, rk(cmdA, 4))
+	weakCmd := rawF(1, t1, rootRaw, rk(identityEntry(cmdenvelope.KeyRoleCommand, BaseNS, end), 2))
+	weakRoot := rawF(1, t1, rootRaw, rk(idRoot, 1))
+	weakSig := cmdenvelope.DSSESignature{KeyID: cmdenvelope.KeyID(identityPub()), Sig: forgedIdentitySig()}
+	f := ScenarioCase{Name: "key-roles-and-weak-keys", Doc: "onaylayan rolü kabul edilir ve bildirim imzalayamaz; bilinmeyen rol bildirimi TAMAMEN reddeder; küçük mertebeli anahtar içeren bildirim reddedilir"}
+	f.Steps = []StepCase{
+		g.step("unknown-role-4", "komut anahtarının rolü 4: kök imzası geçerli olsa bile bildirim bütünüyle reddedilir", "malformed_statement", "", false, 0, nowS,
+			rawDSSE(unknownRole, trustSig("root1", unknownRole))),
+		g.step("identity-key-as-command-key", "kimlik noktası KOMUT anahtarı olarak listelenmiş", "malformed_statement", "", false, 0, nowS,
+			rawDSSE(weakCmd, trustSig("root1", weakCmd))),
+		g.step("identity-key-as-root-with-forged-signature", "kimlik noktası KÖK olarak listelenmiş ve sahte imza taşıyor", "malformed_statement", "", false, 0, nowS,
+			rawDSSE(weakRoot, weakSig)),
+		g.step("genesis-with-approver-key", "epoch 1: kök, komut ve ONAYLAYAN anahtarı; onaylayan not_after zorunlu", "ok", "bootstrap", false, 1, nowS, g.dsse(genF)),
+		g.step("approver-signs-statement", "epoch 2 yalnız onaylayan anahtarı imzalı: onaylayan bildirim imzalayamaz", "signer_not_root", "", false, 1, nowS,
+			g.dsse(g.signedBy(g.stmt(2, 1, t2, rootKey("root1"), cmdA, apprT), "appr"))),
+	}
+	f.KeyChecks = []KeyCheckCase{
+		{"approver-is-not-a-command-key", idOf("appr"), nowS, "key_not_in_chain"},
+		{"command-key-valid", idOf("cmdA"), nowS, "ok"},
+	}
+	out = append(out, f)
+
+	// --- G: geriye tarihli bildirim ---
+	r2exp := rootKey("root2")
+	r2exp.NotAfterNS = BaseNS + 50*hour
+	late := BaseNS + 100*hour
+	nowG := BaseNS + 101*hour
+	keysG := []cmdenvelope.KeyEntry{rootKey("root1"), r2exp, cmdKey("cmdA", BaseNS, end)}
+	genG := g.signedBy(g.stmt(1, 1, late, keysG...), "root1")
+	evilKeys := append(append([]cmdenvelope.KeyEntry(nil), keysG...), cmdKey("cmdB", BaseNS, end))
+	backdated := g.signedBy(g.stmt(2, 1, BaseNS+40*hour, evilKeys...), "root2")
+	atLocal := g.signedBy(g.stmt(2, 1, late, evilKeys...), "root2")
+	okHop := g.signedBy(g.stmt(2, 1, late, keysG...), "root1")
+	gc := ScenarioCase{Name: "backdated-statements", Doc: "zincir kuralında issued_at yerel bildirimin issued_at değerinden küçük olamaz; süresi dolmuş kök eski bir pencereye bildirim imzalayamaz"}
+	gc.Steps = []StepCase{
+		g.step("genesis", "epoch 1: root1 + süresi base+50sa'te dolan root2, eşik 1, issued=base+100sa", "ok", "bootstrap", false, 1, nowG, g.dsse(genG)),
+		g.step("backdated-by-expired-root", "epoch 2: root2 yalnız eski penceresinde (issued=base+40sa) imzaladı; yerel bildirimden eski", "backdated_statement", "", false, 1, nowG, g.dsse(backdated)),
+		g.step("expired-root-at-local-issued-at", "epoch 2: issued_at yerel bildirimle aynı, root2 o anda geçersiz", "threshold_not_met", "", false, 1, nowG, g.dsse(atLocal)),
+		g.step("equal-issued-at-accepted", "epoch 2: issued_at yerel bildirimle eşit, geçerli root1 imzalı", "ok", "chain", false, 2, nowG, g.dsse(okHop)),
+	}
+	out = append(out, gc)
+
+	// --- H: saat işleme ---
+	dayNS := 24 * hour
+	farKeys := []cmdenvelope.KeyEntry{rootKey("root1"), cmdKey("cmdA", BaseNS+3000*dayNS, BaseNS+3090*dayNS)}
+	farGen := g.signedBy(g.stmt(1, 1, BaseNS+3000*dayNS, farKeys...), "root1")
+	h1 := g.signedBy(g.stmt(1, 1, t1, rootKey("root1"), cmdA), "root1")
+	h2 := g.signedBy(g.stmt(2, 1, t2, rootKey("root1"), cmdA), "root1")
+	hc := ScenarioCase{Name: "clock-handling", Doc: "saat yokken (now=0) gelecek tarihli ya da herhangi bir pin dışı bildirim kabul edilmez; gelecek-tarih denetimi asla atlanmaz"}
+	hc.Steps = []StepCase{
+		g.step("future-genesis-with-clock", "issued_at 3000 gün ileride, saat var", "not_yet_valid", "", false, 0, nowS, g.dsse(farGen)),
+		g.step("future-genesis-without-clock", "aynı bildirim, saat yok: kabul edilmez", "clock_unsynced", "", false, 0, 0, g.dsse(farGen)),
+		g.step("genesis-without-clock", "geçerli genesis, saat yok", "clock_unsynced", "", false, 0, 0, g.dsse(h1)),
+		g.step("genesis-with-clock", "geçerli genesis, saat var", "ok", "bootstrap", false, 1, nowS, g.dsse(h1)),
+		g.step("chain-hop-without-clock", "geçerli epoch 2, saat yok", "clock_unsynced", "", false, 1, 0, g.dsse(h2)),
+	}
+	out = append(out, hc)
+	hp := ScenarioCase{Name: "clock-handling-pin", Doc: "pin imzası bildirimden bağımsız kök yetkisidir ve saat gerektirmez", PinsHex: pinHex}
+	hp.Steps = []StepCase{
+		g.step("pin-signed-genesis-without-clock", "pin imzalı genesis, saat yok", "ok", "pin", false, 1, 0, g.dsse(g.signedBy(g.stmt(1, 1, t1, rootKey("root1"), cmdA), "root1"))),
+	}
+	out = append(out, hp)
 
 	// --- E: DSSE'ye özgü imza işleme ---
 	gen1 := g.stmt(1, 2, t1, with(roots3(), cmdA)...)

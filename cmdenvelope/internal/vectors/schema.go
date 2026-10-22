@@ -2,8 +2,8 @@
 // (contracts/testvectors/cmdenvelope/v2_vectors.json) şemasını ve deterministik üreticisini içerir.
 //
 // Vektörler SABİT tohumlardan üretilir (Ed25519 imzaları deterministiktir); dosya her
-// çalıştırmada bayt-bayt aynı çıkar. Aynı JSON dosyasını ajan testleri de okur:
-// sunucu ve ajan aynı baytları üretip aynı kararı vermelidir. Dosyayı yeniden üretmek
+// çalıştırmada bayt-bayt aynı çıkar. Aynı JSON dosyasını başka doğrulayıcı gerçeklemeleri de
+// okuyabilir: hepsi aynı baytları üretip aynı kararı vermelidir. Dosyayı yeniden üretmek
 // bir TEL DEĞİŞİKLİĞİDİR ve bilinçli yapılmalıdır:
 //
 //	go test ./cmdenvelope -run TestGoldenVectors_BytePinned -update
@@ -53,7 +53,7 @@ type PAECase struct {
 type KeyJSON struct {
 	KeyID       string `json:"keyid"`
 	PubHex      string `json:"pub_hex"`
-	Role        string `json:"role"` // "ROOT" | "COMMAND"
+	Role        string `json:"role"` // "ROOT" | "COMMAND" | "APPROVER"
 	NotBeforeNS int64  `json:"not_before_ns"`
 	NotAfterNS  int64  `json:"not_after_ns"`
 }
@@ -109,6 +109,8 @@ type EnvelopeCase struct {
 	// WireCommandID / WireType: telde gövde dışında taşınan değerler (boş = gövdeyle aynı).
 	WireCommandID string `json:"wire_command_id,omitempty"`
 	WireType      string `json:"wire_type,omitempty"`
+	// ExpectTenant: doğrulayanın kiracısı (yok = kiracı denetlenmez; "" = platform kiracısı).
+	ExpectTenant *string `json:"expect_tenant,omitempty"`
 	// Keys: doğrulayanın güvendiği anahtarlar (rol ve pencereyle).
 	Keys   []KeyJSON   `json:"keys"`
 	DSSE   DSSEJSON    `json:"dsse"`
@@ -205,6 +207,8 @@ func (k KeyJSON) Entry() (cmdenvelope.KeyEntry, error) {
 		role = cmdenvelope.KeyRoleRoot
 	case "COMMAND":
 		role = cmdenvelope.KeyRoleCommand
+	case "APPROVER":
+		role = cmdenvelope.KeyRoleApprover
 	default:
 		return cmdenvelope.KeyEntry{}, fmt.Errorf("bilinmeyen rol %q", k.Role)
 	}
@@ -214,8 +218,11 @@ func (k KeyJSON) Entry() (cmdenvelope.KeyEntry, error) {
 // KeyToJSON, cmdenvelope.KeyEntry'yi KeyJSON'a çevirir.
 func KeyToJSON(k cmdenvelope.KeyEntry) KeyJSON {
 	role := "ROOT"
-	if k.Role == cmdenvelope.KeyRoleCommand {
+	switch k.Role {
+	case cmdenvelope.KeyRoleCommand:
 		role = "COMMAND"
+	case cmdenvelope.KeyRoleApprover:
+		role = "APPROVER"
 	}
 	return KeyJSON{KeyID: k.KeyID, PubHex: hex.EncodeToString(k.Pub), Role: role, NotBeforeNS: k.NotBeforeNS, NotAfterNS: k.NotAfterNS}
 }
