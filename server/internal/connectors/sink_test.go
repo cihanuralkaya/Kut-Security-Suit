@@ -35,7 +35,7 @@ func mkEv(src string) model.Event {
 	}
 }
 
-// Z3-02: her bağlayıcı yapılandırılmış kiracısıyla damgalanır (kaynak verisindeki değer ezilir)
+// her bağlayıcı yapılandırılmış kiracısıyla damgalanır (kaynak verisindeki değer ezilir)
 // ve iki kiracının aynı kaynak adı ayrı cihaz kimliğine düşer.
 func TestConnectorSinkStampsConfiguredTenant(t *testing.T) {
 	var a, b recSave
@@ -135,8 +135,8 @@ func TestSourceConfigResolveTenant(t *testing.T) {
 	}
 }
 
-// S1: kiracısız bağlayıcı (dağıtım kiracısı acme) acme ile damgalanır ama cihaz kimliği
-// W1b-2 öncesiyle aynı kalır; açık farklı kiracıya bağlı bağlayıcı ad-alanlanır.
+// kiracısız bağlayıcı (dağıtım kiracısı acme) acme ile damgalanır ama cihaz kimliği
+// Kiracı Duvarı III öncesiyle aynı kalır; açık farklı kiracıya bağlı bağlayıcı ad-alanlanır.
 func TestConnectorBindingKeepsLegacyDeviceID(t *testing.T) {
 	legacy, err := SourceConfig{Name: "fw"}.ResolveBinding("acme", false)
 	if err != nil || legacy.Tenant != "acme" || legacy.IDTenant != "" {
@@ -160,7 +160,7 @@ func TestConnectorBindingKeepsLegacyDeviceID(t *testing.T) {
 	}
 }
 
-// S2 (INV-044): KUT_TENANT_ENFORCE=1 iken kiracısız bağlayıcı REDDEDİLİR (HTTP ingest'in
+// INV-044: KUT_TENANT_ENFORCE=1 iken kiracısız bağlayıcı REDDEDİLİR (HTTP ingest'in
 // kiracısız token'ı 403'lemesiyle aynı fail-closed); kapalıyken dağıtım kiracısına düşer.
 func TestConnectorBindingEnforceRequiresTenant(t *testing.T) {
 	if _, err := (SourceConfig{Name: "fw"}).ResolveBinding("acme", true); !errors.Is(err, ErrTenantRequired) {

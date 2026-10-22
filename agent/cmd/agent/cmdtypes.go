@@ -13,7 +13,7 @@ func commandSpec(t kutv1.Command_CommandType) (cmdenvelope.Spec, bool) {
 
 // commandProtected, bir komut tipinin İMZASIZ teslimde reddedilmesi gereken (korumalı)
 // tip olup olmadığını döner. Karar sunucudaki ile aynı cmdenvelope.Protected tablosundan
-// gelir; UNSPECIFIED/kayıtsız tip fail-closed olarak korumalı sayılır. W2-S6 doğrulayıcısı
+// gelir; UNSPECIFIED/kayıtsız tip fail-closed olarak korumalı sayılır. Ajan doğrulayıcısı
 // bu fonksiyonu kullanır; ajan/sunucu uyumu cmdtypes_test.go ile sabitlenmiştir.
 func commandProtected(t kutv1.Command_CommandType) bool {
 	spec, ok := commandSpec(t)

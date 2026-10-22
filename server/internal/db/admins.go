@@ -30,7 +30,7 @@ func (s *Store) CreateAdmin(ctx context.Context, email, passwordHash string, rol
 // AdminTenant, admin'in kiracısını döner (okuma izolasyonu için). Boş → platform admini
 // (tüm kiracılar). Bilinmeyen, geçersiz-id'li veya PASİF yönetici için "" DÖNMEZ:
 // admin.ErrUnknownAdmin döner — boş kiracı platform kapsamı olduğundan, "yok" sonucunu ""
-// ile birleştirmek silinmiş/pasifleştirilmiş bir yöneticiyi platform admini yapardı (Z4b-09).
+// ile birleştirmek silinmiş/pasifleştirilmiş bir yöneticiyi platform admini yapardı.
 func (s *Store) AdminTenant(ctx context.Context, adminID string) (string, error) {
 	if !validUUID(adminID) {
 		return "", admin.ErrUnknownAdmin
@@ -46,7 +46,7 @@ func (s *Store) AdminTenant(ctx context.Context, adminID string) (string, error)
 	return tenant, nil
 }
 
-// SetAdminRole, bir yöneticinin rolünü değiştirir. S-4: tenantID boş değilse UPDATE hedefin
+// SetAdminRole, bir yöneticinin rolünü değiştirir. tenantID boş değilse UPDATE hedefin
 // kiracısıyla daraltılır (`AND tenant_id = $3`) — servis katmanındaki kapı atlansa bile bir
 // kiracı başka kiracının/platformun yöneticisinin rolüne dokunamaz. Boş tenantID = platform
 // kapsamı (süzme yok). Kiracıya bağlı çağıran için eşleşen yönetici yoksa ErrForbidden.
@@ -65,7 +65,7 @@ func (s *Store) SetAdminRole(ctx context.Context, id string, role admin.Role, te
 	return nil
 }
 
-// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false). S-4: tenantID semantiği
+// DeactivateAdmin, bir yöneticiyi pasifleştirir (is_active=false). tenantID semantiği
 // SetAdminRole ile aynıdır (boş = platform, doluysa hedefin kiracısı eşleşmeli).
 func (s *Store) DeactivateAdmin(ctx context.Context, id, tenantID string) error {
 	if !validUUID(id) {

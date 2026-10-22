@@ -12,7 +12,7 @@ import (
 )
 
 // TestAIInvestigateEndpoint, otonom soruşturma ajanının CANLI ERİŞİLEBİLİRLİĞİNİ doğrular
-// (G1 aktivasyon DoD): /api/ai/investigate uçtan uca çalışır, salt-okunur rapor döner.
+// (aktivasyon): /api/ai/investigate uçtan uca çalışır, salt-okunur rapor döner.
 func TestAIInvestigateEndpoint(t *testing.T) {
 	srv, store := newServer(t)
 	srv.SetInvestigator(aiprovider.NewInvestigationAgent(

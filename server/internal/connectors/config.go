@@ -13,7 +13,7 @@ import (
 	"kut.corp/suite/server/internal/tenant"
 )
 
-// config.go — connector'ların YAPILANDIRMADAN kurulması (§29/§30 canlı hatta bağlama).
+// config.go — connector'ların YAPILANDIRMADAN kurulması (canlı hatta bağlama).
 // Bir JSON dosyası kaynak listesini tanımlar; her giriş bir connector.Connector'a
 // dönüştürülür. Böylece operatör, kod değiştirmeden yeni log/bulut kaynağı ekleyebilir.
 
@@ -128,7 +128,7 @@ type Binding struct {
 
 // ResolveBinding, bağlayıcının kiracı bağını çözer. enforce açıkken kiracısız bağlayıcı
 // ErrTenantRequired ile REDDEDİLİR (dağıtım kiracısına sessizce düşmez); kapalıyken kiracısız
-// bağlayıcı dağıtım kiracısıyla damgalanır ve W1b-2 öncesi cihaz kimliğini korur.
+// bağlayıcı dağıtım kiracısıyla damgalanır ve Kiracı Duvarı III öncesi cihaz kimliğini korur.
 func (c SourceConfig) ResolveBinding(deployDefault string, enforce bool) (Binding, error) {
 	if enforce && strings.TrimSpace(c.Tenant) == "" {
 		return Binding{}, fmt.Errorf("%w: %q", ErrTenantRequired, c.Name)

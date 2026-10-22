@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-In autonomous security operations and agentic workflows (Roadmap §5, §11, §108 `AI-003`), AI agents frequently need to query external threat intelligence APIs, trigger webhooks, query cloud providers, or interact with ITSM systems. Providing raw API keys, passwords, or tokens directly into the context window or tool execution environment of an LLM introduces severe security risks:
+In autonomous security operations and agentic workflows, AI agents frequently need to query external threat intelligence APIs, trigger webhooks, query cloud providers, or interact with ITSM systems. Providing raw API keys, passwords, or tokens directly into the context window or tool execution environment of an LLM introduces severe security risks:
 1. **Prompt Injection / Jailbreak Exfiltration:** Malicious instructions in analyzed data could compel the model to output its credentials.
 2. **Memory / Conversation Leakage:** Secrets remain recorded in LLM context logs, chat histories, or telemetry traces.
 

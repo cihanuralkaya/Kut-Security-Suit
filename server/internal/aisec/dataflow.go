@@ -1,6 +1,6 @@
 package aisec
 
-// dataflow.go — AG-02: agent veri-akışı güvenliği (KUT-AI-SEC-007) + taint→exfiltration
+// dataflow.go — agent veri-akışı güvenliği (KUT-AI-SEC-007) + taint→exfiltration
 // guard (INV-AG-004) ve tool/MCP çıktısı = DATA (INV-AG-005). Deterministik enforcement.
 
 // AGDecision, agentic bir kontrolün deterministik kararıdır.

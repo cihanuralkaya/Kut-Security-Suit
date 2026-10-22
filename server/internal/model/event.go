@@ -21,7 +21,7 @@ import (
 const EventSchemaVersion = "1.1"
 
 // Event, kalıcılaştırılacak bir olayın transport-bağımsız biçimidir. Kanonik olay
-// modeli (roadmap §5): kimlik + atıf + ilişki alanları ilk-sınıftır. Yeni alanlar
+// modeli: kimlik + atıf + ilişki alanları ilk-sınıftır. Yeni alanlar
 // omitempty ile serileştirilir — 1.0 tüketicileri geriye uyumlu kalır.
 type Event struct {
 	// EventID, olayın kararlı (içerik-adresli) kimliğidir. Boşsa EnsureID üretir;

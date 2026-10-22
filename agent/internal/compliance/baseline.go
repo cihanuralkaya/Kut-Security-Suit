@@ -92,7 +92,7 @@ func Evaluate(chk Checker) Report {
 		{"CIS-1.1", "Sistem diski şifrelemesi etkin", SevHigh, chk.DiskEncryption(), EncOn, EncOff},
 		{"CIS-9.1", "Ana bilgisayar güvenlik duvarı etkin", SevHigh, chk.Firewall(), FwOn, FwOff},
 	}
-	// Gelişmiş MDM kontrolleri (§31) — checker ExtendedChecker'ı da uyguluyorsa.
+	// Gelişmiş MDM kontrolleri — checker ExtendedChecker'ı da uyguluyorsa.
 	catalog = append(catalog, extendedCatalog(chk)...)
 
 	r := Report{}

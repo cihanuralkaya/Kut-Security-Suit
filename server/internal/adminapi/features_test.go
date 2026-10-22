@@ -371,7 +371,7 @@ func TestAgentSecEventsRequiresOperator(t *testing.T) {
 	}
 }
 
-// TestAgentSecCanonicalEndpoint, P0-B'yi uçtan doğrular: AG exfil bulgusu, GET
+// TestAgentSecCanonicalEndpoint, kanonik ucu uçtan doğrular: AG exfil bulgusu, GET
 // /api/agentsec/canonical'da MEVCUT kanonik olay modeli (model.Event) olarak dönmeli —
 // içerik-adresli event_id, kanonik event_type/source/severity ve şema sürümü ile. Böylece
 // agent güvenlik tespiti ikinci bir modele değil, ortak kanonik hatta oturur.
@@ -546,7 +546,7 @@ func TestAITriageEndpoint(t *testing.T) {
 	}
 }
 
-// TestAgentSecTelemetryEndpoint, P0-A imza-doğrulamalı telemetri ucunu uçtan uca
+// TestAgentSecTelemetryEndpoint, imza-doğrulamalı telemetri ucunu uçtan uca
 // doğrular: geçerli imzalı gözlem KABUL edilir ve graf'a işlenir (findings'te görünür);
 // bozuk imza 403 reddedilir. Uç session gerektirmez (imza ile kimlik doğrular).
 func TestAgentSecTelemetryEndpoint(t *testing.T) {
@@ -1525,7 +1525,7 @@ func TestListEventsFilter(t *testing.T) {
 }
 
 // TestListEventsOCSF, /api/events?format=ocsf'in olayları sektör-standardı OCSF Detection
-// Finding şemasına eşlediğini doğrular (roadmap P1). Envelope + sınıflandırma + severity +
+// Finding şemasına eşlediğini doğrular. Envelope + sınıflandırma + severity +
 // device + kanonik-kimlik korunumu (metadata.uid == finding_info.uid) sınanır.
 func TestListEventsOCSF(t *testing.T) {
 	ts, store := setup(t)

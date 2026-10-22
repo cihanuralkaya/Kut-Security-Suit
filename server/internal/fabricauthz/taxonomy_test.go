@@ -11,7 +11,7 @@ import (
 	"kut.corp/suite/server/internal/scope"
 )
 
-// W2-S1: komut tablosu tabanlı sınıflandırma (Z2-02).
+// komut tablosu tabanlı sınıflandırma.
 
 // taxonomyEngine: dev-in kapsamda, dev-ex hariç; WIPE yalnız wipeROE ise açık.
 func taxonomyEngine(wipeROE bool) *scope.Engine {
@@ -94,7 +94,7 @@ func TestCommandAuthorizer_CollectAndScriptFollowScope(t *testing.T) {
 	ca := NewCommandAuthorizer(taxonomyEngine(false), "t")
 	for _, typ := range []string{"COLLECT_FILE", "RUN_SIGNED_SCRIPT"} {
 		if d := decide(t, ca, typ, "dev-in"); !d.Allowed {
-			t.Errorf("%s kapsamda reddedildi (Z2-02): %s", typ, d.Reason)
+			t.Errorf("%s kapsamda reddedildi: %s", typ, d.Reason)
 		}
 		if d := decide(t, ca, typ, "dev-ex"); d.Allowed {
 			t.Errorf("%s hariç cihazda izinli olmamalı", typ)

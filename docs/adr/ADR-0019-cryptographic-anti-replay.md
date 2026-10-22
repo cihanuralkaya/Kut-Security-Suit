@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-In distributed C2 and endpoint telemetry streams, attackers intercepting signed messages over the wire could attempt replay attacks (re-transmitting previous telemetry or re-executing captured commands). Without replay protection, a stolen command could be executed repeatedly to cause disruption (Roadmap §19, §108 `SEC-003`).
+In distributed C2 and endpoint telemetry streams, attackers intercepting signed messages over the wire could attempt replay attacks (re-transmitting previous telemetry or re-executing captured commands). Without replay protection, a stolen command could be executed repeatedly to cause disruption.
 
 ## Decision
 We implemented `ReplayProtector` in `server/internal/security`:

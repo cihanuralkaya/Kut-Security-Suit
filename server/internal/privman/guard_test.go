@@ -8,7 +8,7 @@ import (
 )
 
 // rawMutationMethods, authorization sınırını atlayarak çağrılması YASAK olan raw Store
-// mutasyon metotlarıdır (audit §1/§4 G-02). Yeni eklenen mutasyonlar buraya eklenmelidir.
+// mutasyon metotlarıdır. Yeni eklenen mutasyonlar buraya eklenmelidir.
 var rawMutationMethods = []string{
 	"EnqueueCommand", "EnqueueCommandParams", "SetDeviceStatus", "SetDeviceTags",
 	"AssignPolicy", "EraseDeviceData", "RevokeDeviceCerts", "SavePendingWipe",
@@ -16,12 +16,12 @@ var rawMutationMethods = []string{
 }
 
 // allowedBoundaryDirs, raw mutasyonları çağırmasına İZİN VERİLEN mevcut sınır
-// paketleridir (repo-göreli, "/" ayraçlı). Migration ilerledikçe (PR-03+) bu küme
+// paketleridir (repo-göreli, "/" ayraçlı). Migration ilerledikçe bu küme
 // DARALIR: bir yol GuardedExecutor/privman sınırından geçince buradan çıkarılır.
 var allowedBoundaryDirs = []string{
 	"server/internal/admin",       // Store arayüzü + admin.Service (mevcut sınır)
 	"server/internal/adminapi",    // HTTP handler'lar (admin.Service'e delege)
-	"server/internal/response",    // AutoQuarantiner (PR-03'te sınıra taşınacak)
+	"server/internal/response",    // AutoQuarantiner (sınıra taşınacak)
 	"server/internal/memstore",    // Store impl (bellek)
 	"server/internal/db",          // Store impl (DB)
 	"server/internal/seccontract", // frozen sözleşme tipleri
@@ -56,7 +56,7 @@ func isAllowed(relDir string) bool {
 	return false
 }
 
-// TestNoRawMutationBypass, G-02 mimari değişmezini korur: raw Store mutasyonları YALNIZ
+// TestNoRawMutationBypass, mimari değişmezi korur: raw Store mutasyonları YALNIZ
 // bilinen sınır paketlerinde çağrılabilir. Yeni bir üretim paketi bir mutasyonu doğrudan
 // çağırırsa bu test (dolayısıyla CI) kırılır — bypass sınıfının kök nedeni yeniden doğamaz.
 // Metot ÇAĞRILARI (".Method(") aranır; tanım/impl (`func (s) Method(`) ve _test.go hariç.
@@ -106,7 +106,7 @@ func TestNoRawMutationBypass(t *testing.T) {
 	}
 	if len(violations) > 0 {
 		for _, v := range violations {
-			t.Errorf("G-02 bypass: %s raw mutasyon .%s( çağrılıyor — sınır dışı paket; privman/GuardedExecutor üzerinden geçmeli", v.file, v.method)
+			t.Errorf("mimari bypass: %s raw mutasyon .%s( çağrılıyor — sınır dışı paket; privman/GuardedExecutor üzerinden geçmeli", v.file, v.method)
 		}
 	}
 }

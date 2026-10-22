@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// leader.go — YÜKSEK ERİŞİLEBİLİRLİK: kira-tabanlı LİDER SEÇİMİ (§38). Çok-düğümlü
+// leader.go — YÜKSEK ERİŞİLEBİLİRLİK: kira-tabanlı LİDER SEÇİMİ. Çok-düğümlü
 // C2 kümesinde, yalnız-bir-kez çalışması gereken görevler (zamanlanmış raporlar,
 // partition/retention bakımı, tekil arka-plan işleri) tek bir LİDER düğümde koşar.
 // Lider, paylaşılan bir depoda (LeaseStore — ör. PostgreSQL advisory-lock / lease

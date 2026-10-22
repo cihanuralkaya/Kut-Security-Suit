@@ -87,7 +87,7 @@ type Spec struct {
 	// DualControl, tipin çift-kontrol (iki farklı ADMIN) kapsamında olduğunu bildirir.
 	DualControl bool
 	// Idempotent, aynı komutun yeniden yürütülmesinin güvenli olduğunu bildirir
-	// (ajan yeniden-başlama sonrası STARTED kaydı için; bkz. W2 tasarımı 3.6).
+	// (ajan yeniden-başlama sonrası STARTED kaydı için).
 	Idempotent bool
 	// ScopeAction, scope.Action adıdır (küçük harf). ScopeExempt ise boştur. Bu paket
 	// scope'a bağımlı olamaz; sunucu tarafı bu adı scope.Action'a çevirir.
@@ -97,7 +97,7 @@ type Spec struct {
 	// RBAC ve kiracı denetimi muafiyetten ETKİLENMEZ.
 	ScopeExempt bool
 	// PlaneRouted, yönetici yolunda komut düzleminden (imza+authz) geçen tiptir.
-	// false olanlar (COLLECT_DIAGNOSTICS: W2-S5'te taşınır; UNINSTALL: yönetici giriş
+	// false olanlar (COLLECT_DIAGNOSTICS: sonraki bir sürümde taşınır; UNINSTALL: yönetici giriş
 	// noktası yok) doğrudan depo yoluna gider ya da hiç gönderilmez.
 	PlaneRouted bool
 }

@@ -14,7 +14,7 @@ Superseded (2026-10, telemetry-plane convergence)
 > owning a second rule stack. Historical record retained below.
 
 ## Context
-Detection logic must be decoupled from binary releases to enable rapid rule updates and community-driven detection engineering (Roadmap §42, §108 `XDR-004`). The Telemetry Plane requires an extensible in-memory rule engine that evaluates incoming events at microsecond latency without external database lookups.
+Detection logic must be decoupled from binary releases to enable rapid rule updates and community-driven detection engineering. The Telemetry Plane requires an extensible in-memory rule engine that evaluates incoming events at microsecond latency without external database lookups.
 
 ## Decision
 We implemented `RuleEngine` in `server/internal/telemetryplane`:

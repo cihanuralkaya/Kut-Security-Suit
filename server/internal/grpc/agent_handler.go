@@ -54,7 +54,7 @@ type DeviceRegistry interface {
 	RecordAgentBinary(ctx context.Context, deviceID, version, hash string) (tampered bool, err error)
 	// ApplyCommandResults, ajanın bildirdiği komut YÜRÜTME sonuçlarını işler: başarılı
 	// bir QUARANTINE/UNQUARANTINE sonucunda cihazın EFFECTIVE durumunu günceller
-	// (desired→effective; F-D). Başarısız/ilgisiz sonuçlar durum değiştirmez. Best-effort.
+	// (desired→effective). Başarısız/ilgisiz sonuçlar durum değiştirmez. Best-effort.
 	ApplyCommandResults(ctx context.Context, deviceID string, outcomes []model.CommandOutcome) error
 }
 
@@ -189,7 +189,7 @@ func (h *AgentHandler) SetEntityGraph(g *entitygraph.Graph) { h.graph = g }
 // analist tarafından salt-okunur sorgulanır (otomatik alarm yok → gürültü yok).
 func (h *AgentHandler) SetSeqModel(m *aibrain.SeqModels) { h.seqModel = m }
 
-// Ajan-kontrollü dizgelerin graf/sekans modeline girişindeki SERT sınırlar (Z3-03 / Z5-18):
+// Ajan-kontrollü dizgelerin graf/sekans modeline girişindeki SERT sınırlar:
 // bir cihaz sınırsız uzun ya da sınırsız derin zincirle belleği şişiremez. Kiracı başına toplam
 // düğüm/kenar tavanı ve LRU/TTL tahliyesi entitygraph/aibrain içinde uygulanır.
 const (
@@ -431,7 +431,7 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 	if err != nil {
 		return nil, status.Error(codes.Internal, "heartbeat kaydedilemedi")
 	}
-	// Konsola canlı: cihaz görüldü. Bildirim CİHAZIN kiracısına atfedilir (Z3-06) — sunucu
+	// Konsola canlı: cihaz görüldü. Bildirim CİHAZIN kiracısına atfedilir — sunucu
 	// varsayılan kiracısına DEĞİL: aksi halde B kiracısının cihaz canlılığı "default" abonelerine
 	// sızar ve B'nin kendi konsolu bildirimi hiç almaz. Kiracı çözülemezse (hata ya da zorlama
 	// açıkken kiracısız cihaz) bildirim YAYINLANMAZ (fail-closed); heartbeat'i etkilemez.
@@ -471,7 +471,7 @@ func (h *AgentHandler) Heartbeat(ctx context.Context, req *kutv1.HeartbeatReques
 	if acked := req.GetAckedCommandIds(); len(acked) > 0 {
 		_ = h.devices.AckCommands(ctx, deviceID, acked)
 	}
-	// Komut YÜRÜTME sonuçları (SUCCESS/FAILED) — effective-state geçişi (F-D). ACK'ten
+	// Komut YÜRÜTME sonuçları (SUCCESS/FAILED) — effective-state geçişi. ACK'ten
 	// (yalnız teslim) ayrı; başarılı karantina cihazın gerçekten izole olduğunu gösterir.
 	if crs := req.GetCommandResults(); len(crs) > 0 {
 		outs := make([]model.CommandOutcome, 0, len(crs))
@@ -591,7 +591,7 @@ func (h *AgentHandler) ReportEvents(stream kutv1.AgentService_ReportEventsServer
 				if err := h.responder.AutoQuarantine(stream.Context(), deviceID, reason); err == nil {
 					autoTriggered = true
 					metrics.IncAutoQuarantine()
-					h.publishDevice(effTenant, deviceID) // konsol durumu tazelesin (cihazın kiracısına atıflı, Z3-06)
+					h.publishDevice(effTenant, deviceID) // konsol durumu tazelesin (cihazın kiracısına atıflı)
 				}
 			}
 		}

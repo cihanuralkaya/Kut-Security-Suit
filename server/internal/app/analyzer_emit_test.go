@@ -62,7 +62,7 @@ func finding(msg string) (model.Event, notify.Alert) {
 		notify.Alert{Category: "SECURITY", Severity: "HIGH", Message: msg, OccurredAt: time.Now()}
 }
 
-// Z2-03: bulgu cihazın kiracısıyla yazılır; SSE yayını ve uyarı da o kiracıya atfedilir;
+// bulgu cihazın kiracısıyla yazılır; SSE yayını ve uyarı da o kiracıya atfedilir;
 // başka kiracı bu bulguyu OKUYAMAZ (negatif), sahibi okur (pozitif).
 func TestAnalyzerFindingCarriesDeviceTenant(t *testing.T) {
 	st := memstore.New()
@@ -139,7 +139,7 @@ func TestAnalyzerTenantResolutionFailClosed(t *testing.T) {
 	}
 }
 
-// Z2-04: kayıt başarısızsa ok=false (çağıran "uyarıldı" bayrağını set ETMEZ), yayın/uyarı
+// kayıt başarısızsa ok=false (çağıran "uyarıldı" bayrağını set ETMEZ), yayın/uyarı
 // yok; notifyAlways (zincir) ise uyarı yine iletilir. Sonraki başarılı deneme ok=true.
 func TestAnalyzerSaveFailureDoesNotMarkAlerted(t *testing.T) {
 	ctx := context.Background()
@@ -187,7 +187,7 @@ func TestAnalyzerSaveFailureDoesNotMarkAlerted(t *testing.T) {
 	}
 }
 
-// Z2-04: Details HER ZAMAN geçerli JSON (kontrol karakteri, geçersiz UTF-8, NaN/Inf).
+// Details HER ZAMAN geçerli JSON (kontrol karakteri, geçersiz UTF-8, NaN/Inf).
 func TestFindingDetailsAlwaysValidJSON(t *testing.T) {
 	hostile := "evil\x01\a\x1b.\xff\xfe\"quote\\back .example.com"
 	for _, m := range []map[string]any{

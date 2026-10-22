@@ -1,12 +1,12 @@
 package aisec
 
-// service.go — AG-07: aisec analiz çekirdeğinin EŞZAMANLI-GÜVENLİ canlı sarmalayıcısı.
+// service.go — aisec analiz çekirdeğinin EŞZAMANLI-GÜVENLİ canlı sarmalayıcısı.
 // Agent olaylarını (kimlik/read/write/delegation/influence) ingest eder, Agent Causality
 // Graph'ı besler ve exfil bulgularını üretir. Bu, AG düzlemini gözlemlenebilir kılan
 // "live-wire" seam'idir (telemetri kaynağı buraya bağlanır; SOC salt-okunur uçtan tüketir).
 // AG düzlemi gözlem/öneri katmanıdır (INV-AG-010): YÜRÜTMEZ, yalnız DATA üretir.
 //
-// ÇOK-KİRACILI BÖLÜMLEME (Z5-02 / Z4a-05): Service artık TEK küresel graf değil, kiracı
+// ÇOK-KİRACILI BÖLÜMLEME: Service artık TEK küresel graf değil, kiracı
 // BAŞINA bir CausalityGraph tutar. Her gözlem/okuma açıkça bir kiracı bölümü alır; bölüm
 // anahtarı SUNUCU-TARAFI çözülmüş kiracıdır (istemciden asla). Böylece bir kiracı başka
 // kiracının düğüm güvenini ÜZERİNE YAZAMAZ, düğüm/kenar tavanını doldurup başkasının

@@ -35,7 +35,7 @@ func TestMemoryReadPropagatesTaint(t *testing.T) {
 	if got := clean.ReadTrust(Trusted); got != Trusted {
 		t.Fatalf("temiz hafıza güveni düşürmemeli: %s", got)
 	}
-	// Uçtan-uca: zehirli hafıza → tainted agent + credential+external → DENY (AG-02).
+	// Uçtan-uca: zehirli hafıza → tainted agent + credential+external → DENY.
 	trust := poisoned.ReadTrust(Trusted)
 	eff := CapSet{CapCredentialRead: true, CapExternalWrite: true}
 	if got := EvaluateExfiltration(trust, eff); got != AGDeny {

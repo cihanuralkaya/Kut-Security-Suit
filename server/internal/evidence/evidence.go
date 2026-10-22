@@ -1,5 +1,5 @@
 // Package evidence, kurcalamaya-dayanıklı delil kayıtları ve ekle-yalnız (append-only),
-// hash-zincirli bir gözetim-zinciri (chain of custody) izi sağlar (yol haritası §23).
+// hash-zincirli bir gözetim-zinciri (chain of custody) izi sağlar.
 //
 // Tasarım, depodaki denetim izi (audit log) hash-zinciriyle aynı fikri yansıtır:
 // her gözetim kaydı bir öncekinin hash'ini içerir; bu yüzden herhangi bir kaydın

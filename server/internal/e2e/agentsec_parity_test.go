@@ -1,6 +1,6 @@
 package e2e
 
-// agentsec_parity_test.go — P0-A parite garantisi: clients/agentsec SDK'sının ürettiği
+// agentsec_parity_test.go — parite garantisi: clients/agentsec SDK'sının ürettiği
 // imza, sunucu tarafındaki server/internal/aisec.TrustVerifier tarafından KABUL edilmeli.
 // SDK ve sunucu, imza için ayrı signingBytes gerçekleştirimlerine sahip (SDK aisec'i
 // import edemez — internal); bu test ikisinin AYNI kanonik baytları ürettiğini uçtan uca

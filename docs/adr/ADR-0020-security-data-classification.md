@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-When processing telemetry, prompts, and incident investigation data through AI models, transmitting sensitive data (credentials, sovereign IPs, PII) to external cloud AI providers violates data sovereignty, KVKK, and GDPR (Roadmap §6, §108 `AI-004`). The system requires automated classification of all data entering the AI plane.
+When processing telemetry, prompts, and incident investigation data through AI models, transmitting sensitive data (credentials, sovereign IPs, PII) to external cloud AI providers violates data sovereignty, KVKK, and GDPR. The system requires automated classification of all data entering the AI plane.
 
 ## Decision
 We implemented `DataClassifier` in `server/internal/aiprovider`:

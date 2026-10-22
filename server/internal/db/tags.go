@@ -10,7 +10,7 @@ import (
 // SetDeviceTags, cihazın etiketlerini (filo gruplama) değiştirir. tags nil ise
 // boş diziye normalize edilir (sütun NOT NULL). pgx []string'i text[]'e eşler.
 //
-// S-4 derinlemesine savunma: tenantID boş değilse UPDATE cihazın kiracısıyla daraltılır
+// Derinlemesine savunma: tenantID boş değilse UPDATE cihazın kiracısıyla daraltılır
 // (`AND tenant_id = $3`); böylece servis katmanındaki bir hata kiracı sınırını aşamaz.
 // Boş tenantID = platform kapsamı (süzme yok). Kiracıya bağlı çağıran için eşleşen cihaz
 // yoksa (yok ya da yabancı kiracı) ErrForbidden — varlık sızdırılmaz.

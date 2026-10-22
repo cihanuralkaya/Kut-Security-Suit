@@ -4,7 +4,7 @@ package app
 // tüneli, kaba-kuvvet, zincir) bulgu yazma yolu. Önceden her analizör kendi
 // model.Event'ini KİRACISIZ kuruyor (INV-044 ihlali), Details'i %q ile elle üretiyor
 // (kontrol karakteri/geçersiz UTF-8 → geçersiz JSON → JSONB insert hatası → bulgu sessizce
-// kayboluyor) ve "uyarıldı" bayrağını kaydın başarısına bakmadan set ediyordu (Z2-03/04).
+// kayboluyor) ve "uyarıldı" bayrağını kaydın başarısına bakmadan set ediyordu.
 //
 // Bu dosya saf, test edilebilir yardımcıları toplar:
 //   - analyzerTenants: bulgunun kiracısını SUNUCU-TARAFI çözer (cihaz kaydı → cihazın kendi
@@ -14,9 +14,9 @@ package app
 //   - findingEmitter: kiracıyı damgalar, kaydeder; yalnız BAŞARILI kayıttan sonra yayın/uyarı
 //     yapar ve başarıyı çağırana bildirir (çağıran "uyarıldı" bayrağını ancak o zaman set eder).
 //
-// NOT (W3'e bırakıldı — Z2-05): analizörler olayları hâlâ adminread.QueryEvents üzerinden
+// NOT (sonraya bırakıldı): analizörler olayları hâlâ adminread.QueryEvents üzerinden
 // okur ve bu yol sorgu başına 1000 satırla sınırlıdır; sayfalı/toplamalı bir tarama yolu
-// W3 dalgasında ele alınacaktır.
+// ayrıca ele alınacaktır.
 
 import (
 	"context"

@@ -52,11 +52,9 @@ gerekmez. Sürücünün ajana sağlayacağı korumalar (tasarım):
 - Ajan ikilisi, yapılandırması ve registry anahtarlarının **yazma korumasını** çekirdekte.
 - Kurcalama girişimlerini ajana **olay olarak** iletme (ETW/port).
 
-## Yol haritası
+## Mevcut durum
 
-Gerçek sürücü, EV sertifikası + WHQL boru hattı + adanmış BSOD-QA gerektirdiğinden bir
-ürün/altyapı kararıdır. Userland katmanı, o karara kadar birincil savunmadır ve sürücü
-geldiğinde onu **tamamlar** (yerine geçmez).
+Userland katmanı birincil savunmadır; çekirdek sürücüsü kurulduğunda onu **tamamlar** (yerine geçmez).
 
 ---
 
@@ -101,8 +99,6 @@ code change**. The driver's intended protections: block termination/suspension o
 and watchdog (PPL); kernel-enforced write protection of the agent binary, config, and
 registry keys; and delivery of tamper attempts to the agent as events (ETW/port).
 
-## Roadmap
+## Current status
 
-The real driver requires an EV certificate + WHQL pipeline + dedicated BSOD-QA, so it is a
-product/infrastructure decision. The userland layer is the primary defense until then and
-**complements** (does not replace) the driver when it arrives.
+The userland layer is the primary defense; once the kernel driver is installed it **complements** (does not replace) it.

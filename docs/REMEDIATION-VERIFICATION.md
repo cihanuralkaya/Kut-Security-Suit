@@ -97,4 +97,4 @@ kapanış-gate otomatik akışta da doğrulanmış kanıta erişir (eşleşen a�
 
 Attack-path/graf-tabanlı doğrulama; `vuln`/`compliance` re-scan kind'ları; **predictive**
 (what-if) beklenen risk-azalması ve simülasyon (ölçülen/gerçekleşen azalma yeterli); kalıcı
-DB geçmişi (MemStore + Restore, casemgmt deseni). Bunlar rezerve/ileri fazlardır.
+DB geçmişi (MemStore + Restore, casemgmt deseni). Bunlar rezerve edilmiştir.

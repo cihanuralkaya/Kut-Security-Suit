@@ -10,7 +10,7 @@ import (
 	"kut.corp/suite/server/internal/metrics"
 )
 
-// Z3-03: bakım döngüsünün çağırdığı süpürme eski kenar/kaynakları gerçekten atar ve sayaçlar
+// bakım döngüsünün çağırdığı süpürme eski kenar/kaynakları gerçekten atar ve sayaçlar
 // /metrics'e yansır (Prune'un üretimde çağıranı yoktu).
 func TestSweepBoundedStateAndMetrics(t *testing.T) {
 	g := entitygraph.New()

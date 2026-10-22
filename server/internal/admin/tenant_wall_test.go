@@ -27,7 +27,7 @@ func wallFixture(t *testing.T) (*Service, *memStore) {
 	return svc, store
 }
 
-// --- Z4a-01 / Z4b-05: yönetici-yönetimi IDOR ---
+// --- yönetici-yönetimi IDOR ---
 
 func TestAdminMgmtCrossTenantSetRoleDenied(t *testing.T) {
 	ctx := context.Background()
@@ -125,7 +125,7 @@ func TestListAdminsTenantScoped(t *testing.T) {
 	}
 }
 
-// S-1: ADMIN eşiği require() ile zaten kapalıdır (ADMIN en üst rütbe), bu yüzden eski
+// ADMIN eşiği require() ile zaten kapalıdır (ADMIN en üst rütbe), bu yüzden eski
 // "rol çağıranı aşamaz" kontrolü ölü koddu. Anlamlı korumalar: (a) kiracılı ADMIN, başka
 // kiracıdaki/platformdaki hiç kimseye ADMIN veremez; (b) kapsamındaki SON etkin ADMIN
 // kendini düşüremez/pasifleştiremez (kiracı yönetimsiz kalmasın).
@@ -226,7 +226,7 @@ func TestLastPlatformAdminCannotSelfDemote(t *testing.T) {
 	}
 }
 
-// --- Z4b-01 / Z4a-02 / Z4b-10: enrollment token ---
+// --- enrollment token ---
 
 func TestIssueEnrollmentTokenTenantBinding(t *testing.T) {
 	ctx := context.Background()
@@ -295,7 +295,7 @@ func TestRevokeEnrollmentTokenTenantGate(t *testing.T) {
 	}
 }
 
-// --- Z4a-09: cihaz etiketleri ---
+// --- cihaz etiketleri ---
 
 func TestSetDeviceTagsTenantEnforcement(t *testing.T) {
 	ctx := context.Background()
@@ -319,7 +319,7 @@ func TestSetDeviceTagsTenantEnforcement(t *testing.T) {
 	}
 }
 
-// --- Z4a-06: MFA yeniden kayıt ---
+// --- MFA yeniden kayıt ---
 
 func totpFor(t *testing.T, secret string, at time.Time) string {
 	t.Helper()

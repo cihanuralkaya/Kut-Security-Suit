@@ -1,11 +1,11 @@
 // Package aibrain, KUT çekirdeğinin OPSİYONEL AI arka uçlarıyla konuştuğu TEK
-// sınırdır (vNext P4). İlke: "güvenlik sistemi AI'ı yönetir." Buradaki her metot
+// sınırdır. İlke: "güvenlik sistemi AI'ı yönetir." Buradaki her metot
 // yalnız ÖNERİ/SİNYAL üretir — hiçbiri aksiyon yürütmez; yüksek-etkili her aksiyon
 // yine authz gateway'in altında kalır. Ayrıca her çağrı FAIL-OPEN'dır: sağlayıcı
 // yoksa, timeout olursa veya hata verirse çekirdek "AI yokmuş gibi" deterministik
 // yoluna devam eder ve enforcement ASLA durmaz.
 //
-// aiassist'ten (§27, serbest-metin SOC asistanı) farkı: aibrain YAPISAL sinyaller
+// aiassist'ten (serbest-metin SOC asistanı) farkı: aibrain YAPISAL sinyaller
 // (sekans nadirliği, graf anomalisi, risk açıklaması) üretir ve doğrudan riskfusion/
 // correlate/entitygraph akışlarını besler. Varsayılan LocalProvider deterministik ve
 // sıfır-ağdır; dış servis yalnız açıkça yapılandırılırsa devreye girer.

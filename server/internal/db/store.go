@@ -164,7 +164,7 @@ func (s *Store) UpsertEnrollingDevice(ctx context.Context, in enroll.DeviceEnrol
 		return id, nil
 	}
 
-	// S-3: tekillik KİRACI BAŞINADIR (uq_devices_tenant_mac: kanonik kiracı + MAC). Aynı MAC
+	// tekillik KİRACI BAŞINADIR (uq_devices_tenant_mac: kanonik kiracı + MAC). Aynı MAC
 	// başka bir kiracıda zaten varsa çakışma OLMAZ → o kiracı kendi cihaz satırını alır;
 	// böylece bir kiracı başkasının MAC'ini önceden kaydedip onu enroll'dan engelleyemez
 	// (MAC-squat DoS) ve mevcut satır HİÇ değişmez (re-home yok). Çakışma yalnız AYNI

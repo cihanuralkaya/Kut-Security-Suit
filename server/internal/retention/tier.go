@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// tier.go — OLAY DEPOLAMA YAŞAM-DÖNGÜSÜ: HOT / WARM / COLD / DROP katmanlaması (§39).
+// tier.go — OLAY DEPOLAMA YAŞAM-DÖNGÜSÜ: HOT / WARM / COLD / DROP katmanlaması.
 // Aylık partition'lar yaşlarına göre katmanlara ayrılır; böylece sık erişilen taze
 // veri hızlı depoda (hot), eskiyen veri ucuz/sıkıştırılmış depoda (warm→cold) tutulur
 // ve saklama süresi dolanlar düşürülür. Planlama SAF/deterministiktir; fiziksel

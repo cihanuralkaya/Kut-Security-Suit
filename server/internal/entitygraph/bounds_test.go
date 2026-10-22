@@ -128,7 +128,7 @@ func TestNodeCapPerTenant(t *testing.T) {
 	checkInvariants(t, g)
 }
 
-// Z3-03: 1M benzersiz alan adı gözlemi, tavan altında SINIRLI bellekle sonuçlanır.
+// 1M benzersiz alan adı gözlemi, tavan altında SINIRLI bellekle sonuçlanır.
 func TestMillionDomainFloodStaysBounded(t *testing.T) {
 	g := New()
 	g.SetLimits(Limits{MaxEdgesPerTenant: 2000, MaxNodesPerTenant: 2100})

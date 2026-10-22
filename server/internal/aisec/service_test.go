@@ -62,7 +62,7 @@ func TestServiceConcurrentIngest(t *testing.T) {
 	}
 }
 
-// Z5-02: kiracılar birbirinin bulgusunu OKUYAMAZ ve düğüm güvenini ÜZERİNE YAZAMAZ.
+// kiracılar birbirinin bulgusunu OKUYAMAZ ve düğüm güvenini ÜZERİNE YAZAMAZ.
 func TestServiceTenantPartitionIsolation(t *testing.T) {
 	s := NewService()
 	seedExfil(t, s, "acme")
@@ -101,7 +101,7 @@ func TestServiceTenantPartitionIsolation(t *testing.T) {
 	}
 }
 
-// Z5-02: bir kiracı düğüm tavanını doldurup başka kiracının düğümlerini tahliye EDEMEZ
+// bir kiracı düğüm tavanını doldurup başka kiracının düğümlerini tahliye EDEMEZ
 // (FIFO tahliyesi bölüm başınadır).
 func TestServiceNodeCapIsPerTenant(t *testing.T) {
 	s := NewService()

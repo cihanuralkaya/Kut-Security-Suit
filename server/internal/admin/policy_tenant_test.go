@@ -32,7 +32,7 @@ func newPolicyFix(t *testing.T) *policyFix {
 
 var blockRule = RuleInput{Type: "APP_BLOCK_ALWAYS", Target: "evil.exe"}
 
-// Z4a-04: kiracıya bağlı admin başka kiracının ve paylaşımlı politikaya kural İTEMEZ; kendi
+// kiracıya bağlı admin başka kiracının ve paylaşımlı politikaya kural İTEMEZ; kendi
 // politikasına ekleyebilir ve push yalnız o kiracının cihazlarına gider.
 func TestPolicyAddRuleTenantWall(t *testing.T) {
 	ctx := context.Background()
@@ -94,7 +94,7 @@ func TestPolicyAddRuleTenantWall(t *testing.T) {
 	}
 }
 
-// Z4a-04: politika atama — kiracı bütünlüğü. Başka kiracının politikası atanamaz; paylaşımlı
+// politika atama — kiracı bütünlüğü. Başka kiracının politikası atanamaz; paylaşımlı
 // ve kendi politikası atanır; platform admini bile kiracılar arası atayamaz.
 func TestPolicyAssignTenantWall(t *testing.T) {
 	ctx := context.Background()
@@ -136,7 +136,7 @@ func TestPolicyAssignTenantWall(t *testing.T) {
 	}
 }
 
-// Z4a-04: kural listeleme — başka kiracının politikası okunamaz; kendi + paylaşımlı okunur.
+// kural listeleme — başka kiracının politikası okunamaz; kendi + paylaşımlı okunur.
 func TestPolicyListRulesTenantWall(t *testing.T) {
 	ctx := context.Background()
 	f := newPolicyFix(t)
@@ -160,7 +160,7 @@ func TestPolicyListRulesTenantWall(t *testing.T) {
 	}
 }
 
-// Z4a-04 + Z4b-08: politika oluşturma — sahip kiracı sunucu-tarafı belirlenir.
+// politika oluşturma — sahip kiracı sunucu-tarafı belirlenir.
 func TestPolicyCreateTenantOwnership(t *testing.T) {
 	ctx := context.Background()
 	f := newPolicyFix(t)

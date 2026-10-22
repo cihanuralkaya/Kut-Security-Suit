@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Following the Roadmap vision (§75 Agent Mesh, §108 `AGENT-001`), tier-1 alert fatigue represents the primary operational bottleneck for SOC teams. Instead of static alert forwarding, modern security fabrics require autonomous investigation agents capable of:
+Following the product direction, tier-1 alert fatigue represents the primary operational bottleneck for SOC teams. Instead of static alert forwarding, modern security fabrics require autonomous investigation agents capable of:
 1. Tracing the lateral attack path across graph nodes.
 2. Identifying critical choke points for containment.
 3. Querying threat knowledge (MITRE ATT&CK techniques and incident response playbooks) via RAG.

@@ -1,6 +1,6 @@
 package compliance
 
-// baseline_ext.go — GELİŞMİŞ MDM/UEM uyum kontrolleri (§31). Mevcut Checker'ı BOZMADAN,
+// baseline_ext.go — GELİŞMİŞ MDM/UEM uyum kontrolleri. Mevcut Checker'ı BOZMADAN,
 // OPSİYONEL bir ExtendedChecker arayüzü ekler: bir platform bu ek sinyalleri (yama
 // durumu, otomatik güncelleme, ekran kilidi, parola politikası, uygulama-kontrolü)
 // sağlayabiliyorsa taban değerlendirmesine eklenir; sağlamıyorsa atlanır (geriye uyumlu).

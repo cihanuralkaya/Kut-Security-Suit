@@ -14,7 +14,7 @@ import (
 )
 
 // scim.go — SCIM 2.0 kullanıcı sağlama için KALICI (PostgreSQL) iam.Provisioner
-// gerçekleştirimi (§35). Kullanıcı, çekirdek sorgulanabilir sütunlar + tam kaynağı
+// gerçekleştirimi. Kullanıcı, çekirdek sorgulanabilir sütunlar + tam kaynağı
 // tutan `doc` JSONB olarak scim_users tablosunda saklanır. Deactivate soft-delete'tir.
 
 // scimStore, pgx havuzu üzerinden iam.Provisioner'ı karşılar.

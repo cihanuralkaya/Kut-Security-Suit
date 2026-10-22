@@ -1,8 +1,8 @@
 // Package detectreg, tespit kurallarını (detect.Rule) SÜRÜMLÜ, doğrulanmış ve
-// yaşam-döngüsü yönetilen bir KAYIT/DEPO (registry) altında toplar (§44). Böylece
+// yaşam-döngüsü yönetilen bir KAYIT/DEPO (registry) altında toplar. Böylece
 // kurallar sürüm geçmişiyle izlenir, platform/teknik boyutunda sorgulanır ve
 // draft→active→retired yaşam-döngüsüyle yönetilir. Bu, kuralların ayrı bir
-// repository/registry üzerinden yönetilmesi hedefinin (Detection-as-Code, §20/§44)
+// repository/registry üzerinden yönetilmesi hedefinin (Detection-as-Code)
 // sunucu-içi çekirdeğidir.
 //
 // Saf-Go; dış bağımlılık yok. Depoyu değiştirmez (bellek-içi katalog).

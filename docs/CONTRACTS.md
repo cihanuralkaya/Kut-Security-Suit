@@ -1,9 +1,9 @@
-# KUT Security Contracts — PR-00B Security Contract Freeze (TASLAK v3.2)
+# KUT Security Contracts (TASLAK v3.2)
 
 **Durum:** TASLAK v3.2.1 — errata/final consistency patch (B8/B9/H16/H17/M15). **Henüz FREEZE APPROVED değil, uygulanmadı, migrate edilmedi.** Yeni mimari yok; yalnız artık tutarsızlıkların temizliği.
 **Kapsam:** güvenlik-duyarlı arayüzlerin şekli, durum makineleri, fail-closed davranışı, runtime sırası, crash atomikliği, retry taksonomisi, invariant'lar.
 **v3→v3.1:** B6 (GuardedExecutor = atomik security transaction SAHİBİ), H11 (CommandID üretim anı), H12 (validate↔CAS tek commit-point + binding re-check), H13 (RUNNING destructive ≠ EXPIRED; EXECUTION_UNKNOWN), M10 (evidence doğrulama özellikleri ayrıştırıldı), M11 (Finalize reason-code'ları). §21 dörtlü tutarlılık çapraz-kontrolü eklendi.
-**v3.1→v3.2:** B7 ("exactly-once" iddiası → *stable execution/dedup identity + action-specific idempotency/reconciliation*), H14 (ExecutionIntent `UNKNOWN` state'i), H15 (Failure-Matrix #7 belirsizlik), M12 (`EXECUTION_UNKNOWN` = non-terminal reconciliation; `→QUEUED` yasak), M13 (`VERIFIED` tanımı), M14 (Grant CAS predicate'i açık). INV-049/050. §21 düzeltildi. **§22 — Milestone AG (Agentic Threat Defense Plane, `KUT-AI-SEC-*`) PR-00B DIŞI ayrı paket olarak eklendi.**
+**v3.1→v3.2:** B7 ("exactly-once" iddiası → *stable execution/dedup identity + action-specific idempotency/reconciliation*), H14 (ExecutionIntent `UNKNOWN` state'i), H15 (Failure-Matrix #7 belirsizlik), M12 (`EXECUTION_UNKNOWN` = non-terminal reconciliation; `→QUEUED` yasak), M13 (`VERIFIED` tanımı), M14 (Grant CAS predicate'i açık). INV-049/050. §21 düzeltildi. **§22 — Agentic Threat Defense Plane (`KUT-AI-SEC-*`) ayrı paket olarak eklendi.**
 **v3.2→v3.2.1 (errata):** B8 (kalan "exactly-once" ifadeleri §5+INV-042'de temizlendi), B9 (`ExecutionIntent CREATED→UNKNOWN` + INV-051), H16 (Failure-Matrix #5 mutlak dedup garantisi kaldırıldı), H17 (§7 "iki kez yürütülmez" → "bilinçli yeni execution başlatılmaz + belirsizlikte reconciliation"), M15 (destructive reconciliation authenticated-evidence + INV-052). §21 kapanışı v3.2.1'e güncellendi.
 
 İsim-alanları: `KUT-SEC-*` · `INV-*`/`INV-AI-*` · `REV-*` · `KUT-ARCH-*`.
@@ -86,14 +86,14 @@ AI yolu: `AI Context → Local AI → Output Validator → AIRecommendation(VALI
 Alanlar (freeze): `RequestID, TenantID, Principal{Type,ID}, Action, Targets[], RequestedImpact(hint), Confirmed, CreatedAt`.
 Trust boundary: sunucu-içi. Fail-closed: geçersiz principal/bilinmeyen Action/boş yüksek-etki Target → DENY. Tenant: server-side; missing→DENY (INV-044). Integrity: `RequestHash` (kanonik, §17/M3). Impact(H6): RequestedImpact hint; `EffectiveImpact` server-side; destructive düşürülemez.
 KUT-SEC 002,008 · INV 004,006,012,044 · Kesişen `authz.Request`→v2.
-PR-00B: tip + RequestHash kanonik + EffectiveImpact türetme + testler.
+Kapsam: tip + RequestHash kanonik + EffectiveImpact türetme + testler.
 
 ## 2. `AuthorizationDecision` + `ReasonCode`
 Alanlar (freeze): `Result∈{ALLOW,DENY,NEED_APPROVAL}, ReasonCodes[], RequiredApproval*, Grant*`(yalnız ALLOW).
 **ReasonCode kümesi (freeze, M11 dahil):** `RBAC_DENY, SCOPE_DENY, TENANT_MISMATCH, CRITICALITY_DENY, BLAST_RADIUS_EXCEEDED, RATE_LIMITED, DUAL_CONTROL_REQUIRED, APPROVAL_EXPIRED, APPROVAL_BINDING_MISMATCH, APPROVAL_ALREADY_CONSUMED, POLICY_CHANGED, SCOPE_CHANGED, TARGET_CHANGED, GRANT_MISSING, GRANT_EXPIRED, GRANT_REPLAYED, GRANT_MISMATCH, INTENT_NOT_CREATED`.
 Allowed/forbidden: ALLOW→Grant; NEED_APPROVAL→Approval, Grant nil; DENY→son. Fail-closed: herhangi kontrol reddi→DENY+reason. Integrity: PolicyHash+PolicyVersion.
 KUT-SEC 002,004,005 · INV 008..011.
-PR-00B: enum + reason-code kümesi + "DENY/NEED_APPROVAL⇒Grant nil" testi.
+Kapsam: enum + reason-code kümesi + "DENY/NEED_APPROVAL⇒Grant nil" testi.
 
 ## 3. `AuthorizationGrant`
 Alanlar (freeze): `GrantID, RequestHash, PolicyHash, PolicyVersion, TenantID, Principal, Action, Targets[], Nonce, IssuedAt, ExpiresAt`.
@@ -113,7 +113,7 @@ aksi halde → DENY (spesifik reason-code)
 ```
 Fail-closed: eksik/expired/replayed/mismatch→DENY. PolicyHash=enforce, PolicyVersion=audit (M2).
 KUT-SEC 001,006 · INV 001..007,041,047 · INV-AI 035 · Kesişen: yeni (authz)+security hash.
-PR-00B: tip + replay-store + atomik CAS + binding-recheck + concurrent testleri.
+Kapsam: tip + replay-store + atomik CAS + binding-recheck + concurrent testleri.
 
 ## 4. `Approval` + `FinalizeAuthorization`
 Amaç: dual-control onayı. Grant/grant-mint yetkisi DEĞİL.
@@ -122,7 +122,7 @@ State machine (M6): `REQUESTED→APPROVED→CONSUMED`; `APPROVED→EXPIRED`; `RE
 State-authoritative (M7): karar = State; ayrı mutable Decision yok.
 **FinalizeAuthorization (B4):** `AuthorizeWithApproval(request, approval)`: (1) State==APPROVED & !expired değilse DENY(`APPROVAL_EXPIRED`/`APPROVAL_ALREADY_CONSUMED`); (2) policy/tenant/scope/target + RequestHash/TargetsHash binding re-validate — uyumsuzluk spesifik reason-code (`POLICY_CHANGED`/`SCOPE_CHANGED`/`TARGET_CHANGED`/`TENANT_MISMATCH`/`APPROVAL_BINDING_MISMATCH`, M11); (3) `RequesterPrincipal!=ApproverPrincipal`; (4) ALLOW → **atomik** `APPROVED→CONSUMED` + tek Grant (concurrent finalize → yalnız biri).
 KUT-SEC 005 · INV 009,010,040.
-PR-00B: state machine + Finalize re-validate + reason-code'lar + "requester≠approver / atomik tek-grant" testleri.
+Kapsam: state machine + Finalize re-validate + reason-code'lar + "requester≠approver / atomik tek-grant" testleri.
 
 ## 5. `CommandEnvelope`
 Alanlar (freeze): `CommandID`(stable execution/dedup kimliği), `AuthorizationCorrelationID`(opak), `RequestID, TenantID, DeviceID/TargetID, Action, ParametersHash, IssuedAt, ExpiresAt, Nonce`(replay), `Sequence`(ordering), `Signature`.
@@ -130,7 +130,7 @@ Alanlar (freeze): `CommandID`(stable execution/dedup kimliği), `AuthorizationCo
 Kimlik ayrımı (H8/B7): CommandID = stable execution/deduplication kimliği (cmdlog anahtarı; **tek başına exactly-once side-effect kanıtı DEĞİL** — INV-049) · Nonce = replay freshness · Sequence = ordering.
 Trust boundary: CİHAZ; agent imza+idempotency'yi bağımsız doğrular; grant görmez. Fail-closed: imza/expired/device-mismatch/replay→reddet+audit.
 KUT-SEC 006,007,011 · INV 007,022,030..033,042,046.
-PR-00B: alan şeması + "CommandID intent'ten önce + envelope==intent + GrantID taşımaz" testleri.
+Kapsam: alan şeması + "CommandID intent'ten önce + envelope==intent + GrantID taşımaz" testleri.
 
 ### 5.1 `AuthorizationGrant` ≠ `CommandEnvelope`
 Grant = sunucu yetki capability'si (sunucuda tüketilir, cihaza gitmez). CommandEnvelope = cihaz komut sahiciliği (kendi imza/replay/expiry/device-binding'i). Bağ yalnız izlenebilirlik (`AuthorizationCorrelationID↔GrantID↔RequestID`). Birleşme yasak.
@@ -154,7 +154,7 @@ ReconciliationEvidence { CommandID, AgentIdentity, DeviceID, ObservedState, Evid
 Özellikle **destructive** için: tek, doğrulanmamış bir "SUCCEEDED" iddiası → `RECONCILED_SUCCEEDED` YAPAMAZ; kimlik-doğrulanmış + politika-kabul kanıt şarttır (INV-052). Kalan belirsizlik `MANUAL_REVIEW_REQUIRED`.
 **H9:** DELIVERY_FAILED→QUEUED (aynı CommandID); EXECUTION_FAILED→FAILED_FINAL; yeni execution → yeni auth+CommandID. Premature-ACK (INV-026): ACK≠SUCCEEDED. AUTHORIZED→QUEUED yalnız durable ExecutionIntent sonrası.
 KUT-SEC 007 · INV 007,026,043,048 · Kesişen `db device_commands` (durum sütunu eklenecek).
-PR-00B: state enum + geçişler + "RUNNING destructive→EXPIRED yasak / EXECUTION_UNKNOWN reconciliation / DELIVERY vs EXECUTION" testleri.
+Kapsam: state enum + geçişler + "RUNNING destructive→EXPIRED yasak / EXECUTION_UNKNOWN reconciliation / DELIVERY vs EXECUTION" testleri.
 
 ## 7. `ExecutionIntent` (+ Destructive Journal)
 Kapsam (H10): ExecutionIntent = TÜM state-changing komutlar; DestructiveJournal = destructive intent'in ek durable/audit/fail-closed gereksinimi.
@@ -170,7 +170,7 @@ Atomiklik (B5/H11): GuardedExecutor içinde grant-consume ile aynı transaction;
 Fail-closed: Destructive iken durable intent olmadan envelope mint/persist/deliver yok.
 Idempotency (H17/B7): aynı CommandID'nin tekrar teslimi **bilinçli yeni execution BAŞLATMAZ**. Crash sonrası önceki side-effect sonucu **kanıtlanamıyorsa** komut **UNKNOWN/reconciliation**'a girer — otomatik yeniden-yürütme değil. ("İki kez yürütülemez" dağıtık garantisi İDDİA EDİLMEZ; sağlanan invariant "ikinci yürütme bilinçli başlatılamaz + belirsizlikte reconciliation"dır.)
 KUT-SEC 007 · INV 027,041,046.
-PR-00B: intent tipi + "tüm state-changing için / destructive journal yoksa DENY / CommandID intent==envelope" testleri.
+Kapsam: intent tipi + "tüm state-changing için / destructive journal yoksa DENY / CommandID intent==envelope" testleri.
 
 ## 8. Quarantine lifecycle
 ```text
@@ -183,7 +183,7 @@ INACTIVE → APPLYING → ACTIVE → RELEASING → INACTIVE
 ```
 H4: DEGRADED çıkışları tanımlı; partial=DEGRADED (INV-028); release önceki politikayı zayıflatmaz (INV-029). IPv4/IPv6/DNS/yönetim-C2/reboot test.
 KUT-SEC 012 · INV 028,029 · Kesişen `quarantine.Manager`.
-PR-00B: state enum + "partial=DEGRADED/sessiz reset yok" testleri.
+Kapsam: state enum + "partial=DEGRADED/sessiz reset yok" testleri.
 
 ## 9. Evidence lifecycle / CoC  (M8+M10 — doğrulama özellikleri ayrıştırıldı)
 ```text
@@ -202,7 +202,7 @@ Command bağı (H5): `ActionRequest→Grant→GuardedExecutor→CommandEnvelope(
 Alanlar (freeze): `EvidenceID, CaseID/IncidentID, SourceDevice, CollectorIdentity, SourcePathType, CollectedAt, HashAtSource?, HashAtReceipt, StorageHash, TransportIntegrityVerified, SourceHashVerified, CollectorIdentityVerified, ProvenanceVerified, AccessLog, RetentionPolicy, ExportLog`.
 Fail-closed: TransportIntegrityVerified değilse SEALED olmaz; append-only.
 KUT-SEC 010 · INV 026,025,045.
-PR-00B: state enum + 4-özellik ayrımı + "TransportIntegrity yoksa SEALED yok / HashAtSource yoksa SourceHashVerified=false" testleri.
+Kapsam: state enum + 4-özellik ayrımı + "TransportIntegrity yoksa SEALED yok / HashAtSource yoksa SourceHashVerified=false" testleri.
 
 ## 10. Tenant binding (M9 — invariant)
 Kural (freeze): her güvenlik nesnesi `TenantID`; server-side enjekte; **missing→DENY** (INV-044). Cross-tenant implicit değil. Tek-kiracılı uyum yalnız açıkça yapılandırılmış tenant ile.
@@ -224,7 +224,7 @@ Kural (freeze): TEK merkezi sınır `GuardedExecutor.Execute(request, grant)` �
 Ret koşulları: grant missing/expired/replayed/wrong-tenant/principal/action/target/request-hash/policy-mismatch/approval-unmet → DENY (spesifik reason-code).
 Birleşik giriş: Admin/AutoResponder/SOAR/AI/scheduled → ActionRequest→Gateway→(Approval→Finalize)→Grant→GuardedExecutor. Alternatif yol YOK.
 KUT-SEC 001,008 · INV 001..007,037,047 · INV-AI 001,006 · Kesişen `admin.Store.EnqueueCommand*`+`response.AutoQuarantiner`(BYPASS).
-PR-00B: GuardedExecutor arayüzü + görünürlük + "grant yoksa DENY / consumeGrant dışarı kapalı / AutoResponder doğrudan yol yok / raw Store state-değiştiremez" testleri.
+Kapsam: GuardedExecutor arayüzü + görünürlük + "grant yoksa DENY / consumeGrant dışarı kapalı / AutoResponder doğrudan yol yok / raw Store state-değiştiremez" testleri.
 
 ---
 
@@ -270,7 +270,10 @@ PR-00B: GuardedExecutor arayüzü + görünürlük + "grant yoksa DENY / consume
 | 8 | Result SONRASI / evidence verify ÖNCESİ | HAYIR | EVET | hayır | bitti | command SUCCEEDED; evidence RECEIVED | result + evidence pending |
 
 ## 18. DESIGN notları
-D1 Command EXPIRED/CANCELLED/EXECUTION_UNKNOWN giriş durumları §6. · D2 AI principal per-task migrasyonu. · D3 Tenant missing→DENY (§10). · D4 Sözleşme-başına metrics (Baseline §9).
+- Command EXPIRED/CANCELLED/EXECUTION_UNKNOWN giriş durumları §6.
+- AI principal per-task migrasyonu.
+- Tenant missing→DENY (§10).
+- Sözleşme-başına metrics.
 
 ## 19. Invariant eklemeleri
 ```text
@@ -289,8 +292,8 @@ INV-051 Delivery cihaz güven sınırını geçmiş ve sunucu execution'ın baş
 INV-052 Destructive bir EXECUTION_UNKNOWN, yalnız doğrulanmamış bir iddiadan reconcile EDİLEMEZ; reconciliation authenticated ve policy-kabul edilmiş ReconciliationEvidence gerektirir.
 ```
 
-## 20. PR-00B kapsam sınırı
-PR-00B **yalnız**: 13 sözleşmenin tip/enum iskeleti + durum-makinesi/invariant/atomiklik testleri + bu belge (freeze). **Migration/davranış YOK**; Milestone A (PR-01..PR-08) + paralel P0 track'lere ait.
+## 20. Kapsam sınırı
+Kapsam **yalnız**: 13 sözleşmenin tip/enum iskeleti + durum-makinesi/invariant/atomiklik testleri + bu belge (freeze). **Migration/davranış YOK**; geri kalanı sonraki değişikliklere aittir.
 
 ## 21. Dörtlü mekanik tutarlılık çapraz-kontrolü (runtime ↔ state ↔ matrix ↔ invariant)
 | Konu | Runtime (§0/§15) | State machine | Dependency (§14) | Invariant |
@@ -311,11 +314,11 @@ Dört görünüm birbiriyle **uyumludur**. Command `EXECUTION_UNKNOWN` ↔ Execu
 
 ---
 
-## 22. Milestone AG — Agentic Threat Defense Plane  (PR-00B DIŞI — ayrı kontrat paketi)
+## 22. Agentic Threat Defense Plane  (ayrı kontrat paketi)
 
-**Kapsam notu:** Bu bölüm **PR-00B'ye DAHİL DEĞİLDİR** ve §1-13 execution/authorization sözleşmelerinin freeze'ini geciktirmez. Ayrı bir kontrat paketi + namespace olarak **freeze sonrası** planlanır. Amaç: KUT'u yalnız "AI kullanan SOC" değil, **AI-agent saldırılarını gözlemleyen ve güven zincirini anlayan** platform yapmak. Enforcement yine **deterministik**; AI yalnız korelasyon/açıklama/sınıflandırma/öneri katmanında (§0'daki `AI → ActionRequest → Gateway → Grant → GuardedExecutor` zinciri aynen geçerli).
+**Kapsam notu:** Bu bölüm **§1-13 sözleşmelerine DAHİL DEĞİLDİR** ve §1-13 execution/authorization sözleşmelerinin freeze'ini geciktirmez. Ayrı bir kontrat paketi + namespace olarak **freeze sonrası** planlanır. Amaç: KUT'u yalnız "AI kullanan SOC" değil, **AI-agent saldırılarını gözlemleyen ve güven zincirini anlayan** platform yapmak. Enforcement yine **deterministik**; AI yalnız korelasyon/açıklama/sınıflandırma/öneri katmanında (§0'daki `AI → ActionRequest → Gateway → Grant → GuardedExecutor` zinciri aynen geçerli).
 
-**Neden ayrı:** §1-13, KUT'un KENDİ AI'sını kontrol eder. Milestone AG ise **saldırganın AI-agent'larını** ve karma (insan/yazılım/AI) principal davranışını modeller. Güncel tehdit çerçeveleriyle hizalı (OWASP LLM/Agentic: prompt injection, tool abuse, excessive agency, memory poisoning, exfiltration; MITRE ATLAS: tool/context poisoning, AI-agent C2, tool invocation; NIST: agent kimliği/authorization/audit/non-repudiation).
+**Neden ayrı:** §1-13, KUT'un KENDİ AI'sını kontrol eder. Bu bölüm ise **saldırganın AI-agent'larını** ve karma (insan/yazılım/AI) principal davranışını modeller. Güncel tehdit çerçeveleriyle hizalı (OWASP LLM/Agentic: prompt injection, tool abuse, excessive agency, memory poisoning, exfiltration; MITRE ATLAS: tool/context poisoning, AI-agent C2, tool invocation; NIST: agent kimliği/authorization/audit/non-repudiation).
 
 **Namespace: `KUT-AI-SEC-*`**
 ```text
@@ -345,6 +348,6 @@ INV-AG-011 Hiçbir AI (KUT'un kendi AI'sı dahil) bu invariant'ları DEĞİŞTİ
 
 **İlk iş (model DEĞİL, veri zemini):** Agent Identity + Delegation Graph + Context Provenance/Taint + Tool/Memory telemetrisi. Bunlar olmadan AI-agent saldırı zincirini (ör. `untrusted web → agent reads secret → external HTTP` = indirect prompt-injection → credential access → exfiltration) güvenilir tespit edecek **Agent Causality Graph** verisi oluşmaz.
 
-**Telemetri/kimlik taslakları (planlama; freeze değil):** `AgentPrincipal{AgentID, InstanceID, ModelID, OwnerPrincipal, DelegatedBy, TenantID, Capabilities, TrustLevel, ExpiresAt}` · Memory olayları (`MemoryWrite/Read`, `SourceTrust`, `AuthorPrincipal`, `InfluenceChain`, `TTL`, `Hash`) · Provenance/taint etiketleri (`UNTRUSTED`/`TAINTED`) canonical event şemasına (Milestone C) girer.
+**Telemetri/kimlik taslakları (planlama; freeze değil):** `AgentPrincipal{AgentID, InstanceID, ModelID, OwnerPrincipal, DelegatedBy, TenantID, Capabilities, TrustLevel, ExpiresAt}` · Memory olayları (`MemoryWrite/Read`, `SourceTrust`, `AuthorPrincipal`, `InfluenceChain`, `TTL`, `Hash`) · Provenance/taint etiketleri (`UNTRUSTED`/`TAINTED`) canonical event şemasına girer.
 
-**Roadmap konumu:** mevcut sıra (Baseline v1 §17) + `Milestone AG` — Milestone F (SOC) ile G (Local AI) arasında **veri-zemini** olarak; entity-graph (Milestone E) üzerine oturur. GNN/model işleri en sonda, veri olgunlaşınca.
+**Konum:** entity-graph üzerine oturan veri-zemini. GNN/model işleri en sonda, veri olgunlaşınca.

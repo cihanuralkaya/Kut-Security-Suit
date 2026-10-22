@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-During digital forensics and incident response (DFIR), investigators must synthesize disparate event streams (custodial evidence access, telemetry logs, and response commands) into a unified chronological sequence (Roadmap §23, §25, §108 `DFIR-003`). Any tampering with evidence logs must be clearly flagged on the reconstructed timeline.
+During digital forensics and incident response (DFIR), investigators must synthesize disparate event streams (custodial evidence access, telemetry logs, and response commands) into a unified chronological sequence. Any tampering with evidence logs must be clearly flagged on the reconstructed timeline.
 
 ## Decision
 We implemented `ReconstructTimeline` in `server/internal/evidence`:

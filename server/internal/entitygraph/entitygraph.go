@@ -80,7 +80,7 @@ type edgeKey struct {
 	rel Relation
 }
 
-// Limits, grafın SERT bellek tavanlarıdır (Z3-03 / Z5-18). Girdi (cihaz-kontrollü alan adı,
+// Limits, grafın SERT bellek tavanlarıdır. Girdi (cihaz-kontrollü alan adı,
 // IP, süreç adı) sınırsız çeşitlilikte olabileceğinden graf büyümesi iki katmanda tavanlıdır:
 //   - kiracı BAŞINA kenar/düğüm tavanı: eskiden-yeniye (LRU) tahliye yalnız o kiracının
 //     kenarlarını etkiler;
@@ -186,7 +186,7 @@ func (g *Graph) Stats() Stats {
 // Count). ts sıfırsa şimdiki zaman kullanılır. Aynı kenarın tekrar gözlemi yeni
 // düğüm/kenar YARATMAZ; sayaç ve son-görülme güncellenir (idempotent üst-yazım).
 //
-// Sınırlar (Z3-03 / Z5-18): uçları farklı kiracılara ait kenar (kiracı sınırını geçemez), aşırı
+// Sınırlar: uçları farklı kiracılara ait kenar (kiracı sınırını geçemez), aşırı
 // uzun kimlik ya da tavan yüzünden yer açılamayan kenar REDDEDİLİR (sayılır). Yeni kenar
 // kiracı tavanını aşacaksa o kiracının en eski-gözlenen kenarı (LRU) tahliye edilir.
 func (g *Graph) Observe(from, to Node, rel Relation, ts time.Time) {
@@ -547,7 +547,7 @@ func (g *Graph) removeWhere(pred func(*Edge) bool) int {
 // NodesByKindFor, belirtilen türdeki düğümlerden YALNIZ verilen kiracıya ait olanları döner
 // (tam eşleşme: boş kiracı yalnız boş-kiracılı düğümleri eşler, "hepsi" anlamına GELMEZ).
 // Kiracıya bağlı çağıranlar (hunting vb.) bunu kullanmalıdır; NodesByKind kiracı sınırını
-// AŞAR ve yalnız platform admini yolunda kullanılmalıdır (Z5-03).
+// AŞAR ve yalnız platform admini yolunda kullanılmalıdır.
 func (g *Graph) NodesByKindFor(kind Kind, tenant string) []Node {
 	var out []Node
 	for _, n := range g.NodesByKind(kind) {

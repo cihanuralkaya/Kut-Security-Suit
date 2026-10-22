@@ -56,14 +56,14 @@ MASTER_KEY="$(openssl rand -base64 32 2>/dev/null || head -c32 /dev/urandom | ba
 # base64 çıktısındaki olası satır-sonu/boşlukları temizle (bazı platformlarda base64
 # 76 sütunda kırar / CRLF ekler → config base64-çözme hatası). Güvenli tek-satır anahtar.
 MASTER_KEY="$(printf '%s' "$MASTER_KEY" | tr -d '[:space:]')"
-# XDR connector (§29/§45): bir CEF kaynak dosyası + connector yapılandırması. c2
+# XDR connector: bir CEF kaynak dosyası + connector yapılandırması. c2
 # başlarken bunu yükleyip 1sn aralıkla yoklamalı ve olayı depolamalı. Kaynak yolu,
 # JSON içeriğinde yer aldığından ve native binary tarafından açılacağından, Windows'ta
 # cygpath -m ile ileri-eğik-çizgili karma yola çevrilir (Linux'ta POSIX yol kullanılır).
 printf 'CEF:0|SmokeConn|FW|1.0|100|baglanti engellendi|5|src=9.9.9.9\n' > "$WORK/conn-src.cef"
 CONN_SRC="$(cygpath -m "$WORK/conn-src.cef" 2>/dev/null || echo "$WORK/conn-src.cef")"
 printf '[{"name":"smoke-cef","format":"cef","source":"%s","interval_sec":1}]\n' "$CONN_SRC" > "$WORK/connectors.json"
-# ABAC (§35): subject.role=admin ise izin veren tek politika.
+# ABAC: subject.role=admin ise izin veren tek politika.
 printf '[{"id":"p-admin","effect":"allow","match":[{"key":"subject.role","op":"eq","value":"admin"}]}]\n' > "$WORK/abac.json"
 COMMON_ENV=(
   "KUT_MASTER_KEY=$MASTER_KEY"
@@ -190,14 +190,14 @@ curl -sk "$B/api/devices/collect-diagnostics" -X POST -H "Authorization: Bearer 
 sleep 0.3
 curl -sk "$B/api/audit?limit=20" -H "Authorization: Bearer $TOK" | grep -q "COLLECT_DIAGNOSTICS" \
   && pass "tanılama komutu kuyruğa alındı + denetlendi" || fail "tanılama denetim izinde yok"
-# Delil + gözetim-zinciri (§23): cihaz artefaktları doğrulanmış delil kaydı olarak döner.
+# Delil + gözetim-zinciri: cihaz artefaktları doğrulanmış delil kaydı olarak döner.
 curl -sk "$B/api/devices/$DID/evidence" -H "Authorization: Bearer $TOK" | grep -q '"evidence"' \
-  && pass "/api/devices/{id}/evidence delil+gözetim-zinciri ucu döndü (§23)" || fail "/api/devices/{id}/evidence başarısız"
+  && pass "/api/devices/{id}/evidence delil+gözetim-zinciri ucu döndü" || fail "/api/devices/{id}/evidence başarısız"
 # Gözetim ekleme ucu bağlı: olmayan artefakta ACCESSED → 404 (uç + hata eşleme çalışıyor).
 cust_code="$(curl -sk -o /dev/null -w '%{http_code}' "$B/api/devices/$DID/evidence/yok-artefakt/custody" \
   -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{"action":"ACCESSED"}')"
 [ "$cust_code" = "404" ] \
-  && pass "/api/devices/{id}/evidence/{art}/custody ekleme ucu bağlı (§23, 404 yolu)" || fail "custody ucu başarısız ($cust_code)"
+  && pass "/api/devices/{id}/evidence/{art}/custody ekleme ucu bağlı (yolu)" || fail "custody ucu başarısız ($cust_code)"
 # Vaka yönetimi (#9): bir olaya sorumlu+not ata, listede geri oku (db SetEventCase/EventAcks).
 EVID="$(curl -sk "$B/api/events?limit=50" -H "Authorization: Bearer $TOK" | sed -E 's/.*"id":"([^"]+)".*/\1/')"
 curl -sk "$B/api/events/$EVID/case" -X POST -H "Authorization: Bearer $TOK" \
@@ -261,12 +261,12 @@ curl -sk "$B/api/detections/replay" -X POST -H "Authorization: Bearer $TOK" \
   -d '{"rules":[{"id":"CAND-1","name":"aday","severity":"HIGH","contains":["a"]}],"limit":500}' \
   | grep -q '"by_rule"' \
   && pass "/api/detections/replay aday kuralı geçmişe uyguladı" || fail "/api/detections/replay başarısız"
-# AI SOC asistanı (§27): öneri-yalnız analiz (hiçbir eylem yürütülmez).
+# AI SOC asistanı: öneri-yalnız analiz (hiçbir eylem yürütülmez).
 curl -sk "$B/api/ai/analyze" -X POST -H "Authorization: Bearer $TOK" \
   -H 'Content-Type: application/json' \
   -d '{"task":"mitre_mapping","input":"powershell encoded komut ve mimikatz"}' \
   | grep -q '"recommendation"' \
-  && pass "/api/ai/analyze öneri üretti (yürütmesiz, §27)" || fail "/api/ai/analyze başarısız"
+  && pass "/api/ai/analyze öneri üretti (yürütmesiz)" || fail "/api/ai/analyze başarısız"
 # Kayıtlı aramalar (#22 SIEM): bir hunt sorgusu kaydet + listede gör.
 curl -sk "$B/api/hunt/saved" -X POST -H "Authorization: Bearer $TOK" \
   -H 'Content-Type: application/json' \
@@ -285,9 +285,9 @@ curl -sk "$B/api/report" -H "Authorization: Bearer $TOK" | grep -q "KUT Security
   && pass "/api/report duruş raporu üretti" || fail "/api/report başarısız"
 curl -sk "$B/api/report?format=json" -H "Authorization: Bearer $TOK" | grep -q '"devices_total"' \
   && pass "/api/report?format=json makine-okunur rapor üretti" || fail "/api/report json başarısız"
-# Gelişmiş rapor (§33): yönetici Markdown raporu.
+# Gelişmiş rapor: yönetici Markdown raporu.
 curl -sk "$B/api/report?format=md&kind=executive" -H "Authorization: Bearer $TOK" | grep -q '# Yönetici Güvenlik Özeti' \
-  && pass "/api/report?format=md yönetici Markdown raporu üretti (§33)" || fail "/api/report md başarısız"
+  && pass "/api/report?format=md yönetici Markdown raporu üretti" || fail "/api/report md başarısız"
 curl -sk "$B/api/coverage" -H "Authorization: Bearer $TOK" | grep -q "coverage_pct" \
   && pass "/api/coverage filo kapsamı döndü" || fail "/api/coverage başarısız"
 curl -sk "$B/api/risk" -H "Authorization: Bearer $TOK" | grep -q "fleet_score" \
@@ -348,37 +348,37 @@ curl -sk "$B/healthz" | grep -q "uptime_seconds" \
 [ "$(curl -sk -o /dev/null -w '%{http_code}' "$B/readyz")" = "200" ] \
   && pass "/readyz 200 (readiness)" || fail "/readyz başarısız"
 
-# XDR connector (§29/§45): CEF kaynağından çekilen olay depolanmış olmalı (kısa poll).
+# XDR connector: CEF kaynağından çekilen olay depolanmış olmalı (kısa poll).
 conn_ok=""
 for _ in 1 2 3 4 5 6; do
   if curl -sk "$B/api/events?limit=200" -H "Authorization: Bearer $TOK" | grep -q "SmokeConn"; then conn_ok=1; break; fi
   sleep 0.5
 done
-[ -n "$conn_ok" ] && pass "connector CEF kaynağından olay çekip depoladı (§29/§45)" || fail "connector olayı depolanmadı"
+[ -n "$conn_ok" ] && pass "connector CEF kaynağından olay çekip depoladı" || fail "connector olayı depolanmadı"
 
-# ABAC (§35): subject.role=admin → allow (eşleşen politika p-admin).
+# ABAC: subject.role=admin → allow (eşleşen politika p-admin).
 curl -sk "$B/api/iam/abac/evaluate" -X POST -H "Authorization: Bearer $TOK" \
   -H 'Content-Type: application/json' \
   -d '{"subject":{"role":"admin"},"resource":{"tenant":"t1"},"action":"read"}' \
   | grep -q '"allowed":true' \
-  && pass "/api/iam/abac/evaluate ABAC kararı verdi (§35)" || fail "/api/iam/abac/evaluate başarısız"
-# SCIM 2.0 (§35): kullanıcı sağla → getir → devre dışı bırak (soft-delete).
+  && pass "/api/iam/abac/evaluate ABAC kararı verdi" || fail "/api/iam/abac/evaluate başarısız"
+# SCIM 2.0: kullanıcı sağla → getir → devre dışı bırak (soft-delete).
 SCIM_ID="$(curl -sk "$B/scim/v2/Users" -X POST -H "Authorization: Bearer $TOK" \
   -H 'Content-Type: application/json' \
   -d '{"userName":"jdoe@corp","name":{"givenName":"J","familyName":"Doe"},"active":true}' \
   | sed -E 's/.*"id":"([^"]+)".*/\1/')"
 curl -sk "$B/scim/v2/Users/$SCIM_ID" -H "Authorization: Bearer $TOK" | grep -q '"userName":"jdoe@corp"' \
-  && pass "SCIM kullanıcı sağlandı + getirildi (§35)" || fail "SCIM create/get başarısız"
+  && pass "SCIM kullanıcı sağlandı + getirildi" || fail "SCIM create/get başarısız"
 curl -sk "$B/scim/v2/Users/$SCIM_ID" -X DELETE -H "Authorization: Bearer $TOK" | grep -q '"active":false' \
-  && pass "SCIM kullanıcı devre dışı (soft-delete, §35)" || fail "SCIM deactivate başarısız"
-# MSP (§37): müşteri ekle → listele → devre dışı bırak.
+  && pass "SCIM kullanıcı devre dışı (soft-delete)" || fail "SCIM deactivate başarısız"
+# MSP: müşteri ekle → listele → devre dışı bırak.
 MSP_ID="$(curl -sk "$B/api/msp/customers" -X POST -H "Authorization: Bearer $TOK" \
   -H 'Content-Type: application/json' -d '{"name":"Acme A.Ş.","tenant_id":"acme"}' \
   | sed -E 's/.*"id":"([^"]+)".*/\1/')"
 curl -sk "$B/api/msp/customers" -H "Authorization: Bearer $TOK" | grep -q '"tenant_id":"acme"' \
-  && pass "MSP müşteri eklendi + listelendi (§37)" || fail "MSP create/list başarısız"
+  && pass "MSP müşteri eklendi + listelendi" || fail "MSP create/list başarısız"
 curl -sk "$B/api/msp/customers/$MSP_ID" -X DELETE -H "Authorization: Bearer $TOK" | grep -q '"deactivated":true' \
-  && pass "MSP müşteri devre dışı (soft-delete, §37)" || fail "MSP deactivate başarısız"
+  && pass "MSP müşteri devre dışı (soft-delete)" || fail "MSP deactivate başarısız"
 
 echo "[6/6] SSE canlı akış"
 SSE="$(curl -sk -N --max-time 5 "$B/api/stream" -H "Authorization: Bearer $TOK" 2>/dev/null)"

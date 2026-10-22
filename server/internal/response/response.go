@@ -2,7 +2,7 @@
 // olaylarında insan beklemeden cihazı karantinaya alır (SOAR benzeri, hafif).
 // Yapılandırma ile açılır (varsayılan kapalı — karantina bozucu bir eylemdir).
 //
-// Milestone A / PR-03 (audit G-01): otomatik karantina artık raw executor'a ulaşmadan
+// otomatik karantina artık raw executor'a ulaşmadan
 // ÖNCE yetki-karar sınırından (secgateway) geçer. Fail-closed: ALLOW değilse karantina
 // YOK. Bu, "AutoQuarantine → executor TAM BYPASS" bulgusunu kapatır — otonom talepçi
 // artık tenant + blast-radius + rate-limit kontrolüne tabidir.
@@ -79,9 +79,9 @@ func NewGuarded(store Store, tenantID string) *AutoQuarantiner {
 
 // AutoQuarantine, cihaza karantina komutu kuyruğa alır, durumu QUARANTINED yapar
 // ve denetim izine (sistem kaynaklı) yazar. ÖNCE yetki-karar sınırından geçer;
-// ALLOW değilse hiçbir yan-etki üretmeden hata döner (fail-closed, G-01).
+// ALLOW değilse hiçbir yan-etki üretmeden hata döner (fail-closed).
 func (a *AutoQuarantiner) AutoQuarantine(ctx context.Context, deviceID, reason string) error {
-	// G-01: raw executor'a ulaşmadan ÖNCE gateway (tenant + blast-radius + rate-limit).
+	// raw executor'a ulaşmadan ÖNCE gateway (tenant + blast-radius + rate-limit).
 	if a.authz != nil {
 		req := seccontract.ActionRequest{
 			RequestID: "autoresp-" + deviceID,
@@ -97,7 +97,7 @@ func (a *AutoQuarantiner) AutoQuarantine(ctx context.Context, deviceID, reason s
 	if err := a.store.EnqueueCommand(ctx, deviceID, cmdenvelope.TypeQuarantine, systemActor); err != nil {
 		return fmt.Errorf("response: karantina komutu kuyruğa alınamadı: %w", err)
 	}
-	_ = a.store.SetDeviceStatus(ctx, deviceID, "QUARANTINE_PENDING") // DESIRED; effective ajan onayıyla (F-D)
+	_ = a.store.SetDeviceStatus(ctx, deviceID, "QUARANTINE_PENDING") // DESIRED; effective ajan onayıyla
 	_ = a.store.WriteAudit(ctx, systemActor, "AUTO_QUARANTINE", "device", deviceID)
 	// Best-effort kanca (ör. otomatik remediation-doğrulama check'i aç). Karantina zaten
 	// uygulandı; kanca hatası akışı bozmaz.

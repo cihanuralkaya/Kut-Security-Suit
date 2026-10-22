@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-AI agents and LLM triaging modules require access to domain-specific security knowledge: MITRE ATT&CK technique details, incident response playbooks, internal compliance policies, and known vulnerability analyses (Roadmap §8, §108 `AI-008`). Hardcoding this information in system prompts wastes context window space and makes playbook updates cumbersome.
+AI agents and LLM triaging modules require access to domain-specific security knowledge: MITRE ATT&CK technique details, incident response playbooks, internal compliance policies, and known vulnerability analyses. Hardcoding this information in system prompts wastes context window space and makes playbook updates cumbersome.
 
 ## Decision
 We implemented an embedded, zero-external-dependency Retrieval-Augmented Generation (RAG) knowledge engine in `server/internal/aiprovider`:

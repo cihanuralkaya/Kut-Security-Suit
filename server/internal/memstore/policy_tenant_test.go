@@ -9,7 +9,7 @@ import (
 	"kut.corp/suite/server/internal/enroll"
 )
 
-// Z4a-04 (memstore, db ile aynı): politika listesi kiracı süzülür (kendi + paylaşımlı), cihaz
+// (memstore, db ile aynı): politika listesi kiracı süzülür (kendi + paylaşımlı), cihaz
 // sayımı yalnız çağıranın kiracısını sayar, PolicyTenant sahibi döner, AssignPolicy kiracı
 // bütünlüğünü zorlar, CurrentPolicy çapraz-kiracı atamayı ajana itmez.
 func TestPolicyTenantScoping(t *testing.T) {

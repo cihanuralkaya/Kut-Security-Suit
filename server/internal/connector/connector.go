@@ -1,11 +1,11 @@
 // Package connector, KUT'e YENİ VERİ KAYNAKLARININ çekirdek kodu değiştirilmeden
-// eklenmesini sağlayan jenerik bir bağlayıcı (connector) çerçevesidir (§45). Her
+// eklenmesini sağlayan jenerik bir bağlayıcı (connector) çerçevesidir. Her
 // bağlayıcı, dış bir kaynağın (uç nokta, ağ, kimlik, bulut, SIEM, güvenlik duvarı,
 // tehdit-istihbaratı, ticketing) verisini KANONİK olay modeline (model.Event, §5)
 // normalize eder. Bir Registry bağlayıcıları kaydeder/listeler; bir Runner bunları
 // periyodik olarak yoklar, panikleri izole eder ve olayları bir sink'e teslim eder.
 //
-// Bu çerçeve §29 (XDR connector'ları) ve §30 (Cloud connector'ları) için temeldir.
+// Bu çerçeve XDR ve Cloud connector'ları için temeldir.
 // Saf-Go, dış bağımlılık yok.
 package connector
 

@@ -1,6 +1,6 @@
-// Package connectors, §45 connector çerçevesi üzerine SOMUT bağlayıcılar sağlar:
-// XDR kaynakları (§29 — syslog/CEF/LEEF/JSON/WinEvent normalize) ve Cloud kaynakları
-// (§30 — AWS CloudTrail / Azure Activity / GCP / M365 denetim logları). Tümü ÇEVRİMDIŞI
+// Package connectors, connector çerçevesi üzerine SOMUT bağlayıcılar sağlar:
+// XDR kaynakları (syslog/CEF/LEEF/JSON/WinEvent normalize) ve Cloud kaynakları
+// (AWS CloudTrail / Azure Activity / GCP / M365 denetim logları). Tümü ÇEVRİMDIŞI
 // çalışabilir: veri "puller" ile enjekte edilir (dosya/HTTP), böylece dış SDK/kimlik
 // gerektirmez. Ham kayıtlar KANONİK model.Event'e (§5) normalize edilir.
 package connectors

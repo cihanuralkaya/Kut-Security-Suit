@@ -47,7 +47,7 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context, limit int, tenantID st
 // used_at'i now() ile damgalar (böylece bir sonraki kayıt denemesinde reddedilir).
 // Zaten kullanılmış veya var olmayan token için hiçbir satır etkilenmez (no-op).
 //
-// S-4 derinlemesine savunma: tenantID boş değilse UPDATE token'ın mühürlü kiracısıyla
+// Derinlemesine savunma: tenantID boş değilse UPDATE token'ın mühürlü kiracısıyla
 // daraltılır (`AND tenant_id = $2`); servis katmanındaki kiracı kapısı atlansa bile başka
 // kiracının token'ı iptal edilemez. Boş tenantID = platform kapsamı (süzme yok). Kiracıya
 // bağlı çağıran için o kiracıda böyle bir token HİÇ yoksa (yok/yabancı) ErrForbidden; kendi

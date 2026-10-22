@@ -1,7 +1,7 @@
 package app
 
 // bounded_state.go — ajan/ingest kaynaklı bellek-içi durumun (varlık grafı + kiracı-bölümlü
-// sekans modeli) SINIRLI tutulması (Z3-03 / Z5-18): periyodik TTL süpürmesi ve /metrics için
+// sekans modeli) SINIRLI tutulması: periyodik TTL süpürmesi ve /metrics için
 // düşen/tahliye edilen sayaçların yayınlanması. Sert tavanlar ve LRU tahliyesi veri yapılarının
 // kendisinde (entitygraph.Limits / aibrain.SeqLimits) uygulanır; burası yalnız zamanlayıcı bağıdır.
 

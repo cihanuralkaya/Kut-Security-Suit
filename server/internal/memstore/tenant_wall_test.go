@@ -10,7 +10,7 @@ import (
 	"kut.corp/suite/server/internal/enroll"
 )
 
-// Z4b-02 + S-3: bir kiracının token'ı, başka kiracıya ait cihazı (aynı MAC blind index)
+// bir kiracının token'ı, başka kiracıya ait cihazı (aynı MAC blind index)
 // devralamaz; cihaz satırı değişmez. MAC tekilliği KİRACI BAŞINA olduğundan, başka kiracı
 // aynı MAC ile KENDİ cihazını alır (MAC-squat DoS yok).
 func TestEnrollCannotRehomeDeviceAcrossTenants(t *testing.T) {
@@ -81,7 +81,7 @@ func TestEnrollCannotRehomeDeviceAcrossTenants(t *testing.T) {
 	}
 }
 
-// S-3: MAC-squat DoS. Kiracı A, B'nin cihazının MAC'ini ÖNCEDEN kaydetse bile B kendi
+// MAC-squat DoS. Kiracı A, B'nin cihazının MAC'ini ÖNCEDEN kaydetse bile B kendi
 // cihazını enroll edebilir; A'nın satırı ve B'nin satırı birbirinden bağımsızdır.
 func TestMACSquatCannotBlockOtherTenant(t *testing.T) {
 	ctx := context.Background()
@@ -113,7 +113,7 @@ func TestMACSquatCannotBlockOtherTenant(t *testing.T) {
 	}
 }
 
-// Z4b-02: yeniden kayıt, güvenlik durumunu (karantina) ACTIVE'e DÜŞÜRMEZ; yalnız
+// yeniden kayıt, güvenlik durumunu (karantina) ACTIVE'e DÜŞÜRMEZ; yalnız
 // henüz-aktif-olmayan durumlar ACTIVE olur.
 func TestReEnrollKeepsSecurityStatus(t *testing.T) {
 	ctx := context.Background()
@@ -184,7 +184,7 @@ func TestListAdminsTenantFilter(t *testing.T) {
 	}
 }
 
-// S-2: kiracı öncesi (legacy) cihazların kiracısı boştur; örtük "default" token'ıyla
+// kiracı öncesi (legacy) cihazların kiracısı boştur; örtük "default" token'ıyla
 // yeniden kayıt PermissionDenied OLMAMALI (yükseltme gerilemesi) ve kiracı default'a
 // normalleşmeli. Gerçek kiracılar için çapraz-kiracı taşıma yine engelli kalır.
 func TestLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
@@ -201,7 +201,7 @@ func TestLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 	}
 
 	// NEGATIF: gerçek bir kiracı, legacy (boş = default) cihazı devralamaz: MAC yolunda
-	// (S-3) kendi AYRI satırını alır, legacy satır değişmez; preferred yolunda reddedilir.
+	// kendi AYRI satırını alır, legacy satır değişmez; preferred yolunda reddedilir.
 	for _, tn := range []string{"acme", "globex"} {
 		other, err := s.UpsertEnrollingDevice(ctx, enroll.DeviceEnrollment{
 			MACBlindIndex: []byte("mac-legacy"), HostnameEnc: []byte("EVIL"), TenantID: tn,
@@ -258,7 +258,8 @@ func TestLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 	}
 }
 
-// Z4b-09 / S-5 (memstore, db ile aynı): bilinmeyen veya pasif yönetici platform ("") değil
+//	(memstore, db ile aynı): bilinmeyen veya pasif yönetici platform ("") değil
+//
 // ErrUnknownAdmin; pasif yönetici AdminRole'den de yetkisiz döner.
 func TestAdminTenantUnknownInactiveFailsClosed(t *testing.T) {
 	ctx := context.Background()
@@ -286,7 +287,7 @@ func TestAdminTenantUnknownInactiveFailsClosed(t *testing.T) {
 	}
 }
 
-// S-4 (memstore, db ile aynı): yazma-yolları kiracı predicate'ini taşır; boş kiracı = platform.
+// memstore, db ile aynı: yazma-yolları kiracı predicate'ini taşır; boş kiracı = platform.
 func TestWritePathsCarryTenantPredicate(t *testing.T) {
 	ctx := context.Background()
 	s := New()

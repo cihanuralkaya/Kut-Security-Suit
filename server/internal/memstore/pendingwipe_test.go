@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestConsumePendingWipe_AtomicSingleWinner, G-08'i kanıtlar: aynı bekleyen WIPE talebine
+// TestConsumePendingWipe_AtomicSingleWinner, atomik claim'i kanıtlar: aynı bekleyen WIPE talebine
 // N eşzamanlı onaylayan çağırdığında yalnız BİRİ talebi tüketir (çift-enqueue yok).
 // -race altında koşunca atomik claim'in doğruluğu doğrulanır.
 func TestConsumePendingWipe_AtomicSingleWinner(t *testing.T) {

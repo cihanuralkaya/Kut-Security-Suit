@@ -1,5 +1,5 @@
 // Package aiassist, SOC için SALT ÖNERİ üreten, sağlayıcıdan bağımsız bir
-// yapay zekâ yardımcı katmanıdır (yol haritası §27). Bu katman YÜKSEK ETKİLİ
+// yapay zekâ yardımcı katmanıdır. Bu katman YÜKSEK ETKİLİ
 // eylemleri ASLA kendisi gerçekleştirmez: uyarı/olay özetleme, yanlış pozitif
 // analizi, MITRE eşlemesi, iyileştirme önerisi gibi öneriler üretir ve bunları
 // güvenlik akışından geçirir.

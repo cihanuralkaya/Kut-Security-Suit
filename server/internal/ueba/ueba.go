@@ -18,7 +18,7 @@ type Entry struct {
 	Admin  string
 	Action string
 	At     time.Time
-	// Varlık (entity) sinyalleri — opsiyonel; boş bırakılırsa ilgili anomali atlanır (§28).
+	// Varlık (entity) sinyalleri — opsiyonel; boş bırakılırsa ilgili anomali atlanır.
 	Device   string // eylemin geldiği cihaz/kaynak
 	Location string // coğrafi/ağ konumu (ör. ülke/şube)
 }
@@ -45,7 +45,7 @@ type Profile struct {
 	Destructive int       `json:"destructive"`
 	First       time.Time `json:"first"`
 	Last        time.Time `json:"last"`
-	OffHours    int       `json:"off_hours,omitempty"`     // mesai-dışı eylem sayısı (§28)
+	OffHours    int       `json:"off_hours,omitempty"`     // mesai-dışı eylem sayısı
 	NewDevices  int       `json:"new_devices,omitempty"`   // bilinmeyen cihazdan eylem sayısı
 	NewLocs     int       `json:"new_locations,omitempty"` // bilinmeyen konumdan eylem sayısı
 	RiskScore   int       `json:"risk_score"`              // 0..100 türetilmiş kullanıcı riski
@@ -70,7 +70,7 @@ type Options struct {
 	BurstWindow      time.Duration // yıkıcı-eylem serisi penceresi
 	MinTotalForRatio int           // oran değerlendirmesi için asgari toplam eylem
 	RatioThreshold   float64       // yıkıcı/toplam bu oranı aşarsa → MEDIUM
-	// Varlık-davranışı seçenekleri (§28) — opsiyonel:
+	// Varlık-davranışı seçenekleri — opsiyonel:
 	BusinessStartHour int // mesai başlangıcı (UTC saat, 0-23). Start==End ise mesai-dışı devre dışı.
 	BusinessEndHour   int // mesai bitişi (UTC saat, 0-23; hariç)
 	// KnownDevices/KnownLocations: admin → bilinen küme. Verilmezse ilgili anomali atlanır.
@@ -125,7 +125,7 @@ func Analyze(entries []Entry, opts Options) Report {
 			a.prof.Destructive++
 			a.destTime = append(a.destTime, e.At)
 		}
-		// Varlık anomalileri (§28): mesai-dışı, bilinmeyen cihaz/konum.
+		// Varlık anomalileri: mesai-dışı, bilinmeyen cihaz/konum.
 		if offHours(e.At, opts) {
 			a.prof.OffHours++
 		}
@@ -160,7 +160,7 @@ func Analyze(entries []Entry, opts Options) Report {
 				Reason: "yüksek yıkıcı-eylem oranı (" + itoa(a.prof.Destructive) + "/" + itoa(a.prof.Total) + ")",
 			})
 		}
-		// Varlık-davranışı anomalileri (§28).
+		// Varlık-davranışı anomalileri.
 		if a.prof.NewDevices > 0 {
 			rep.Findings = append(rep.Findings, Finding{Admin: name, Severity: "MEDIUM",
 				Reason: "bilinmeyen cihazdan " + itoa(a.prof.NewDevices) + " eylem"})
@@ -198,7 +198,7 @@ func known(m map[string]map[string]bool, admin string) bool {
 	return ok
 }
 
-// riskScore, profil sinyallerinden 0..100 türetilmiş kullanıcı riski hesaplar (§28).
+// riskScore, profil sinyallerinden 0..100 türetilmiş kullanıcı riski hesaplar.
 // Sinyaller ağırlıklandırılır ve tavanlanır.
 func riskScore(p Profile, burst, burstThreshold int) int {
 	score := 0

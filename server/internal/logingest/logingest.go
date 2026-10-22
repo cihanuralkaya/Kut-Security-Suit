@@ -83,7 +83,7 @@ var tenantNamespace = [16]byte{
 
 // TenantDeviceID, bir harici kaynağın (SourceUUID ile türetilmiş) cihaz kimliğini KİRACIYA
 // göre ad-alanlar: iki kiracı aynı kaynak adını ("fw1") kullansa da kimlikleri AYRIDIR →
-// eşik/bit/korelatör/zincir durumu ve cihaz listesi kiracılar arasında ÇÖKMEZ (Z3-01).
+// eşik/bit/korelatör/zincir durumu ve cihaz listesi kiracılar arasında ÇÖKMEZ.
 // Kiracı SUNUCU-TARAFI bilinendir (ingest token'ının bağlı kiracısı / connector yapılandırması),
 // ASLA istemci verisi değildir. Varsayılan kiracı (ve boş = legacy) kimliği DEĞİŞTİRMEZ →
 // mevcut tek-kiracılı kurulumların kaynak kimlikleri sürekliliğini korur; diğer kiracılar
@@ -110,7 +110,7 @@ func TenantDeviceID(tenantID, deviceID string) string {
 // (TenantDeviceID'ye verilecek değer). Ad-alanlama YALNIZ kaynak AÇIKÇA bir kiracıya
 // bağlıysa (ingest token'ının ya da bağlayıcının kiracısı dolu) VE bu kiracı dağıtımın
 // varsayılan kiracısından farklıysa uygulanır. Kiracısız (legacy/statik token, kiracısız
-// bağlayıcı) kaynaklar dağıtım kiracısıyla DAMGALANIR ama kimlikleri W1b-2 öncesiyle AYNI
+// bağlayıcı) kaynaklar dağıtım kiracısıyla DAMGALANIR ama kimlikleri Kiracı Duvarı III öncesiyle AYNI
 // kalır ("" döner → TenantDeviceID kimliği değiştirmez): KUT_TENANT_ID=acme dağıtımında
 // mevcut kaynakların geçmişi/eşik/korelatör durumu bölünmez.
 func SourceIDTenant(explicit, deployTenant string) string {

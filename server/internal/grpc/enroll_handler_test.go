@@ -244,7 +244,7 @@ func (tenantMismatchStore) UpsertEnrollingDevice(context.Context, enroll.DeviceE
 	return "", enroll.ErrTenantMismatch
 }
 
-// Z4b-02: kiracı uyuşmazlığı PermissionDenied (genel ret) ile döner, ayrıntı sızdırmaz.
+// kiracı uyuşmazlığı PermissionDenied (genel ret) ile döner, ayrıntı sızdırmaz.
 func TestEnrollHandlerTenantMismatchDenied(t *testing.T) {
 	base := newEnrollMemStore()
 	svc, bidx := buildEnrollService(t, tenantMismatchStore{base})

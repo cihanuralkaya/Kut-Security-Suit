@@ -20,8 +20,8 @@ type Puller func(ctx context.Context) ([]string, error)
 // Normalizer, tek bir ham kaydı kanonik olaylara çevirir (now enjekte edilir).
 type Normalizer func(raw string, now time.Time) ([]model.Event, error)
 
-// LogConnector, bir Puller + Normalizer'dan connector.Connector üretir. §29 XDR
-// kaynakları ve §30 Cloud için ortak taşıyıcı.
+// LogConnector, bir Puller + Normalizer'dan connector.Connector üretir. XDR
+// kaynakları ve Cloud için ortak taşıyıcı.
 type LogConnector struct {
 	ConnName string
 	ConnKind string
@@ -88,7 +88,7 @@ func recToEvents(rec logingest.Record) []model.Event {
 	return []model.Event{ev}
 }
 
-// SyslogNormalizer, syslog satırını normalize eder (§29).
+// SyslogNormalizer, syslog satırını normalize eder.
 func SyslogNormalizer(raw string, now time.Time) ([]model.Event, error) {
 	rec, err := logingest.NormalizeSyslog(raw, now)
 	if err != nil {
@@ -97,7 +97,7 @@ func SyslogNormalizer(raw string, now time.Time) ([]model.Event, error) {
 	return recToEvents(rec), nil
 }
 
-// CEFNormalizer, CEF satırını normalize eder (§29).
+// CEFNormalizer, CEF satırını normalize eder.
 func CEFNormalizer(raw string, now time.Time) ([]model.Event, error) {
 	rec, err := logingest.NormalizeCEF(raw, now)
 	if err != nil {
@@ -106,7 +106,7 @@ func CEFNormalizer(raw string, now time.Time) ([]model.Event, error) {
 	return recToEvents(rec), nil
 }
 
-// LEEFNormalizer, LEEF satırını normalize eder (§29).
+// LEEFNormalizer, LEEF satırını normalize eder.
 func LEEFNormalizer(raw string, now time.Time) ([]model.Event, error) {
 	rec, err := logingest.NormalizeLEEF(raw, now)
 	if err != nil {
@@ -115,7 +115,7 @@ func LEEFNormalizer(raw string, now time.Time) ([]model.Event, error) {
 	return recToEvents(rec), nil
 }
 
-// JSONNormalizer, KUT JSON kaydını/dizisini normalize eder (§29).
+// JSONNormalizer, KUT JSON kaydını/dizisini normalize eder.
 func JSONNormalizer(raw string, now time.Time) ([]model.Event, error) {
 	recs, err := logingest.NormalizeJSON([]byte(raw), now)
 	if err != nil {
@@ -128,7 +128,7 @@ func JSONNormalizer(raw string, now time.Time) ([]model.Event, error) {
 	return out, nil
 }
 
-// WinEventNormalizer, Windows olay-günlüğü JSON'unu normalize eder (§29).
+// WinEventNormalizer, Windows olay-günlüğü JSON'unu normalize eder.
 func WinEventNormalizer(raw string, now time.Time) ([]model.Event, error) {
 	recs, err := logingest.NormalizeWinEvent([]byte(raw), now)
 	if err != nil {
@@ -141,7 +141,7 @@ func WinEventNormalizer(raw string, now time.Time) ([]model.Event, error) {
 	return out, nil
 }
 
-// CloudNormalizer, verilen sağlayıcı için bulut denetim normalizer'ı döner (§30).
+// CloudNormalizer, verilen sağlayıcı için bulut denetim normalizer'ı döner.
 func CloudNormalizer(provider string) Normalizer {
 	return func(raw string, now time.Time) ([]model.Event, error) {
 		return NormalizeCloudAudit([]byte(raw), provider, now)
@@ -150,22 +150,22 @@ func CloudNormalizer(provider string) Normalizer {
 
 // --- Somut bağlayıcı kurucuları ---------------------------------------------
 
-// NewSyslogConnector, ağ/güvenlik-duvarı syslog kaynağı için bağlayıcı (§29).
+// NewSyslogConnector, ağ/güvenlik-duvarı syslog kaynağı için bağlayıcı.
 func NewSyslogConnector(name string, pull Puller) *LogConnector {
 	return NewLogConnector(name, "network", pull, SyslogNormalizer, nil)
 }
 
-// NewCEFConnector, CEF (SIEM/firewall) kaynağı için bağlayıcı (§29).
+// NewCEFConnector, CEF (SIEM/firewall) kaynağı için bağlayıcı.
 func NewCEFConnector(name string, pull Puller) *LogConnector {
 	return NewLogConnector(name, "siem", pull, CEFNormalizer, nil)
 }
 
-// NewWinEventConnector, Windows olay-günlüğü (kimlik/uç) kaynağı için bağlayıcı (§29).
+// NewWinEventConnector, Windows olay-günlüğü (kimlik/uç) kaynağı için bağlayıcı.
 func NewWinEventConnector(name string, pull Puller) *LogConnector {
 	return NewLogConnector(name, "identity", pull, WinEventNormalizer, nil)
 }
 
-// NewCloudConnector, bulut denetim-log kaynağı için bağlayıcı (§30). provider ör.
+// NewCloudConnector, bulut denetim-log kaynağı için bağlayıcı. provider ör.
 // "aws" | "azure" | "gcp" | "m365".
 func NewCloudConnector(name, provider string, pull Puller) *LogConnector {
 	return NewLogConnector(name, "cloud", pull, CloudNormalizer(provider), nil)

@@ -10,7 +10,7 @@ import (
 	"kut.corp/suite/server/internal/msp"
 )
 
-// msp.go — MSP müşteri kaydı için KALICI (PostgreSQL) depo (§37). Müşteriler
+// msp.go — MSP müşteri kaydı için KALICI (PostgreSQL) depo. Müşteriler
 // msp_customers tablosunda saklanır; Deactivate soft-delete'tir. Kullanım/faturalama
 // ölçümü ayrıca çalışma-zamanı sayaçlarıdır (msp.UsageMeter, kalıcı değil).
 

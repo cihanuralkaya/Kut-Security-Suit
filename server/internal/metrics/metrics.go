@@ -53,8 +53,8 @@ var (
 	verifyRegressed  atomic.Int64 // remediation-doğrulama: sinyal hâlâ tetikliyor (REGRESSED)
 	verifyInconcl    atomic.Int64 // remediation-doğrulama: değerlendirilemedi — telemetri yok (INCONCLUSIVE)
 
-	// Sınırlı bellek-içi durum (W1b-2, Z3-03/Z5-18): ajan/ingest kaynaklı graf + sekans modeli
-	// + agentsec grafı SERT tavanlıdır; tavan yüzünden reddedilen (dropped) ve LRU/TTL ile
+	// Sınırlı bellek-içi durum: ajan/ingest kaynaklı graf + sekans modeli
+	// agentsec grafı SERT tavanlıdır; tavan yüzünden reddedilen (dropped) ve LRU/TTL ile
 	// atılan (evicted/pruned) girdiler burada sayılır. Artış = bir kiracı/cihaz tavana dayandı.
 	graphDropped      atomic.Int64 // entitygraph: tavan/uzunluk/çapraz-kiracı nedeniyle reddedilen gözlem
 	graphDevDropped   atomic.Int64 // entitygraph: cihaz bütçesi dolduğu için düşen yeni kenar (graph_dropped alt kümesi)

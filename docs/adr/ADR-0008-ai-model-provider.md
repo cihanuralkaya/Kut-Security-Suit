@@ -4,9 +4,9 @@
 Proposed (Wave 4)
 
 ## Context
-KUT Security Fabric requires AI integration for SOC summarization, triage recommendations, causality graph analysis, and autonomous security decisions (Roadmap §5, §7, §11). Currently, the platform connects to a single external HTTP endpoint (`services/ai/app.py` via `aibrain.HTTPProvider`) with no model diversity, no local LLM support, no data redaction, and no sensitivity-based routing.
+KUT Security Fabric requires AI integration for SOC summarization, triage recommendations, causality graph analysis, and autonomous security decisions. Currently, the platform connects to a single external HTTP endpoint (`services/ai/app.py` via `aibrain.HTTPProvider`) with no model diversity, no local LLM support, no data redaction, and no sensitivity-based routing.
 
-Directly coupling to any single AI provider (OpenAI, Anthropic, Google) violates KUT's core principle of **sovereignty and provider-neutrality** (Roadmap §2.1). Furthermore, sending un-redacted security telemetry to external cloud LLMs violates data sovereignty and KVKK/GDPR requirements.
+Directly coupling to any single AI provider (OpenAI, Anthropic, Google) violates KUT's core principle of **sovereignty and provider-neutrality**. Furthermore, sending un-redacted security telemetry to external cloud LLMs violates data sovereignty and KVKK/GDPR requirements.
 
 ## Decision
 We will introduce a dedicated `aiprovider` package (`server/internal/aiprovider`) that provides:

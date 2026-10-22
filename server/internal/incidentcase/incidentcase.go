@@ -33,7 +33,7 @@ type Sink struct {
 // açılmaz (yalnız delege). tenantOf, tetikleyen CİHAZIN kiracısını çözer → otomatik
 // vaka, olayın/cihazın kiracısını taşır (dağıtım-geneli sabit değil).
 //
-// FAIL-CLOSED (Z5-19): kiracı çözümlemesi hata verirse (ya da çözümleyici yoksa) vaka
+// FAIL-CLOSED: kiracı çözümlemesi hata verirse (ya da çözümleyici yoksa) vaka
 // AÇILMAZ ve sayılır — "default" kovasına düşülmez (aksi halde bir kiracının incident'i
 // başka kiracının vaka kuyruğuna karışırdı). Boş dönen kiracı kiracı-öncesi (legacy) cihazdır
 // ve tenant.Canonical ile "default" kiracısıdır; WithEnforce(true) iken o da atlanır.

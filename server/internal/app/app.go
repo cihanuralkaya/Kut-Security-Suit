@@ -364,7 +364,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	// Varlık/tehdit grafı: ajan olaylarından (DNS→alan, bağlantı→IP) cihaz-merkezli
 	// kenarlar beslenir; aynı örnek admin API'ye salt-okunur pivot uçları için verilir.
 	entGraph := entitygraph.New()
-	// Ajan-kontrollü dizgelerden beslendiği için graf kiracı başına SERT tavanlıdır (Z3-03/Z5-18);
+	// Ajan-kontrollü dizgelerden beslendiği için graf kiracı başına SERT tavanlıdır;
 	// KUT_GRAPH_MAX_EDGES / KUT_GRAPH_MAX_NODES (kiracı başına) ve KUT_GRAPH_MAX_EDGES_PER_DEVICE
 	// (cihaz başına; tek ajanın sel ile diğer cihazların kenarlarını tahliye etmesini önler) ile ayarlanır, 0/boş = varsayılan.
 	entGraph.SetLimits(entitygraph.Limits{
@@ -463,7 +463,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	// KUT_ALERT_MIN_SEVERITY (varsayılan HIGH).
 	alertingOn, iocCount, autoRespOn, siemOn := false, 0, false, false
 	var notifiers []notify.Notifier
-	// Otonom tehdit-istihbarat ajanı (G1 aktivasyon): yüklü IOC setinden köprülenir,
+	// Otonom tehdit-istihbarat ajanı: yüklü IOC setinden köprülenir,
 	// adminAPI oluşturulduktan SONRA bağlanır (salt-okunur zenginleştirme).
 	var threatIntel *aiprovider.ThreatIntelAgent
 	// socAlerter, sunucu-taraflı arka plan tespitlerinin (beacon, yanal hareket) de
@@ -583,9 +583,9 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		iocCount = set.Size()
 		log.Printf("tehdit istihbaratı: %d IoC göstergesi yüklendi", iocCount)
 
-		// Otonom tehdit-istihbarat ajanını yüklü göstergelerden KÖPRÜLE (G1 aktivasyon):
+		// Otonom tehdit-istihbarat ajanını yüklü göstergelerden KÖPRÜLE:
 		// düz IOC eşleşmesinden zengin (itibar skoru + eşleşen aile) salt-okunur zenginleştirme.
-		// Not: başlangıçta tohumlanır; IOC hot-reload'da ajan v1'de güncellenmez (sonraki dilim).
+		// Not: başlangıçta tohumlanır; IOC hot-reload'da ajan v1'de güncellenmez (sonraki sürüm).
 		threatIntel = aiprovider.NewThreatIntelAgent()
 		set.Each(func(v string, ind ioc.Indicator) {
 			_ = threatIntel.IngestIndicator(aiprovider.ThreatIndicator{
@@ -779,7 +779,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		socBrain = aibrain.New(aibrain.NewLocalProviderWithSeqs(seqModel), 0) // yerel deterministik varsayılan
 	}
 	adminAPI.SetBrain(socBrain) // salt-öneri triyaj (/api/ai/triage; fail-open)
-	// Otonom soruşturma ajanı (G1 aktivasyon — sanctioned ince-adaptör deseni): SIFIR-AĞ
+	// Otonom soruşturma ajanı (ince-adaptör deseni): SIFIR-AĞ
 	// deterministik yerel sağlayıcı ile çalışır → Restricted olay metni router tarafından
 	// YALNIZ yerele yönlendirilir (egemenlik; buluta gitmez). SALT-OKUNUR/advisory (durum
 	// değiştirmez, aksiyon yürütmez) → her zaman güvenle bağlanır. /api/ai/investigate (fail-open).
@@ -792,20 +792,20 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	if threatIntel != nil {
 		adminAPI.SetThreatIntel(threatIntel) // yüklü IOC'lerden köprülenmiş salt-okunur zenginleştirme
 	}
-	// Otonom maruziyet/ASM ajanı (G1 aktivasyon): deterministik, salt-okunur varlık
+	// Otonom maruziyet/ASM ajanı: deterministik, salt-okunur varlık
 	// taraması (tehlikeli port / cert / bilinen-zafiyetli yazılım). Model gerektirmez →
 	// her zaman güvenle bağlanır. /api/ai/exposure/scan.
 	adminAPI.SetExposureAgent(aiprovider.NewExposureAgent(aiprovider.NewRAGStore(), nil))
 	log.Println("otonom maruziyet/ASM ajanı ETKİN (deterministik, salt-okunur): /api/ai/exposure/scan")
-	// Otonom tehdit-avı ajanı (G1 aktivasyon): CANLI entity-graf üzerinde deterministik
+	// Otonom tehdit-avı ajanı: CANLI entity-graf üzerinde deterministik
 	// nadir/şüpheli-kenar avı (model gerektirmez). Ajan hattının beslediği aynı entGraph.
 	adminAPI.SetHuntingAgent(&aiprovider.HuntingAgent{Graph: entGraph})
 	log.Println("otonom tehdit-avı ajanı ETKİN (graf-tabanlı, salt-okunur): /api/ai/hunt")
-	// Otonom tespit-mühendisliği ajanı (G1 aktivasyon): örnek sinyallerden TASLAK kural
+	// Otonom tespit-mühendisliği ajanı: örnek sinyallerden TASLAK kural
 	// üretir+doğrular (deterministik). ADVISORY — taslak motora UYGULANMAZ (analist inceler).
 	adminAPI.SetDetectionAgent(aiprovider.NewDetectionAgent(aiprovider.NewRAGStore(), nil))
 	log.Println("otonom tespit-mühendisliği ajanı ETKİN (advisory taslak, uygulanmaz): /api/ai/detection/draft")
-	// Agent telemetri güven doğrulayıcı (P0-A): KUT_AGENT_KEYS'ten ed25519 anahtarları
+	// Agent telemetri güven doğrulayıcı: KUT_AGENT_KEYS'ten ed25519 anahtarları
 	// kaydet ("agentID:base64pub:tenant,..."). İmzalı telemetri /api/agentsec/telemetry'den
 	// gelir; kayıtsız/geçersiz/replay imza fail-closed reddedilir.
 	agentKeys := aisec.NewMemKeyRegistry()
@@ -890,7 +890,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 			rate = float64(n)
 		}
 		// Katmanlı hız sınırı (§8): KUT_INGEST_RATE_GLOBAL ayarlıysa global (toplam)
-		// + API (IP-başına) katmanlı sınır; aksi halde yalnız tekil IP-başına sınır.
+		// API (IP-başına) katmanlı sınır; aksi halde yalnız tekil IP-başına sınır.
 		if gr := atoiEnv("KUT_INGEST_RATE_GLOBAL"); gr > 0 {
 			lay := ratelimit.NewLayered()
 			lay.SetLayer(ratelimit.Global, float64(gr), float64(gr)*2)
@@ -965,7 +965,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 	}
 	adminAPI.SetDetector(detector)           // tespit kural kataloğu (ingest ile aynı motor)
 	adminAPI.SetEventProcessor(agentHandler) // log-ingest olaylarını ajan yoluyla AYNI tespit+alarm hattından geçir
-	// XDR/Cloud connector'ları (§29/§30/§45): KUT_CONNECTORS_FILE ayarlıysa JSON
+	// XDR/Cloud connector'ları: KUT_CONNECTORS_FILE ayarlıysa JSON
 	// yapılandırmasından kaynaklar (syslog/CEF/LEEF/JSON/WinEvent/cloud) kurulur ve
 	// periyodik yoklanıp kanonik olaylar depolanır. Dosya-tekrar-okuma yinelemeleri
 	// içerik-adresli EventID ile düşürülür (§6 dedup).
@@ -981,7 +981,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 			}
 			seen := dedup.New(10*time.Minute, 200000)
 			// Her bağlayıcı KENDİ yapılandırılmış kiracısıyla (yoksa dağıtımın varsayılan
-			// kiracısı) damgalanır — kaydetmeden ÖNCE (Z3-02). Kiracı operatör
+			// kiracısı) damgalanır — kaydetmeden ÖNCE. Kiracı operatör
 			// yapılandırmasından gelir, kaynak verisinden değil.
 			tenants := map[string]connectors.Binding{}
 			for _, c := range cfgs {
@@ -1009,10 +1009,10 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				go runner.Start(ctx, nil)
 				started++
 			}
-			log.Printf("%d connector kaynağı ETKİN, %d atlandı (§29/§30)", started, len(reg.List())-started)
+			log.Printf("%d connector kaynağı ETKİN, %d atlandı", started, len(reg.List())-started)
 		}
 	}
-	// ABAC (§35): KUT_ABAC_FILE ayarlıysa öznitelik-tabanlı erişim politikaları
+	// ABAC: KUT_ABAC_FILE ayarlıysa öznitelik-tabanlı erişim politikaları
 	// (JSON dizisi) yüklenir ve /api/iam/abac/evaluate ucu açılır (RBAC'ı tamamlar).
 	if af := os.Getenv("KUT_ABAC_FILE"); af != "" {
 		if data, aerr := os.ReadFile(af); aerr != nil {
@@ -1027,7 +1027,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 			}
 		}
 	}
-	// SCIM 2.0 kullanıcı sağlama (§35): DB modunda kalıcı (scim_users), demo modunda
+	// SCIM 2.0 kullanıcı sağlama: DB modunda kalıcı (scim_users), demo modunda
 	// bellek-içi. /scim/v2/Users uçları açılır (IdP provisioning).
 	if dbStore, ok := backend.(*db.Store); ok {
 		adminAPI.SetSCIMProvisioner(dbStore.SCIMProvisioner())
@@ -1036,7 +1036,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		adminAPI.SetSCIMProvisioner(iam.NewMemProvisioner())
 		log.Println("SCIM sağlama ETKİN (bellek-içi demo): /scim/v2/Users")
 	}
-	// MSP müşteri yönetimi (§37): DB modunda kalıcı (msp_customers), demo modunda
+	// MSP müşteri yönetimi: DB modunda kalıcı (msp_customers), demo modunda
 	// bellek-içi. Her iki depo da MSPStore'u karşılar.
 	if m, ok := backend.(adminapi.MSPStore); ok {
 		adminAPI.SetMSPStore(m)
@@ -1192,7 +1192,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				continue
 			}
 			// Çok-kiracılı (zorlama açık) dağıtımda özet kiracı-kapsamlıdır ama süreç sayaçları TÜM
-			// kiracıları toplar → sayaçlar rapora konmaz (Z5-15). Tek-kiracılıda dağıtım = kiracı.
+			// kiracıları toplar → sayaçlar rapora konmaz. Tek-kiracılıda dağıtım = kiracı.
 			var c map[string]int64
 			if !cfg.TenantEnforce {
 				c = metrics.Counters()
@@ -1257,7 +1257,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 		"T1071": "Command and Control", "T1071.004": "Command and Control",
 		"T1046": "Discovery", "T1110": "Credential Access",
 	}
-	// Bulgu yazma yolu (Z2-03/04): kiracıyı cihazdan SUNUCU-TARAFI çözer ve damgalar,
+	// Bulgu yazma yolu: kiracıyı cihazdan SUNUCU-TARAFI çözer ve damgalar,
 	// kaydı yalnız başarılıysa yayınlar/uyarır ve başarıyı çağırana bildirir.
 	findings := &findingEmitter{
 		save: backend.SaveEvents,
@@ -1327,8 +1327,8 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				if err != nil {
 					continue
 				}
-				// W3 NOTU (Z2-05): bu okuma adminread'in sorgu başına 1000 satır sınırına tabidir;
-				// sayfalı tarama yolu W3 dalgasında ele alınacak.
+				// NOT: bu okuma adminread'in sorgu başına 1000 satır sınırına tabidir;
+				// sayfalı tarama yolu ayrıca ele alınacak.
 				hints := tenantHints(evs) // cihaz → sunucu-damgalı olay kiracısı (kayıtsız kaynaklar için)
 				conns := make([]beacon.Conn, 0, len(evs))
 				for _, e := range evs {
@@ -1355,7 +1355,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 						Details: findingDetails(map[string]any{"beacon": true, "remote_ip": f.RemoteIP, "count": f.Count,
 							"mean_interval_sec": int(f.MeanInterval.Seconds()), "cov": math.Round(f.CoV*1000) / 1000, "technique": "T1071"}),
 					}
-					// "Uyarıldı" bayrağı YALNIZ başarılı kayıttan sonra set edilir (Z2-04): geçici
+					// "Uyarıldı" bayrağı YALNIZ başarılı kayıttan sonra set edilir: geçici
 					// DB hatası bulguyu kalıcı susturmaz, sonraki turda yeniden denenir.
 					if tn, ok := findings.emit(ctx, f.DeviceID, hints[f.DeviceID], ev, notify.Alert{Category: "SECURITY", Severity: "HIGH",
 						Message: ev.Message, OccurredAt: ev.OccurredAt, TechniqueID: "T1071",
@@ -1421,7 +1421,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				if err != nil {
 					continue
 				}
-				hints := tenantHints(evs) // cihaz → sunucu-damgalı olay kiracısı (W3 NOTU: Z2-05 satır sınırı)
+				hints := tenantHints(evs) // cihaz → sunucu-damgalı olay kiracısı (NOT: satır sınırı)
 				queries := make([]dnstunnel.Query, 0, len(evs))
 				for _, e := range evs {
 					var d struct {
@@ -1446,7 +1446,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 							f.Parent, f.Window.Round(time.Minute), f.DistinctSubdomains),
 						OccurredAt: time.Now(),
 						// f.Parent ajan-kaynaklı DNS adından türer: encoding/json kontrol karakterlerini
-						// kaçışlar / geçersiz UTF-8'i düzeltir → Details HER ZAMAN geçerli JSON (Z2-04).
+						// kaçışlar / geçersiz UTF-8'i düzeltir → Details HER ZAMAN geçerli JSON.
 						Details: findingDetails(map[string]any{"dns_tunnel": true, "parent": f.Parent,
 							"distinct_subdomains": f.DistinctSubdomains, "window_sec": int(f.Window.Seconds()), "technique": "T1071.004"}),
 					}
@@ -1496,7 +1496,7 @@ func Run(enterpriseHook func(*eventbus.Bus) error) error {
 				if err != nil {
 					continue
 				}
-				hints := tenantHints(evs) // cihaz → sunucu-damgalı olay kiracısı (W3 NOTU: Z2-05 satır sınırı)
+				hints := tenantHints(evs) // cihaz → sunucu-damgalı olay kiracısı (NOT: satır sınırı)
 				attempts := make([]bruteforce.Attempt, 0, len(evs))
 				logons := make([]bruteforce.LogonEvent, 0, len(evs))
 				for _, e := range evs {

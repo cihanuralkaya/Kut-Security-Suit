@@ -2,7 +2,7 @@
 // sağlar: RBAC + MFA'yı tamamlayan ABAC (öznitelik-tabanlı erişim denetimi),
 // harici bir kütüphane olmadan OIDC ID-token doğrulaması, SCIM 2.0 User şema
 // alt kümesi ve SAML entegrasyon dikişi. Tüm ilkel işlemler yalnız standart
-// kütüphaneyle gerçeklenir; deterministik ve yan-etkisizdir (yol haritası §35).
+// kütüphaneyle gerçeklenir; deterministik ve yan-etkisizdir.
 package iam
 
 import (

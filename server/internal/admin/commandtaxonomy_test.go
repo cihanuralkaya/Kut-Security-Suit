@@ -46,7 +46,7 @@ func queuedTypes(store *memStore) []string {
 }
 
 // TestEnforce_QuarantineThenUnquarantine (N16): enforce altında yetkili rol karantinaya alıp
-// SONRA kaldırabilir. Z2-02 öncesi UNQUARANTINE komut düzleminde ham ad olarak Destructive'e
+// SONRA kaldırabilir. Eskiden UNQUARANTINE komut düzleminde ham ad olarak Destructive'e
 // düşüp daima reddediliyordu (guardScope muaf tutarken düzlem tutmuyordu).
 func TestEnforce_QuarantineThenUnquarantine(t *testing.T) {
 	svc, store, _ := enforceFixture(t, false)
@@ -56,7 +56,7 @@ func TestEnforce_QuarantineThenUnquarantine(t *testing.T) {
 		t.Fatalf("QUARANTINE enforce altında geçmeli: %v", err)
 	}
 	if err := svc.ReleaseDevice(ctx, "op1", "dev-in"); err != nil {
-		t.Fatalf("UNQUARANTINE enforce altında geçmeli (Z2-02): %v", err)
+		t.Fatalf("UNQUARANTINE enforce altında geçmeli: %v", err)
 	}
 	got := queuedTypes(store)
 	if len(got) != 2 || got[0] != "QUARANTINE" || got[1] != "UNQUARANTINE" {
@@ -100,7 +100,7 @@ func TestEnforce_ExcludedDevice(t *testing.T) {
 	}
 }
 
-// TestEnforce_CollectFileScope (N17): COLLECT_FILE kapsamdaki cihazda geçer (Z2-02: düzlemde
+// TestEnforce_CollectFileScope (N17): COLLECT_FILE kapsamdaki cihazda geçer (düzlemde
 // bilinmeyen ad → Destructive → daima red), dışlanmış cihazda reddedilir.
 func TestEnforce_CollectFileScope(t *testing.T) {
 	svc, store, _ := enforceFixture(t, false)

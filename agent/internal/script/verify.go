@@ -5,7 +5,7 @@
 // (tek bayt değişse reddedilir). Yürütme timeout + çıktı sınırı + minimal env
 // ile SINIRLANDIRILIR; ancak bu GERÇEK bir izolasyon sınırı DEĞİLDİR (inceleme
 // #7). Gerçek sandbox: ayrı süreç + kısıtlı token / AppContainer / container —
-// sonraki bir faz. Bu paket imza-kapısını ve sınırlı yürütmeyi sağlar.
+// kapsam dışıdır. Bu paket imza-kapısını ve sınırlı yürütmeyi sağlar.
 package script
 
 import (

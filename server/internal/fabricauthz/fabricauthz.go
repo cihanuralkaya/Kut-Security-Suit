@@ -8,7 +8,7 @@
 // bağlar — böylece dormant düzlemler "izin-veren" değil "etkinleştirilebilir" olur.
 //
 // ADDITIVE ve DAVRANIŞ-KORUYAN: yalnız salt-okunur scope KARARLARI okur; hiçbir raw
-// Store mutasyonu çağırmaz (G-02 mimari-guard'ı tetiklenmez). Henüz hiçbir app/cmd
+// Store mutasyonu çağırmaz (mimari guard tetiklenmez). Henüz hiçbir app/cmd
 // bu paketi import etmez; bağımlılık oku tek yönlüdür (fabricauthz → düzlemler).
 package fabricauthz
 
@@ -62,7 +62,7 @@ func NewCommandAuthorizerMode(eng *scope.Engine, tenant string, enforce bool) *C
 
 // Authorize, komut isteğini scope/ROE kararına çevirir. Karar, PAYLAŞILAN komut
 // tablosundan (cmdenvelope) türetilir — ham komut adı scope aksiyonu olarak
-// KULLANILMAZ (Z2-02: UNQUARANTINE/COLLECT_FILE/RUN_SIGNED_SCRIPT eskiden bilinmeyen
+// KULLANILMAZ (UNQUARANTINE/COLLECT_FILE/RUN_SIGNED_SCRIPT eskiden bilinmeyen
 // aksiyon sayılıp Destructive'e düşerek hep reddediliyordu).
 //
 //   - Tabloda olmayan tip → HER ZAMAN red (fail-closed; scope motoruna hiç sorulmaz).

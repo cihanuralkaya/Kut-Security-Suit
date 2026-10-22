@@ -1,4 +1,4 @@
-// Package aisec, Milestone AG'nin (Agentic Threat Defense Plane; docs/CONTRACTS.md §22,
+// Package aisec, Agentic Threat Defense Plane'in (docs/CONTRACTS.md §22,
 // namespace KUT-AI-SEC-*) deterministik VERİ-ZEMİNİ ve INV-AG invariant'larıdır. Amaç:
 // saldırganın AI-agent'larını ve karma (insan/yazılım/AI) principal davranışını
 // modelleyip Agent Causality Graph verisini üretmek (ör. `untrusted web → agent reads
@@ -9,8 +9,8 @@
 // admin) import ETMEZ. Enforcement deterministiktir; AI yalnız korelasyon/açıklama
 // katmanındadır (§0 zinciri: AI → ActionRequest → Gateway → Grant → GuardedExecutor).
 //
-// AG-01 kapsamı: Agent Identity + Trust/Taint propagation + Delegation intersection
-// (INV-AG-001/003/007). Sonraki dilimler: taint→exfiltration guard (INV-AG-004/005),
+// Kapsam: Agent Identity + Trust/Taint propagation + Delegation intersection
+// (INV-AG-001/003/007). Sonraki aşamalar: taint→exfiltration guard (INV-AG-004/005),
 // memory provenance (INV-AG-006), tool allowlist deny-by-default (INV-AG-009).
 package aisec
 

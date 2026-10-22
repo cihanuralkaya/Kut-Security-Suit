@@ -1,9 +1,9 @@
 // Package secgateway, frozen seccontract sözleşmesini (docs/CONTRACTS.md v3.2.1)
-// canlı authz.Gateway'e bağlayan KÖPRÜDÜR (Milestone A / PR-01). Amaç: yüksek-etkili
+// canlı authz.Gateway'e bağlayan KÖPRÜDÜR. Amaç: yüksek-etkili
 // isteklerin tek yetki-karar noktasını `seccontract.ActionRequest → AuthorizationDecision`
 // tipleriyle ifade etmek; blast-radius/rate-limit kontrollerini mevcut authz.Gateway'e
 // devretmek. Bu paket ADDITIVE ve DAVRANIŞ-KORUYANDIR: henüz hiçbir canlı executor yolu
-// buradan geçmez (paralel yol). Sonraki PR'lar (PR-03+) canlı yolları buraya taşır.
+// buradan geçmez (paralel yol). Sonraki değişiklikler canlı yolları buraya taşır.
 //
 // İki fail-closed kapı (CONTRACTS): boş tenant → DENY (INV-044); tanınmayan/boş
 // principal type → DENY (insan sanılıp yumuşak-tavana düşme YASAK).

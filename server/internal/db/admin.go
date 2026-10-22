@@ -78,7 +78,7 @@ func (s *Store) SaveArtifact(ctx context.Context, deviceID, commandID, path, sha
 	return id, nil
 }
 
-// AppendCustody, delil gözetim zincirine EKLE-YALNIZ bir kayıt yazar (§23). PRIMARY
+// AppendCustody, delil gözetim zincirine EKLE-YALNIZ bir kayıt yazar. PRIMARY
 // KEY(evidence_id, seq) çatallanmayı engeller: eşzamanlı ikinci ekleme aynı seq ile
 // çakışır ve hata döner (çağıran zinciri yeniden okuyup tekrar deneyebilir).
 func (s *Store) AppendCustody(ctx context.Context, evidenceID string, e evidence.CustodyEntry) error {
@@ -108,7 +108,7 @@ func (s *Store) EventTenant(ctx context.Context, eventID string) (string, error)
 // ackTenant, olayın (event_logs.id) kiracısını KANONİK biçimde ve bulunup bulunmadığıyla
 // döner: bulunamazsa ("", false). Kiracı SUNUCU-TARAFI olaydan okunur, çağıranın girdisinden
 // DEĞİL. Eski (kiracı öncesi) olayların boş kiracısı tenant.Canonical ile 'default'a çevrilir
-// (event_ack/incidents'in şema varsayılanıyla aynı temsil: Z4b-11).
+// (event_ack/incidents'in şema varsayılanıyla aynı temsil).
 func (s *Store) ackTenant(ctx context.Context, eventID string) (string, bool) {
 	if !validUUID(eventID) {
 		return "", false
@@ -121,7 +121,7 @@ func (s *Store) ackTenant(ctx context.Context, eventID string) (string, bool) {
 	return tenant.Canonical(tn), true
 }
 
-// SetEventAck, olayın triyaj durumunu yazar. Z4b-11: event_ack.tenant_id artık OLAYIN
+// SetEventAck, olayın triyaj durumunu yazar. event_ack.tenant_id artık OLAYIN
 // kiracısıyla yazılır (önceden her satır şema varsayılanı 'default' alıyordu). Olay
 // bulunamazsa (ör. bölümü silinmiş) mevcut satırın kiracısı korunur, yeni satır 'default' alır.
 func (s *Store) SetEventAck(ctx context.Context, eventID, adminID, status string) error {
@@ -139,7 +139,7 @@ func (s *Store) SetEventAck(ctx context.Context, eventID, adminID, status string
 }
 
 // SetEventCase, olayın sorumlu+not alanlarını ayarlar (durumu korur; upsert). Kiracı
-// SetEventAck ile aynı kuralla olaydan yazılır (Z4b-11).
+// SetEventAck ile aynı kuralla olaydan yazılır.
 func (s *Store) SetEventCase(ctx context.Context, eventID, adminID, assignee, note string) error {
 	tn, _ := s.ackTenant(ctx, eventID)
 	const q = `
@@ -154,7 +154,7 @@ func (s *Store) SetEventCase(ctx context.Context, eventID, adminID, assignee, no
 	return nil
 }
 
-// OpenIncident, yeni bir korelasyon incident'i açar (correlate.IncidentSink). Z4b-11:
+// OpenIncident, yeni bir korelasyon incident'i açar (correlate.IncidentSink).
 // incidents.tenant_id artık CİHAZIN kiracısıyla yazılır (sunucu-tarafı alt-sorgu; eski
 // cihazın boş kiracısı, cihazsız incident ve bulunamayan cihaz 'default' — tenant.Canonical
 // ile aynı temsil). Okuma yolu hâlâ device→tenant join kullanır; sütun RLS/rapor içindir.
@@ -214,7 +214,7 @@ func (s *Store) DeletePendingWipe(ctx context.Context, deviceID string) error {
 	return nil
 }
 
-// ConsumePendingWipe, bekleyen WIPE talebini ATOMİK claim eder (G-08). Tek deyimli
+// ConsumePendingWipe, bekleyen WIPE talebini ATOMİK claim eder. Tek deyimli
 // `DELETE ... WHERE requested_by <> approver RETURNING` claim'dir: iki eşzamanlı
 // onaylayandan yalnız biri satırı siler/döndürür (diğeri ErrNoRows alır → çift-enqueue
 // yok). Silinmezse takip SELECT'i "talep yok" ile "self-approval"ı ayırır (bu ayrım

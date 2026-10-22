@@ -1,6 +1,6 @@
 package verify
 
-// verifier.go (Dilim 2) — tespit sinyalini AKSİYON-SONRASI pencerede yeniden ölçen
+// verifier.go — tespit sinyalini AKSİYON-SONRASI pencerede yeniden ölçen
 // deterministik doğrulayıcı. `adminread.ReplayDetections`'ın TERSİ: replay "bu kural
 // geçmişte kaç olayı yakalardı?" derken, doğrulama "kural taze pencerede ARTIK
 // tetikliyor mu?" der ve SIFIR eşleşme beklenir. Fail-closed: telemetri yoksa VERIFIED

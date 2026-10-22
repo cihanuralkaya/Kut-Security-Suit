@@ -177,7 +177,7 @@ func (s *Store) ListArtifacts(ctx context.Context, deviceID string) ([]adminread
 }
 
 // ListCustody, bir delilin (artefakt) KALICI gözetim-zinciri kayıtlarını (seq artan)
-// döner (§23). Genesis (seq=0) artefakttan türetilir; burada dönmez.
+// döner. Genesis (seq=0) artefakttan türetilir; burada dönmez.
 func (s *Store) ListCustody(ctx context.Context, evidenceID string) ([]evidence.CustodyEntry, error) {
 	const q = `
 		SELECT seq, actor, action, at, prev_hash, hash

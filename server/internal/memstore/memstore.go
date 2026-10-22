@@ -141,8 +141,8 @@ type Store struct {
 	auditSeq   int64                              // audit_log identity taklidi
 	eventAcks  map[string]eventAckRec             // eventID -> triyaj durumu (alarm yaşam-döngüsü)
 	artifacts  []artifactRec                      // toplanan dosya artefaktları (adli/IR)
-	custody    map[string][]evidence.CustodyEntry // artefakt id -> kalıcı gözetim kayıtları (§23)
-	mspCusts   []msp.Customer                     // MSP müşterileri (§37)
+	custody    map[string][]evidence.CustodyEntry // artefakt id -> kalıcı gözetim kayıtları
+	mspCusts   []msp.Customer                     // MSP müşterileri
 	pendWipes  map[string]pendingWipeRec          // deviceID -> bekleyen WIPE talebi (çift-kontrol)
 	incidents  []incidentRec                      // korelasyonla gruplanmış olaylar
 	incSeq     int
@@ -158,7 +158,7 @@ type savedSearchRec struct {
 
 // incidentRec, korelasyonla gruplanmış bir olaydır (bellek-içi).
 type incidentRec struct {
-	tenant                                                                string // cihazın KANONİK kiracısı (db incidents.tenant_id ile aynı; Z4b-11)
+	tenant                                                                string // cihazın KANONİK kiracısı (db incidents.tenant_id ile aynı)
 	id, deviceID, corrKey, ruleID, technique, severity, sampleMsg, status string
 	count                                                                 int
 	firstSeen, lastSeen                                                   time.Time
@@ -173,7 +173,7 @@ type pendingWipeRec struct {
 
 // eventAckRec, bir olayın triyaj/vaka durumudur (bellek-içi).
 type eventAckRec struct {
-	tenant   string // olayın KANONİK kiracısı (db event_ack.tenant_id ile aynı temsil; Z4b-11)
+	tenant   string // olayın KANONİK kiracısı (db event_ack.tenant_id ile aynı temsil)
 	status   string
 	assignee string
 	note     string
@@ -254,7 +254,7 @@ func (s *Store) UpsertEnrollingDevice(_ context.Context, in enroll.DeviceEnrollm
 	defer s.mu.Unlock()
 	id := in.PreferredDeviceID
 	if id == "" {
-		// S-3 (db ile aynı): MAC tekilliği KİRACI BAŞINADIR. Yalnız AYNI kiracıda (legacy boş
+		// db ile aynı: MAC tekilliği KİRACI BAŞINADIR. Yalnız AYNI kiracıda (legacy boş
 		// kiracı ≡ default dahil) eşleşen cihaz yeniden-kayıt sayılır; başka kiracıdaki aynı
 		// MAC o satıra DOKUNMAZ ve bu kiracı kendi cihazını alır (MAC-squat DoS yok).
 		for _, d := range s.devices {
@@ -399,7 +399,7 @@ func (s *Store) SetDeviceStatus(_ context.Context, deviceID, status string) erro
 }
 
 // ApplyCommandResults, başarılı karantina sonuçlarında EFFECTIVE cihaz durumunu ayarlar
-// (F-D: desired QUARANTINE_PENDING → effective QUARANTINED). Başarısız/ilgisiz sonuçlar
+// (desired QUARANTINE_PENDING → effective QUARANTINED). Başarısız/ilgisiz sonuçlar
 // durumu değiştirmez.
 func (s *Store) ApplyCommandResults(_ context.Context, deviceID string, outcomes []model.CommandOutcome) error {
 	s.mu.Lock()
@@ -540,7 +540,7 @@ func (s *Store) EnrollmentTokenTenant(_ context.Context, tokenID string) (string
 
 // RevokeEnrollmentToken, id ile token'ı bulup kullanılmış işaretler (used=true).
 // Zaten kullanılmış/yok token için sessiz (no-op) — db davranışını taklit eder.
-// S-4 (db ile aynı): tenantID boş değilse yalnız o kiracının token'ı iptal edilir; kiracıya
+// db ile aynı: tenantID boş değilse yalnız o kiracının token'ı iptal edilir; kiracıya
 // bağlı çağıran için o kiracıda böyle bir token yoksa ErrForbidden. Boş = platform.
 func (s *Store) RevokeEnrollmentToken(_ context.Context, tokenID, tenantID string) error {
 	s.mu.Lock()
@@ -859,7 +859,7 @@ func (s *Store) CreateAdmin(_ context.Context, email, passwordHash string, role 
 }
 
 // AdminTenant, yöneticinin bağlı kiracısını döner ("" = platform admini). Bilinmeyen veya
-// PASİF yönetici için admin.ErrUnknownAdmin döner (db ile aynı; Z4b-09): "" platform kapsamı
+// PASİF yönetici için admin.ErrUnknownAdmin döner (db ile aynı): "" platform kapsamı
 // olduğundan "yok"u "" ile birleştirmek fail-open olurdu.
 func (s *Store) AdminTenant(_ context.Context, adminID string) (string, error) {
 	s.mu.Lock()
@@ -870,7 +870,7 @@ func (s *Store) AdminTenant(_ context.Context, adminID string) (string, error) {
 	return "", admin.ErrUnknownAdmin
 }
 
-// SetAdminRole, S-4 (db ile aynı): tenantID boş değilse hedefin kiracısı eşleşmeli, yoksa
+// SetAdminRole, db ile aynı: tenantID boş değilse hedefin kiracısı eşleşmeli, yoksa
 // ErrForbidden; boş = platform (süzme yok, bilinmeyen hedef no-op).
 func (s *Store) SetAdminRole(_ context.Context, id string, role admin.Role, tenantID string) error {
 	s.mu.Lock()
@@ -885,7 +885,7 @@ func (s *Store) SetAdminRole(_ context.Context, id string, role admin.Role, tena
 	return nil
 }
 
-// DeactivateAdmin, S-4: tenantID semantiği SetAdminRole ile aynıdır.
+// DeactivateAdmin, tenantID semantiği SetAdminRole ile aynıdır.
 func (s *Store) DeactivateAdmin(_ context.Context, id, tenantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1295,7 +1295,7 @@ func (s *Store) DeletePendingWipe(_ context.Context, deviceID string) error {
 	return nil
 }
 
-// ConsumePendingWipe, bekleyen WIPE talebini ATOMİK claim eder (G-08): tek kilit altında
+// ConsumePendingWipe, bekleyen WIPE talebini ATOMİK claim eder: tek kilit altında
 // oku-kontrol-sil. requestedBy != approver ise siler ve (requestedBy, true); approver
 // talep edenle aynıysa silmeden (requestedBy, false); talep yoksa ("", false).
 func (s *Store) ConsumePendingWipe(_ context.Context, deviceID, approverID string) (string, bool, error) {
@@ -1415,7 +1415,7 @@ func (s *Store) SetEventAck(_ context.Context, eventID, adminID, status string) 
 	return nil
 }
 
-// ackTenantLocked, olayın KANONİK kiracısını döner (Z4b-11, db.ackTenant ile aynı kural):
+// ackTenantLocked, olayın KANONİK kiracısını döner (db.ackTenant ile aynı kural):
 // olay bulunursa tenant.Canonical(olay kiracısı); bulunamazsa mevcut satırın kiracısı korunur,
 // o da yoksa 'default'. s.mu tutulurken çağrılır.
 func (s *Store) ackTenantLocked(eventID, existing string) string {
@@ -1513,7 +1513,7 @@ func (s *Store) GetArtifact(_ context.Context, id string, tenantID string) (admi
 	return adminread.ArtifactContent{}, false, nil
 }
 
-// ListCustody, bir delilin kalıcı gözetim kayıtlarını (seq artan) döner (§23).
+// ListCustody, bir delilin kalıcı gözetim kayıtlarını (seq artan) döner.
 func (s *Store) ListCustody(_ context.Context, evidenceID string) ([]evidence.CustodyEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1540,7 +1540,7 @@ func (s *Store) AppendCustody(_ context.Context, evidenceID string, e evidence.C
 	return nil
 }
 
-// --- MSP müşterileri (§37) ---
+// --- MSP müşterileri ---
 
 // MSPAddCustomer, yeni bir MSP müşterisi ekler.
 func (s *Store) MSPAddCustomer(name, tenantID string) (msp.Customer, error) {
@@ -1654,7 +1654,7 @@ func (s *Store) DeviceByID(_ context.Context, id string) (adminread.DeviceRow, b
 }
 
 // SetDeviceTags, cihazın etiketlerini değiştirir (bilinmeyen cihazda no-op).
-// S-4 (db ile aynı): tenantID boş değilse cihazın kiracısı eşleşmeli, yoksa ErrForbidden.
+// db ile aynı: tenantID boş değilse cihazın kiracısı eşleşmeli, yoksa ErrForbidden.
 func (s *Store) SetDeviceTags(_ context.Context, deviceID string, tags []string, tenantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

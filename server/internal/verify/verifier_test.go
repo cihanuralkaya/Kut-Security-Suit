@@ -54,7 +54,7 @@ func TestDetectionVerifier(t *testing.T) {
 	}
 }
 
-// TestDetectionVerifierRealizedRisk, Dilim 3 risk-azalması math'ini doğrular: Baseline
+// TestDetectionVerifierRealizedRisk, risk-azalması math'ini doğrular: Baseline
 // açılışta Factors'tan türer; VERIFIED gerçekleşen azalma (>0) verir; REGRESSED azalma
 // vermez (0). Kalan risk asla Baseline'ı aşmaz.
 func TestDetectionVerifierRealizedRisk(t *testing.T) {

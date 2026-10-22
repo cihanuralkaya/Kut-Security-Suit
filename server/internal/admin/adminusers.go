@@ -68,7 +68,7 @@ func (s *Service) CreateAdmin(ctx context.Context, adminID, email, password stri
 	if err != nil {
 		return "", err
 	}
-	// Z4b-08: istekten gelen kiracı değeri tenant.Normalize ile kırpılır/küçük harfe çevrilir/
+	// istekten gelen kiracı değeri tenant.Normalize ile kırpılır/küçük harfe çevrilir/
 	// doğrulanır (büyük-küçük harf varyantları ayrı kiracı olamaz; VARCHAR(63) taşması 500 olmaz).
 	// Boş istek burada boş KALIR: boş kiracı = platform admini (Normalize'ın "default"una
 	// çevrilmez).
@@ -166,7 +166,7 @@ func (s *Service) hasOtherActiveAdmin(ctx context.Context, adminID, tenantID str
 }
 
 // guardLastAdmin, bir yöneticinin KENDİNİ ADMIN'likten çıkarmasını (rol düşürme veya
-// pasifleştirme) kapsamındaki son etkin ADMIN ise engeller (Z4a-01 kendini-düşürme /
+// pasifleştirme) kapsamındaki son etkin ADMIN ise engeller (kendini-düşürme /
 // son-admin koruması). Hedef çağıranın kendisi değilse hiçbir şey yapmaz: başka bir
 // yönetici üzerinde işlem yapan ADMIN çağıran zaten kapsamda kalır.
 func (s *Service) guardLastAdmin(ctx context.Context, adminID, targetID, callerTenant string) error {

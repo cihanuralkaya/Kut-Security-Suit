@@ -16,7 +16,7 @@ func deviceStatus(s *Store, dev string) string {
 	return ""
 }
 
-// TestApplyCommandResults_EffectiveState, F-D effective-state geçişini doğrular:
+// TestApplyCommandResults_EffectiveState, effective-state geçişini doğrular:
 // başarılı QUARANTINE → QUARANTINED; başarısız sonuç durumu değiştirmez; başarılı
 // UNQUARANTINE → ACTIVE.
 func TestApplyCommandResults_EffectiveState(t *testing.T) {

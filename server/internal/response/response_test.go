@@ -101,7 +101,7 @@ func TestAutoQuarantineReturnsErrOnEnqueueFailure(t *testing.T) {
 }
 
 // TestAutoQuarantineDeniedByGateway, gateway DENY verdiğinde HİÇBİR yan-etki
-// üretilmediğini (komut/durum/denetim) ve hata döndüğünü doğrular (fail-closed, G-01).
+// üretilmediğini (komut/durum/denetim) ve hata döndüğünü doğrular (fail-closed).
 func TestAutoQuarantineDeniedByGateway(t *testing.T) {
 	f := newFake()
 	a := New(f, stubAuthz{result: seccontract.ResultDeny}, "t1")

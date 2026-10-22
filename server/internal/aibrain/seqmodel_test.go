@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Z5-18: kiracı taban çizgileri BİRBİRİNDEN bağımsızdır — bir kiracının (zehirli) zinciri
+// kiracı taban çizgileri BİRBİRİNDEN bağımsızdır — bir kiracının (zehirli) zinciri
 // başkasının skorunu etkilemez; modeli olmayan kiracı başkasının verisine düşmez.
 func TestSeqModelsPerTenantBaselines(t *testing.T) {
 	r := NewSeqModels()

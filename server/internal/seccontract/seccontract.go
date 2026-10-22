@@ -1,8 +1,7 @@
-// Package seccontract, KUT güvenlik sözleşmelerinin (docs/CONTRACTS.md v3.2.1 —
-// PR-00B FREEZE baseline) mekanik karşılığıdır: tipler, enum'lar, durum makineleri
+// Package seccontract, KUT güvenlik sözleşmelerinin (docs/CONTRACTS.md v3.2.1) mekanik karşılığıdır: tipler, enum'lar, durum makineleri
 // ve GuardedExecutor sınırı. Bu paket ADDITIVE'dir — mevcut execution yollarını
-// migrate ETMEZ, davranış DEĞİŞTİRMEZ (bkz. CONTRACTS.md §20). Sonraki PR'lar
-// (Milestone A) canlı authz/admin yollarını bu sözleşmelere taşır.
+// migrate ETMEZ, davranış DEĞİŞTİRMEZ (bkz. CONTRACTS.md §20). Sonraki değişiklikler
+// canlı authz/admin yollarını bu sözleşmelere taşır.
 //
 // Değişmez kural (CONTRACTS.md): kod sözleşmeye uymuyorsa varsayılan karar
 // implementasyonu düzeltmektir, sözleşmeyi değil.

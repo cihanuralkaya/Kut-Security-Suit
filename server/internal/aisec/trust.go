@@ -1,6 +1,6 @@
 package aisec
 
-// trust.go — P0-A: Agent Telemetry Trust. Agent-davranış gözlemleri Agent Causality
+// trust.go — Agent Telemetry Trust. Agent-davranış gözlemleri Agent Causality
 // Graph'a girmeden ÖNCE KRİPTOGRAFİK olarak doğrulanır: imza + tenant bağı + sequence +
 // anti-replay + timestamp tazeliği. Böylece sahte/tahrif/replay telemetri (KUT-AI-SEC:
 // fake agent telemetry / telemetry tampering) graf'ı zehirleyemez. FAIL-CLOSED: herhangi

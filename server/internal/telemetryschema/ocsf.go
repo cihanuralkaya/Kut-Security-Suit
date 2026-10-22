@@ -1,5 +1,5 @@
 // Package telemetryschema, KUT'un kanonik olay modelini (model.Event) sektör-standardı
-// OCSF (Open Cybersecurity Schema Framework) biçimine eşler (roadmap P1: ortak olay şeması).
+// OCSF (Open Cybersecurity Schema Framework) biçimine eşler (ortak olay şeması).
 // AMAÇ: downstream SIEM/veri-gölü/analitik araçlarının olayları standart bir şemayla
 // tüketebilmesi. Eşleme SAF ve deterministiktir: yalnız model (nötr domain) + stdlib import
 // eder, hiçbir yürütme/depolama sınırına dokunmaz. Kanonik EventID korunur (finding_info.uid)

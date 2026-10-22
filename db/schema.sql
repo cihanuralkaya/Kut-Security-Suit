@@ -31,7 +31,7 @@ CREATE TYPE device_status AS ENUM (
 );
 -- QUARANTINE_PENDING: karantina komutu kuyruğa alındı (DESIRED) ama cihaz henüz gerçek
 -- izolasyonu ONAYLAMADI. Effective 'QUARANTINED', yalnız ajan komut SUCCESS bildirince
--- verilir (F-D: desired≠effective). Mevcut DB'ye ekleme: ALTER TYPE device_status
+-- verilir (desired≠effective). Mevcut DB'ye ekleme: ALTER TYPE device_status
 -- ADD VALUE IF NOT EXISTS 'QUARANTINE_PENDING' BEFORE 'QUARANTINED';
 
 CREATE TYPE event_category AS ENUM (
@@ -61,7 +61,7 @@ CREATE TABLE devices (
     os_info_encrypted      BYTEA,
     -- HMAC-SHA256(sunucu_gizli_anahtarı, normalize_edilmiş_mac). MAC uzayı ~48 bit
     -- olduğundan DÜZ hash offline brute-force'a açıktır; keyed HMAC şarttır.
-    mac_address_bidx       BYTEA NOT NULL,            -- tekillik KİRACI BAŞINA: bkz. uq_devices_tenant_mac (W1b-1 S-3)
+    mac_address_bidx       BYTEA NOT NULL,            -- tekillik KİRACI BAŞINA: bkz. uq_devices_tenant_mac (Kiracı Duvarı II)
     agent_version          VARCHAR(50),
     os_platform            VARCHAR(20),               -- "windows" | "linux"
     os_version             VARCHAR(120),              -- okunabilir OS sürümü (filo envanteri)
@@ -272,7 +272,7 @@ CREATE INDEX idx_artifacts_device ON artifacts (device_id, collected_at DESC);
 -- Cihaz-index'in başı device_id olduğundan bu taramaya hizmet edemez; ayrı index.
 CREATE INDEX idx_artifacts_collected ON artifacts (collected_at);
 
--- Delil GÖZETİM ZİNCİRİ (§23) — EKLE-YALNIZ, hash-zincirli. Genesis (seq=0, COLLECTED)
+-- Delil GÖZETİM ZİNCİRİ — EKLE-YALNIZ, hash-zincirli. Genesis (seq=0, COLLECTED)
 -- artefakt satırından TÜRETİLİR (saklanmaz); buraya toplama SONRASI olaylar (ACCESSED/
 -- TRANSFERRED/SEALED, seq>=1) yazılır. Her kayıt bir öncekinin hash'ini (prev_hash)
 -- içerir; UNIQUE(evidence_id, seq) çatallanmayı (eşzamanlı ekleme) engeller. evidence_id
@@ -289,7 +289,7 @@ CREATE TABLE evidence_custody (
     PRIMARY KEY (evidence_id, seq)
 );
 
--- SCIM 2.0 KULLANICI SAĞLAMA (§35 — kurumsal IAM). Bir kimlik sağlayıcısı (Okta/Azure
+-- SCIM 2.0 KULLANICI SAĞLAMA (kurumsal IAM). Bir kimlik sağlayıcısı (Okta/Azure
 -- AD) SCIM üzerinden kullanıcı yaşam-döngüsünü (create/replace/deactivate) yönetir.
 -- Çekirdek alanlar sorgulanabilir sütunlarda; tam SCIM kaynağı `doc` JSONB'de (RFC 7643
 -- tel-uyumu için esneklik). Deactivate soft-delete'tir (active=false).
@@ -359,7 +359,7 @@ CREATE TABLE tokens (
 );
 CREATE INDEX idx_tokens_active ON tokens (scope) WHERE revoked_at IS NULL;
 
--- MSP MÜŞTERİLERİ (§37 — Managed Security Service Provider). Bir MSP birçok müşteriye
+-- MSP MÜŞTERİLERİ (Managed Security Service Provider). Bir MSP birçok müşteriye
 -- hizmet verir; her müşteri bir kiracıya (tenant) eşlenir. Deactivate soft-delete'tir.
 -- Kullanım/faturalama ölçümü çalışma-zamanı sayaçlarıdır (kalıcı değil); burada yalnız
 -- müşteri kaydı + müşteri-başına yapılandırma saklanır.
@@ -626,15 +626,15 @@ CREATE TRIGGER trg_audit_log_no_delete
     FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_mutation();
 
 -- =============================================================================
--- W1b-1 YÜKSELTME BLOĞU (idempotent, yeniden çalıştırılabilir)
+-- Kiracı Duvarı II YÜKSELTME BLOĞU (idempotent, yeniden çalıştırılabilir)
 -- =============================================================================
 -- Taze kurulumda yukarıdaki CREATE TABLE'lar zaten son biçimdedir ve bu blok
 -- no-op'tur. MEVCUT kurulumlarda şema dosyası bütünüyle yeniden çalıştırılamaz
 -- (CREATE TYPE/TABLE); yalnız BEGIN/END arasını uygulayın:
---   sed -n '/^-- BEGIN W1B1-UPGRADE/,/^-- END W1B1-UPGRADE/p' db/schema.sql | psql "$KUT_DATABASE_URL"
--- BEGIN W1B1-UPGRADE
+--   sed -n '/^-- BEGIN TENANT-MAC-UPGRADE/,/^-- END TENANT-MAC-UPGRADE/p' db/schema.sql | psql "$KUT_DATABASE_URL"
+-- BEGIN TENANT-MAC-UPGRADE
 
--- S-3 (MAC-squat DoS): mac_address_bidx artık KÜRESEL tekil değil, KİRACI başınadır.
+-- MAC-squat DoS: mac_address_bidx artık KÜRESEL tekil değil, KİRACI başınadır.
 -- Tekillik anahtarı kanonik kiracıdır: kiracı öncesi (legacy) boş kiracı örtük 'default'
 -- ile AYNI kiracı sayılır (tenant.Canonical), böylece '' ve 'default' aynı MAC için iki
 -- satır üretemez. Önce yeni indeks oluşturulur, sonra eski küresel kısıt düşürülür
@@ -643,25 +643,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_devices_tenant_mac
     ON devices ((COALESCE(NULLIF(tenant_id, ''), 'default')), mac_address_bidx);
 ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_mac_address_bidx_key;
 
--- Z4a-04 / Z4b-04: politikalar kiracı sahibi taşır. Boş = platform/paylaşımlı (mevcut
+-- politikalar kiracı sahibi taşır. Boş = platform/paylaşımlı (mevcut
 -- tüm politikalar böyle kalır; kiracıya bağlı admin okuyabilir/atayabilir, değiştiremez).
 ALTER TABLE policies ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(63) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_policies_tenant ON policies (tenant_id);
 
--- END W1B1-UPGRADE
+-- END TENANT-MAC-UPGRADE
 
 -- =============================================================================
--- W1b-2 YÜKSELTME BLOĞU (idempotent, yeniden çalıştırılabilir)
+-- Kiracı Duvarı III YÜKSELTME BLOĞU (idempotent, yeniden çalıştırılabilir)
 -- =============================================================================
 -- Taze kurulumda yukarıdaki CREATE TABLE son biçimdedir ve bu blok no-op'tur.
 -- MEVCUT kurulumlarda yalnız BEGIN/END arasını uygulayın:
---   sed -n '/^-- BEGIN W1B2-UPGRADE/,/^-- END W1B2-UPGRADE/p' db/schema.sql | psql "$KUT_DATABASE_URL"
--- BEGIN W1B2-UPGRADE
+--   sed -n '/^-- BEGIN INGEST-TOKEN-TENANT-UPGRADE/,/^-- END INGEST-TOKEN-TENANT-UPGRADE/p' db/schema.sql | psql "$KUT_DATABASE_URL"
+-- BEGIN INGEST-TOKEN-TENANT-UPGRADE
 
--- Z3-01 / Z4a-15: yönetilen ingest token'ları bir kiracıya bağlanır (platform admini
+-- yönetilen ingest token'ları bir kiracıya bağlanır (platform admini
 -- oluşturmada verir; sunucu-tarafı). Mevcut tüm token'lar '' (kiracısız / legacy) kalır;
 -- bunlarla alınan olaylar dağıtımın varsayılan kiracısına düşer (KUT_TENANT_ENFORCE=1
 -- iken reddedilir).
 ALTER TABLE tokens ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(63) NOT NULL DEFAULT '';
 
--- END W1B2-UPGRADE
+-- END INGEST-TOKEN-TENANT-UPGRADE

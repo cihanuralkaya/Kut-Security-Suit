@@ -62,7 +62,7 @@ type HuntScope struct {
 }
 
 // ExecuteHunt traverses the entitygraph for anomalous relationships matching the hypothesis,
-// restricted to scope's tenant (Z5-03). Kapsam kiracıya bağlıysa başka kiracının düğümleri
+// restricted to scope's tenant. Kapsam kiracıya bağlıysa başka kiracının düğümleri
 // ve onların kenarları (süreç adları, cihaz kimlikleri, uzak IP'ler) ASLA döndürülmez.
 func (a *HuntingAgent) ExecuteHunt(ctx context.Context, h HuntHypothesis, scope HuntScope) ([]HuntFinding, error) {
 	if a.Graph == nil {

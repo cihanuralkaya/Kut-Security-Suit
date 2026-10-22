@@ -1,7 +1,7 @@
 # ADR-0040: Telemetry Plane as an Export-Only Tap
 
 ## Status
-Accepted (2026-10, telemetry-plane convergence slice 4)
+Accepted (2026-10, telemetry-plane convergence)
 
 ## Context
 The telemetry plane is being wired live in both the Lite (`cmd/c2`) and Enterprise

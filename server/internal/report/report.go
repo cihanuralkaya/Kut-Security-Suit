@@ -44,7 +44,7 @@ type Data struct {
 	IocHits            int64          `json:"ioc_hits"`
 	// CountersOmitted true ise tehdit-etkinliği sayaçları (Detections/AlertsRaised/...) rapora
 	// KONMAZ: bunlar süreç-geneli (tüm kiracıların) sayaçlardır ve kiracıya bağlı bir rapor onları
-	// taşıyamaz (çapraz-kiracı etkinlik sızıntısı, Z5-15). Sıfır değerler "etkinlik yok" demek
+	// taşıyamaz (çapraz-kiracı etkinlik sızıntısı). Sıfır değerler "etkinlik yok" demek
 	// DEĞİLDİR; render edilmezler.
 	CountersOmitted bool `json:"counters_omitted,omitempty"`
 }

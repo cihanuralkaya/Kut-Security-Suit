@@ -30,7 +30,7 @@ func (s *Store) MarkStaleOffline(ctx context.Context, olderThan time.Time) (int,
 // (admin aksiyonlarının yansıması: QUARANTINED / ACTIVE). status device_status
 // enum'una cast edilir; geçersiz değer DB tarafından reddedilir.
 // ApplyCommandResults, başarılı karantina sonuçlarında EFFECTIVE cihaz durumunu ayarlar
-// (F-D). QUARANTINE OK → QUARANTINED; UNQUARANTINE OK → ACTIVE. Başarısız/ilgisiz
+// QUARANTINE OK → QUARANTINED; UNQUARANTINE OK → ACTIVE. Başarısız/ilgisiz
 // sonuçlar durumu değiştirmez.
 func (s *Store) ApplyCommandResults(ctx context.Context, deviceID string, outcomes []model.CommandOutcome) error {
 	const q = `UPDATE devices SET status = $2::device_status WHERE id = $1`

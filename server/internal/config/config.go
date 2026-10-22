@@ -57,7 +57,7 @@ type Config struct {
 	// İmzalanan istemci sertifikalarının ömrü (kısa ömür + yenileme modeli).
 	ClientCertTTL time.Duration
 
-	// TenantID, bu dağıtımın kiracı kimliğidir (çok-kiracılı temel; Faz 1).
+	// TenantID, bu dağıtımın kiracı kimliğidir (çok-kiracılı temel).
 	// KUT_TENANT_ID; belirtilmezse "default" (tek-kiracılı, geriye uyumlu).
 	TenantID string
 	// TenantEnforce, çok-müşteri SaaS için sıkı kiracı zorlamasıdır (KUT_TENANT_ENFORCE=1).

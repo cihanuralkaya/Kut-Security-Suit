@@ -93,7 +93,7 @@ func (f *failCases) Create(c casemgmt.Case) (casemgmt.Case, error) {
 	return casemgmt.Case{}, errors.New("store down")
 }
 
-// Z5-19: kiracı çözümlemesi hata verirse vaka AÇILMAZ ("default" kovasına düşülmez); incident
+// kiracı çözümlemesi hata verirse vaka AÇILMAZ ("default" kovasına düşülmez); incident
 // yine açılır. Pozitif: çözümlenen kiracıda vaka açılır ve yalnız o kiracıda görünür.
 func TestOpenIncidentFailsClosedWhenTenantUnresolvable(t *testing.T) {
 	inner := &fakeSink{id: "inc-9"}

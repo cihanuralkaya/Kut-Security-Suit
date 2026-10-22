@@ -1,12 +1,11 @@
 // Package privman, güvenlik sonucu doğuran server-side/cihaz side-effect'lerini tek
-// yaptırımlı sınırda toplamak için `PrivilegedMutation` kavramını tanımlar (Milestone A
-// / PR-02). Amaç G-02'nin KÖK NEDENİNİ
+// yaptırımlı sınırda toplamak için `PrivilegedMutation` kavramını tanımlar. Amaç KÖK NEDENİNİ
 // kapatmaktır: bugün raw Store mutasyonları (EnqueueCommand*, SetDeviceStatus,
 // AssignPolicy, EraseDeviceData, RevokeDeviceCerts...) export edilmiş olduğundan Store'u
 // tutan HERHANGİ bir paket authorization sınırını atlayarak çağırabilir.
 //
 // Bu paket ADDITIVE ve DAVRANIŞ-KORUYANDIR: yalnız BARİYER + tipler + testler. Henüz
-// hiçbir production executor buraya bağlı değil (PR-03+ bağlar). Bariyer iki katmanlıdır:
+// hiçbir production executor buraya bağlı değil (sonradan bağlanır). Bariyer iki katmanlıdır:
 //  1. Sealed interface (unexported `sealed()` marker) → dış paketler PrivilegedMutation'ı
 //     DERLEME ZAMANINDA implemente edemez; mutasyonlar yalnız buradaki constructor'lardan doğar.
 //  2. Mimari fitness testi (guard_test.go) → raw mutasyonların yalnız bilinen sınır
@@ -35,7 +34,7 @@ func (c SideEffectClass) RequiresGuardedBoundary() bool { return c != ClassMetad
 // PrivilegedMutation, güvenlik sonucu doğuran bir mutasyonun SEALED tanımlayıcısıdır.
 // Sealed'dır (unexported `sealed()` marker): privman DIŞINDAki hiçbir paket bu arayüzü
 // implemente edemez → privileged mutasyon yalnız buradaki constructor'lardan doğar
-// (G-02 bariyerinin derleme-zamanı yarısı).
+// (bariyerin derleme-zamanı yarısı).
 type PrivilegedMutation interface {
 	Class() SideEffectClass // güvenlik sonucu sınıfı
 	Kind() string           // operasyon adı (ör. "wipe", "set_device_status", "assign_policy")
@@ -86,7 +85,7 @@ func NewIdentityCredentialMutation(kind string, targets ...string) PrivilegedMut
 }
 
 // NewPolicyMutation, politika mutasyonu üretir (POLICY_MUTATION; ör. AssignPolicy).
-// Dolaylı cihaz push'u olduğundan sınır gerektirir (audit F-A).
+// Dolaylı cihaz push'u olduğundan sınır gerektirir.
 func NewPolicyMutation(kind string, targets ...string) PrivilegedMutation {
 	return mutation{class: ClassPolicyMutation, kind: kind, targets: targets}
 }

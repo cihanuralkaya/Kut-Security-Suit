@@ -5,7 +5,7 @@
 // saatini çıpa al ve tamponlanmış olayları store-and-forward ile gönder.
 //
 // Not: Süreç izleme ve politika uygulama (mesai-dışı kontrol) OS'e özgüdür ve
-// Faz 3'te eklenir; politika motoru (agent/internal/policy) ve saat çıpası
+// agent/internal/enforce içinde uygulanır; politika motoru (agent/internal/policy) ve saat çıpası
 // (agent/internal/agentclock) hazır ve test edilmiştir.
 package main
 
@@ -562,7 +562,7 @@ func run() error {
 		// Sunucudan gelen komutları işle (karantina, imzalı script vb.).
 		// ctx (hbCtx değil) geçilir: uzun scriptler heartbeat penceresini bloklamamalı.
 		handleCommands(ctx, resp.GetPendingCommands(), quar, scriptVerifier, buf, cli, safeMode, clog, cfg.dataDir)
-		// Politika uygulaması: yasaklı süreçleri sonlandır (Faz 3).
+		// Politika uygulaması: yasaklı süreçleri sonlandır.
 		if n, err := monitor.Tick(engine.Load()); err != nil {
 			log.Printf("enforcement hatası: %v", err)
 		} else if n > 0 {

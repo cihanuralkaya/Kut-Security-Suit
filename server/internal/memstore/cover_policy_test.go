@@ -229,7 +229,7 @@ func TestMFALifecycle(t *testing.T) {
 		t.Fatal("etkinleşmeden sonra bekleyen sır temizlenmeliydi")
 	}
 
-	// Yeniden kayıt: yeni sır bekleyen kalırken ETKİN sır/durum aynen korunur (S-7);
+	// Yeniden kayıt: yeni sır bekleyen kalırken ETKİN sır/durum aynen korunur;
 	// ActivateMFA atomik takas yapar, eski sır geçersizleşir.
 	if err := s.SetPendingMFASecret(ctx, id, "SECRET456"); err != nil {
 		t.Fatal(err)

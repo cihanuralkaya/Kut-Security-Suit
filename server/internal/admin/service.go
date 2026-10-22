@@ -52,7 +52,7 @@ var ErrForbidden = errors.New("admin: yetki yetersiz")
 // ErrUnknownAdmin, kimliği çözülemeyen ya da PASİF bir yönetici için kiracı sorgulandığında
 // döner (Store.AdminTenant). ErrForbidden'ı sarar (HTTP 403): "" kiracısı PLATFORM kapsamıdır,
 // bu yüzden bilinmeyen/pasif bir yöneticinin sessizce platform admini gibi davranması (fail-open
-// birleştirme, Z4b-09) yerine çağıranlar bu hatayı yayar ve isteği reddeder.
+// birleştirme) yerine çağıranlar bu hatayı yayar ve isteği reddeder.
 var ErrUnknownAdmin = fmt.Errorf("%w: bilinmeyen veya pasif yönetici", ErrForbidden)
 
 // ErrInvalidRule, kural girdisi doğrulamayı geçemediğinde döner (istemci hatası).
@@ -135,7 +135,7 @@ type Store interface {
 	// AdminTenant, bir yöneticinin bağlı olduğu kiracıyı döner (okuma izolasyonu ve
 	// ayrıcalık-yükseltme koruması için). Boş → platform admini. Bilinmeyen veya PASİF yönetici
 	// için "" DÖNMEZ: ErrUnknownAdmin (403) döner — çağıranlar fail-closed reddeder, asla
-	// platform kapsamına düşmez (Z4b-09).
+	// platform kapsamına düşmez.
 	AdminTenant(ctx context.Context, adminID string) (string, error)
 	// TenantForDevice, cihazın bağlı olduğu kiracıyı döner (aksiyon/yazma-yolu kiracı
 	// zorunlu-kılması için). Cihaz yoksa boş döner.
@@ -181,7 +181,7 @@ type Store interface {
 	GetPendingWipe(ctx context.Context, deviceID string) (requestedBy string, exists bool, err error)
 	// DeletePendingWipe, bekleyen WIPE talebini siler (onay/iptal sonrası). Yoksa no-op.
 	DeletePendingWipe(ctx context.Context, deviceID string) error
-	// ConsumePendingWipe, bekleyen WIPE talebini ATOMİK "claim" eder (G-08 approval
+	// ConsumePendingWipe, bekleyen WIPE talebini ATOMİK "claim" eder (approval
 	// concurrency): talep VAR ve requestedBy != approverID ise talebi siler ve
 	// (requestedBy, true) döner; approver talep edenle AYNIYSA silmeden (requestedBy,
 	// false) döner (dört-göz); talep YOKSA ("", false). İki eşzamanlı onaylayandan EN
@@ -266,7 +266,7 @@ func (s *Service) SetCommandPlane(p *commandplane.Plane) { s.cmdPlane = p }
 // planeRoutable, komut tipinin yönetici yolunda komut düzleminden geçip geçmeyeceğini
 // PAYLAŞILAN komut tablosundan (cmdenvelope.Spec.PlaneRouted) okur. Komut düzlemi
 // bağlıyken YALNIZ PlaneRouted tipler düzlemden geçer; diğerleri (COLLECT_DIAGNOSTICS:
-// W2-S5'te taşınır; UNINSTALL: yönetici giriş noktası yok) doğrudan depo yoluna düşer
+// sonraki bir sürümde taşınır; UNINSTALL: yönetici giriş noktası yok) doğrudan depo yoluna düşer
 // (düzlem Validate'ini tetiklemeden, davranış korunur). Kayıtsız tip düzleme gitmez.
 func planeRoutable(cmdType string) bool {
 	spec, ok := cmdenvelope.Lookup(cmdType)
@@ -327,7 +327,7 @@ func (s *Service) guardScope(ctx context.Context, adminID, deviceID string, act 
 		s.audit(ctx, adminID, "SCOPE_UNCONFIGURED_DENY:"+string(act), "device", deviceID)
 		return fmt.Errorf("%w (%s): Scope/ROE motoru yapılandırılmadı — yüksek-etkili operasyon fail-closed reddedildi (kabul için KUT_SCOPE_ALLOW_UNCONFIGURED=1)", ErrOutOfScope, act)
 	}
-	// G-05/INV-044: yapılandırılmış motorda tenant bağı ZORUNLU. Boş tenant güvenlik
+	// INV-044: yapılandırılmış motorda tenant bağı ZORUNLU. Boş tenant güvenlik
 	// nesnesinde implicit "default"a düşemez; yüksek-etkili operasyon fail-closed reddedilir.
 	if s.scopeTenant == "" && scope.ImpactOf(act) >= scope.HighImpact {
 		metrics.IncScopeDenied()
@@ -587,7 +587,7 @@ func normalizeTags(tags []string) []string {
 
 // QuarantineDevice, cihazı karantinaya alma komutu kuyruğa ekler (OPERATOR+).
 func (s *Service) QuarantineDevice(ctx context.Context, adminID, deviceID string) error {
-	// DESIRED durum QUARANTINE_PENDING'dir (F-D): komut kuyruğa alındı ama cihaz henüz
+	// DESIRED durum QUARANTINE_PENDING'dir: komut kuyruğa alındı ama cihaz henüz
 	// gerçek izolasyonu onaylamadı. EFFECTIVE 'QUARANTINED', yalnız ajan komut SUCCESS
 	// bildirince ApplyCommandResults ile verilir — SOC yanıltıcı "izole" görmez.
 	return s.command(ctx, adminID, deviceID, cmdenvelope.TypeQuarantine, "QUARANTINE_PENDING")
@@ -696,7 +696,7 @@ func (s *Service) ApproveWipe(ctx context.Context, approverID, deviceID string) 
 	if err := s.guardCmdScope(ctx, approverID, deviceID, cmdenvelope.TypeWipe); err != nil {
 		return err
 	}
-	// Atomik claim (G-08): GetPendingWipe+DeletePendingWipe arasındaki TOCTOU yarışı
+	// Atomik claim: GetPendingWipe+DeletePendingWipe arasındaki TOCTOU yarışı
 	// kapatıldı — iki eşzamanlı onaylayandan yalnız biri talebi tüketir, böylece WIPE
 	// komutu en fazla BİR kez kuyruğa girer. Dört-göz (requester≠approver) da atomik.
 	requestedBy, consumed, err := s.store.ConsumePendingWipe(ctx, deviceID, approverID)
@@ -765,7 +765,7 @@ func (s *Service) CollectFile(ctx context.Context, adminID, deviceID, path strin
 	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return err
 	}
-	// G-04: uzaktan dosya toplama da diğer cihaz komutlarıyla TUTARLI biçimde Scope/ROE'den
+	// uzaktan dosya toplama da diğer cihaz komutlarıyla TUTARLI biçimde Scope/ROE'den
 	// geçer (kapsam dışı cihazdan kanıt/dosya toplanmasın; H5 chain-of-custody).
 	if err := s.guardCmdScope(ctx, adminID, deviceID, cmdenvelope.TypeCollectFile); err != nil {
 		return err
@@ -805,7 +805,7 @@ func (s *Service) AckEvent(ctx context.Context, adminID, eventID, status string)
 // yansıma), çünkü asıl doğruluk kaynağı komut kuyruğudur.
 // commandScope, komut tipinin Scope/ROE aksiyonunu PAYLAŞILAN komut tablosundan çözer
 // (fabricauthz.CommandAuthorizer ile AYNI kaynak — admin ve komut düzlemi tek kararda
-// uyuşur, Z2-02). exempt=true: tip scope DIŞLAMASINDAN muaftır (UNQUARANTINE,
+// uyuşur). exempt=true: tip scope DIŞLAMASINDAN muaftır (UNQUARANTINE,
 // COLLECT_DIAGNOSTICS; kısıt kaldıran/salt-okuma). RBAC ve kiracı denetimi muafiyetten
 // ETKİLENMEZ: UNQUARANTINE de QUARANTINE ile aynı rolü (OPERATOR+) ister. ok=false:
 // kayıtsız tip → çağıran REDDEDER (fail-closed).
@@ -855,7 +855,7 @@ func (s *Service) enforceDeviceTenant(ctx context.Context, adminID, deviceID str
 }
 
 // deviceCallerTenant, enforceDeviceTenant ile aynı kapıdır ve ek olarak çağıranın (sunucu-
-// tarafı çözülmüş) kiracısını döner; yazma-yolu SQL'inin kiracı predicate'ine (S-4) verilir.
+// tarafı çözülmüş) kiracısını döner; yazma-yolu SQL'inin kiracı predicate'ine verilir.
 // Bilinmeyen/pasif çağıran ErrUnknownAdmin (403) alır — asla platform kapsamına düşmez.
 func (s *Service) deviceCallerTenant(ctx context.Context, adminID, deviceID string) (string, error) {
 	adminTenant, err := s.store.AdminTenant(ctx, adminID)
@@ -939,8 +939,8 @@ func (s *Service) EraseDevice(ctx context.Context, adminID, deviceID string) (Er
 	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return ErasureReport{}, err
 	}
-	// G-03: en yıkıcı server mutasyonu artık Scope/ROE'den FAIL-CLOSED geçer (motor
-	// yapılandırılmamışsa reddedilir; wipe = Destructive). Not (F-C): EraseDeviceData
+	// en yıkıcı server mutasyonu artık Scope/ROE'den FAIL-CLOSED geçer (motor
+	// yapılandırılmamışsa reddedilir; wipe = Destructive). Not: EraseDeviceData
 	// tek transaction'da atomiktir (tümü-ya-hiç) → "veri silindi ama cert-revoke
 	// başarısız" kısmi-hata tutarsızlığı DB katmanında zaten engellenmiştir.
 	if err := s.guardScope(ctx, adminID, deviceID, scope.ActionWipe); err != nil {
@@ -987,7 +987,7 @@ func (s *Service) RevokeDevice(ctx context.Context, adminID, deviceID string) er
 	if err := s.enforceDeviceTenant(ctx, adminID, deviceID); err != nil {
 		return err
 	}
-	// G-05: kimlik/kredensiyel mutasyonu da Scope/ROE-farkında olsun (kapsam dışı cihazın
+	// kimlik/kredensiyel mutasyonu da Scope/ROE-farkında olsun (kapsam dışı cihazın
 	// sertifikası keyfi iptal edilmesin). Cert-revoke geri-alınabilir bir savunma olduğundan
 	// remote-etki: motor yapılandırıldığında zorlanır, yapılandırılmamışsa geçer (savunmayı
 	// yanlış-yapılandırma yüzünden engellememek için).
@@ -1001,7 +1001,7 @@ func (s *Service) RevokeDevice(ctx context.Context, adminID, deviceID string) er
 	return nil
 }
 
-// policyOwner, politika erişim kapısıdır (Z4a-04 / Z4b-04). Politikanın sahibi kiracıyı döner
+// policyOwner, politika erişim kapısıdır. Politikanın sahibi kiracıyı döner
 // ("" = platform/paylaşımlı). Kural:
 //   - bilinmeyen politika → ErrForbidden (varlık sızdırılmaz);
 //   - platform admini (boş kiracı) her politikayı okuyabilir/değiştirebilir;
@@ -1093,7 +1093,7 @@ func (s *Service) AssignPolicy(ctx context.Context, adminID, deviceID, policyID 
 	if !policyFitsDevice(pt, devTenant) {
 		return ErrForbidden
 	}
-	// G-04/F-A: politika atama, ardından pub.Publish ile cihaza ANLIK push tetikler —
+	// politika atama, ardından pub.Publish ile cihaza ANLIK push tetikler —
 	// yani DOLAYLI bir executor edge'i. Bu yüzden diğer yüksek-etkili cihaz yollarıyla
 	// TUTARLI biçimde Scope/ROE kapısından geçer (policy_enforce = HighImpact; motor
 	// yapılandırılmamışsa fail-closed).
@@ -1125,7 +1125,7 @@ func (s *Service) AddPolicyRule(ctx context.Context, adminID, policyID string, i
 	if in.Type == "APP_TIME_BLOCK" && (in.Start == "" || in.End == "") {
 		return ErrInvalidRule
 	}
-	// Z4a-04: kural itme yetkisi — yalnız KENDİ kiracısının politikası (platform admini hepsi);
+	// kural itme yetkisi — yalnız KENDİ kiracısının politikası (platform admini hepsi);
 	// platform/paylaşımlı politikayı kiracıya bağlı admin değiştiremez.
 	pt, err := s.policyOwner(ctx, adminID, policyID, true)
 	if err != nil {

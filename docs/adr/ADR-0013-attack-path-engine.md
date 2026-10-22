@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Traditional EDR and SIEM tools present security incidents as isolated events or static alert lists. Modern enterprise security platforms (Roadmap §24, §108 `XDR-006`) require graph-based attack path modeling to:
+Traditional EDR and SIEM tools present security incidents as isolated events or static alert lists. Modern enterprise security platforms require graph-based attack path modeling to:
 1. Discover multi-hop lateral movement from an initial entry point to crown jewel assets.
 2. Quantify path risk based on edge rarity and hop count.
 3. Pinpoint critical choke points (nodes where multiple attack paths converge) for high-leverage automated containment.

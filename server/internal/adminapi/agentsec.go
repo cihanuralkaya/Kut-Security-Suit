@@ -1,7 +1,7 @@
 package adminapi
 
 // agentsec.go — Agentic Threat Defense (aisec) uçları. Agent Causality Graph artık kiracı
-// BAŞINA bölümlüdür (Z5-02 / Z4a-05): her okuma/yazma, SUNUCU-TARAFI çözülmüş kiracının
+// BAŞINA bölümlüdür: her okuma/yazma, SUNUCU-TARAFI çözülmüş kiracının
 // bölümüne gider. Kiracıya bağlı çağıran yalnız kendi bölümünü okur/yazar; istekteki
 // tenant parametresi/başlığı yok sayılır. Platform admini tüm bölümleri açık "tenant"
 // filtresiyle ya da filtresiz okuyabilir; yazımı açık "tenant" ile bir kiracı bölümüne,
@@ -147,11 +147,11 @@ func (s *Server) handleAgentSecFindings(w http.ResponseWriter, r *http.Request, 
 }
 
 // handleAgentSecCanonical, AG exfil bulgularını MEVCUT kanonik olay modeline (model.Event)
-// çevirip döner (P0-B). Amaç: agent güvenlik tespitlerini ikinci bir modele değil, dedup
+// çevirip döner. Amaç: agent güvenlik tespitlerini ikinci bir modele değil, dedup
 // (§6)/korelasyon (§5)/SIEM ile aynı kanonik hatta oturtmak. Salt-okunur; enforcement
 // üretmez (INV-AG-010). Kiracı SUNUCU-TARAFI: kiracıya bağlı admin kendi bölümüne sabitlenir
 // (?tenant= YOK SAYILIR — çapraz-kiracı sızıntısını önler); platform admini isteğe bağlı
-// ?tenant= ile bölüm seçer (sınırda doğrulanır, Z4b-08), filtresizse her bulgu kendi
+// ?tenant= ile bölüm seçer (sınırda doğrulanır), filtresizse her bulgu kendi
 // bölümünün kiracısıyla atıflanır.
 func (s *Server) handleAgentSecCanonical(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.agentSec == nil {
@@ -182,7 +182,7 @@ func (s *Server) handleAgentSecCanonical(w http.ResponseWriter, r *http.Request,
 // Causality Graph'ı besler (telemetri kaynağı seam'i). Gözlemler DATA'dır; enforcement
 // üretmez (INV-AG-010). Kenar tipleri: read (agent→source), write (agent→sink), delegate
 // (delegator→delegatee), influence (from→to). Bilinmeyen trust fail-safe Untrusted'a düşer.
-// Yazım SUNUCU-TARAFI çözülmüş kiracı bölümüne gider (Z5-02): kiracılı OPERATOR başka
+// Yazım SUNUCU-TARAFI çözülmüş kiracı bölümüne gider: kiracılı OPERATOR başka
 // kiracının düğüm güvenini ezemez / tavanını dolduramaz.
 func (s *Server) handleAgentSecEvents(w http.ResponseWriter, r *http.Request, adminID string) {
 	if s.agentSec == nil {
@@ -217,7 +217,7 @@ func (s *Server) handleAgentSecEvents(w http.ResponseWriter, r *http.Request, ad
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nodes": len(req.Nodes), "edges": len(req.Edges)})
 }
 
-// handleAgentSecTelemetry, KRİPTOGRAFİK İMZALI agent telemetrisini alır (P0-A). Session
+// handleAgentSecTelemetry, KRİPTOGRAFİK İMZALI agent telemetrisini alır. Session
 // gerektirmez; kimlik ed25519 imzayla doğrulanır. TrustVerifier fail-closed'dır: imza/
 // tenant/sequence/replay/tazelik kontrolü geçmezse 403 (reason'lı) döner ve graf
 // BESLENMEZ. Kabul edilirse payload (nodes/edges), DOĞRULANMIŞ agent kimliğinin kayıtlı

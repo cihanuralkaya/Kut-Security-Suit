@@ -1,5 +1,5 @@
 // Package chaos, platformun dayanıklılık (resilience) beklentilerini testlerde
-// doğrulamak için saf-Go bir arıza-enjeksiyon koşum takımı sağlar (§41). Diğer
+// doğrulamak için saf-Go bir arıza-enjeksiyon koşum takımı sağlar. Diğer
 // paketler bunu TESTLERİNDE içe aktarır: gerçek bir C2/işçi/DB/ağ olmadan,
 // denetlenebilir koşullar altında "kaos" üretilir ve sistemin beklenen biçimde
 // kurtulup kurtulmadığı ileri sürülür.
@@ -256,7 +256,7 @@ func (fi *FaultInjector) count(f func(*Stats)) {
 	fi.mu.Unlock()
 }
 
-// --- Senaryolar (§41) -------------------------------------------------------
+// --- Senaryolar -------------------------------------------------------
 
 // Scenario, yol-haritasının dayanıklılık senaryolarını numaralandırır. Her biri
 // bir Config'e eşlenir ve ondan bir FaultInjector kurulabilir.

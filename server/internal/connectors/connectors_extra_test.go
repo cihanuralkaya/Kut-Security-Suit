@@ -11,7 +11,7 @@ import (
 )
 
 // TestNormalizersSmoke, CEF/LEEF/JSON/WinEvent normalizer adaptörlerinin geçerli ham
-// kayıtları kanonik olaya çevirdiğini doğrular (§29).
+// kayıtları kanonik olaya çevirdiğini doğrular.
 func TestNormalizersSmoke(t *testing.T) {
 	// CEF.
 	cefEvs, err := CEFNormalizer("CEF:0|KUT|FW|1.0|100|Erişim reddedildi|5|src=1.2.3.4", tnow)
@@ -56,7 +56,7 @@ func TestNormalizersSmoke(t *testing.T) {
 }
 
 // TestCloudNormalizerGCPAndM365, CloudNormalizer'ın gcp/m365 sağlayıcıları için
-// kaynağı doğru damgaladığını doğrular (§30).
+// kaynağı doğru damgaladığını doğrular.
 func TestCloudNormalizerGCPAndM365(t *testing.T) {
 	gcp := CloudNormalizer("gcp")
 	evs, err := gcp(`{"eventName":"storage.buckets.get","requestID":"r1"}`, tnow)

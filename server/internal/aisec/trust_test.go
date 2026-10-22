@@ -13,7 +13,7 @@ func mkSigned(agentID, tenant string, seq uint64, ts time.Time, nonce string, pa
 	return o
 }
 
-// TestTrustVerifier, P0-A kabul kriterlerini (DoD) uçtan uca doğrular.
+// TestTrustVerifier, kabul kriterlerini (DoD) uçtan uca doğrular.
 func TestTrustVerifier(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(nil)
 	reg := NewMemKeyRegistry()

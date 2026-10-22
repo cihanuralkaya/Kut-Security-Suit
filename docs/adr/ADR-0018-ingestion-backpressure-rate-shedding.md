@@ -12,7 +12,7 @@ Accepted (retained through the 2026-10 telemetry-plane convergence)
 > usage negative and silently disable shedding under load).
 
 ## Context
-During distributed attacks, network scanning storms, or ransomware outbreaks, millions of endpoint telemetry events can surge simultaneously into the ingestion pipeline (Roadmap §39, §108 `SCALE-002`). Without backpressure protection, memory queues overflow, exhausting server RAM and leading to denial-of-service crashes.
+During distributed attacks, network scanning storms, or ransomware outbreaks, millions of endpoint telemetry events can surge simultaneously into the ingestion pipeline. Without backpressure protection, memory queues overflow, exhausting server RAM and leading to denial-of-service crashes.
 
 ## Decision
 We implemented `BackpressureController` in `server/internal/telemetryplane`:

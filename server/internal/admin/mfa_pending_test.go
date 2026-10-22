@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// S-7: yeniden kayıtta yeni sır BEKLEYEN olarak ayrı tutulur; etkin sır ve enrolled=true,
+// yeniden kayıtta yeni sır BEKLEYEN olarak ayrı tutulur; etkin sır ve enrolled=true,
 // yeni sır YENİ sırdan geçerli bir kodla etkinleştirilene dek aynen kalır (MFA hiçbir anda
 // fiilen kapanmaz). Bu test, ayrı-bekleyen-sır tasarımı olmadan (eski davranış: enrolled=false)
 // başarısız olur.

@@ -1,5 +1,5 @@
 // Package scope, MERKEZİ ve BYPASS-EDİLEMEZ Scope / Rules-of-Engagement (ROE)
-// guardrail motorudur (roadmap §4). Yüksek-etkili her operasyon — WIPE, LOCK,
+// guardrail motorudur. Yüksek-etkili her operasyon — WIPE, LOCK,
 // RESTART, QUARANTINE, uzak komut, policy-enforcement, aktif tarama — hedefe
 // uygulanmadan ÖNCE bu motordan geçmelidir. Böylece scope kontrolü yalnız API
 // katmanında değil, komut/worker/agent/SOAR yollarının hepsinde tek noktada

@@ -14,7 +14,7 @@ func (m *mismatchStore) UpsertEnrollingDevice(_ context.Context, _ DeviceEnrollm
 	return "", ErrTenantMismatch
 }
 
-// Z4b-02: depo kiracı uyuşmazlığı bildirirse Enroll başarısız olur ve HİÇBİR sertifika
+// depo kiracı uyuşmazlığı bildirirse Enroll başarısız olur ve HİÇBİR sertifika
 // imzalanmaz/kaydedilmez (cihaz devralma yolu kapalı).
 func TestEnrollTenantMismatchIssuesNoCertificate(t *testing.T) {
 	base := newMemStore()

@@ -104,11 +104,11 @@ type Server struct {
 	features       map[string]any                 // dağıtım koruma-duruşu (opsiyonel özellik bayrakları)
 	tenantID       string                         // dağıtımın kiracı kimliği (rapor atıfı)
 	tenantEnforce  bool                           // sıkı çok-tenant (KUT_TENANT_ENFORCE=1): kiracısız ingest token'ı REDDEDİLİR (INV-044)
-	aiProvider     aiassist.Provider              // §27 AI asistanı sağlayıcısı (nil → LocalProvider)
+	aiProvider     aiassist.Provider              // AI asistanı sağlayıcısı (nil → LocalProvider)
 	tracer         *trace.Tracer                  // §14 dağıtık izleme (nil → kapalı)
-	abacEngine     *iam.Engine                    // §35 ABAC motoru (nil → uç kapalı)
-	scim           iam.Provisioner                // §35 SCIM kullanıcı sağlayıcı (nil → uç kapalı)
-	mspStore       MSPStore                       // §37 MSP müşteri deposu (nil → uç kapalı)
+	abacEngine     *iam.Engine                    // ABAC motoru (nil → uç kapalı)
+	scim           iam.Provisioner                // SCIM kullanıcı sağlayıcı (nil → uç kapalı)
+	mspStore       MSPStore                       // MSP müşteri deposu (nil → uç kapalı)
 	gateway        *authz.Gateway                 // §4 merkezi Action Authorization Gateway (blast-radius + rate-limit)
 	graph          *entitygraph.Graph             // varlık/tehdit grafı (salt-okunur pivot uçları; nil → uç kapalı)
 	cases          casemgmt.Store                 // SOC vaka yönetimi (varsayılan bellek-içi; SetCaseStore ile DB destekli)
@@ -126,7 +126,7 @@ type Server struct {
 	reqVerifyClose bool                           // true → CONTAINED→CLOSED vaka geçişi VERIFIED check ister (opt-in)
 }
 
-// MSPStore, MSP müşteri kaydının kalıcı deposudur (§37). db.Store (kalıcı) ve
+// MSPStore, MSP müşteri kaydının kalıcı deposudur. db.Store (kalıcı) ve
 // memstore.Store (demo) karşılar.
 type MSPStore interface {
 	MSPAddCustomer(name, tenantID string) (msp.Customer, error)
@@ -135,14 +135,14 @@ type MSPStore interface {
 	MSPDeactivateCustomer(id string) (bool, error)
 }
 
-// SetSCIMProvisioner, SCIM 2.0 kullanıcı sağlayıcısını bağlar (§35 — IdP provisioning).
+// SetSCIMProvisioner, SCIM 2.0 kullanıcı sağlayıcısını bağlar (IdP provisioning).
 // nil → /scim/v2/Users uçları kapalı.
 func (s *Server) SetSCIMProvisioner(p iam.Provisioner) { s.scim = p }
 
-// SetMSPStore, MSP müşteri deposunu bağlar (§37). nil → /api/msp/customers uçları kapalı.
+// SetMSPStore, MSP müşteri deposunu bağlar. nil → /api/msp/customers uçları kapalı.
 func (s *Server) SetMSPStore(m MSPStore) { s.mspStore = m }
 
-// SetABAC, öznitelik-tabanlı erişim kontrolü (ABAC) motorunu bağlar (§35 — RBAC'ı
+// SetABAC, öznitelik-tabanlı erişim kontrolü (ABAC) motorunu bağlar (RBAC'ı
 // tamamlar). nil → /api/iam/abac/evaluate ucu kapalı.
 func (s *Server) SetABAC(e *iam.Engine) { s.abacEngine = e }
 
@@ -417,7 +417,7 @@ func (s *Server) SetHuntingAgent(a *aiprovider.HuntingAgent) { s.hunting = a }
 // nil → /api/ai/detection/draft kapalı.
 func (s *Server) SetDetectionAgent(a *aiprovider.DetectionAgent) { s.detection = a }
 
-// SetAgentTrust, imzalı agent telemetri doğrulayıcısını bağlar (P0-A). nil →
+// SetAgentTrust, imzalı agent telemetri doğrulayıcısını bağlar. nil →
 // /api/agentsec/telemetry kapalı. Bu uç session değil, ed25519 İMZA ile kimlik doğrular.
 func (s *Server) SetAgentTrust(v *aisec.TrustVerifier) { s.agentTrust = v }
 
@@ -560,7 +560,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/ai/hunt", s.authed(s.handleAIHunt))
 	mux.HandleFunc("POST /api/ai/detection/draft", s.authed(s.handleAIDetectionDraft))
 	mux.HandleFunc("POST /api/ai/risk", s.authed(s.handleAIRisk))
-	// Session DEĞİL, ed25519 İMZA ile kimlik doğrulanan agent telemetri ucu (P0-A).
+	// Session DEĞİL, ed25519 İMZA ile kimlik doğrulanan agent telemetri ucu.
 	mux.HandleFunc("POST /api/agentsec/telemetry", s.handleAgentSecTelemetry)
 	mux.HandleFunc("GET /api/hunt/sequence-score", s.authed(s.handleSequenceScore))
 	mux.HandleFunc("POST /api/cases", s.authed(s.handleCaseCreate))
@@ -931,7 +931,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	// Olay kiracısı SUNUCU-TARAFI: token'ın (oluşturmada platform admininin verdiği) bağlı
 	// kiracısı. İstek başlığı/gövdesi/query'si kiracı SEÇEMEZ. Kiracısız (legacy) token
 	// KUT_TENANT_ENFORCE=1 iken REDDEDİLİR (INV-044: eksik kiracı → DENY); kapalıyken
-	// dağıtımın varsayılan kiracısına düşer (Z3-01 / Z4a-15).
+	// dağıtımın varsayılan kiracısına düşer.
 	evTenant, tenantOK := s.ingestTenant(tokenTenant)
 	if !tenantOK {
 		writeErr(w, http.StatusForbidden, "kiracı zorunlu: ingest token'ı bir kiracıya bağlı değil")
@@ -1099,7 +1099,7 @@ func (s *Server) handleTokenCreate(w http.ResponseWriter, r *http.Request, admin
 		return
 	}
 	// Yönetilen metrics/ingest token'ları DAĞITIM GENELİ kimlik bilgileridir (tüm kiracıların
-	// özetini okur / herhangi bir kaynak için olay yazar) → yalnız PLATFORM admini (Z4a-03).
+	// özetini okur / herhangi bir kaynak için olay yazar) → yalnız PLATFORM admini.
 	if respondErr(w, s.requirePlatformAdmin(r.Context(), adminID)) {
 		return
 	}
@@ -1121,7 +1121,7 @@ func (s *Server) handleTokenCreate(w http.ResponseWriter, r *http.Request, admin
 		writeErr(w, http.StatusBadRequest, "geçersiz kapsam (metrics|ingest)")
 		return
 	}
-	// Kiracı bağı (Z3-01): yalnız ingest kapsamı; biçim sınırda doğrulanır (Z4b-08). Metrics
+	// Kiracı bağı: yalnız ingest kapsamı; biçim sınırda doğrulanır. Metrics
 	// token'ı filo-geneli okuduğundan kiracıya bağlanamaz. KUT_TENANT_ENFORCE=1 iken
 	// kiracısız ingest token'ı hiç üretilmez (kullanımda zaten reddedilirdi).
 	tokTenant, terr := authtoken.ValidateTenantBinding(req.Scope, strings.TrimSpace(req.Tenant))
@@ -1833,7 +1833,7 @@ func (s *Server) handleAIHunt(w http.ResponseWriter, r *http.Request, adminID st
 		writeJSON(w, http.StatusOK, map[string]any{"available": false})
 		return
 	}
-	// Av yalnız çağıranın kiracısının graf düğümlerini tarar (Z5-03): kiracı SUNUCU-TARAFI
+	// Av yalnız çağıranın kiracısının graf düğümlerini tarar: kiracı SUNUCU-TARAFI
 	// çözülür; kiracılı çağıran başka kiracının süreç/IP/cihaz düğümlerini GÖREMEZ. Platform
 	// admini varsayılan olarak hepsini görür, açık "tenant" ile daraltabilir.
 	scopeTenant, scopeAll, serr := s.readScope(r.Context(), adminID, req.Tenant)
@@ -2463,7 +2463,7 @@ func (s *Server) handleDeviceDetail(w http.ResponseWriter, r *http.Request, admi
 }
 
 func (s *Server) handleListPolicies(w http.ResponseWriter, r *http.Request, adminID string) {
-	// Z4a-04: politikalar kiracı sahibi taşır; kiracıya bağlı çağıran yalnız kendi kiracısının
+	// politikalar kiracı sahibi taşır; kiracıya bağlı çağıran yalnız kendi kiracısının
 	// ve platform/paylaşımlı politikaları görür (kiracı SUNUCU-TARAFI çözülür).
 	tenant, err := s.callerTenant(r.Context(), adminID)
 	if respondErr(w, err) {
@@ -2544,7 +2544,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request, adminI
 		return
 	}
 	// format=ocsf: olayları sektör-standardı OCSF şemasına eşleyip döner (SIEM/veri-gölü
-	// interop; roadmap P1). Kanonik EventID korunur → OCSF çıktısı da yinelenebilir.
+	// interop). Kanonik EventID korunur → OCSF çıktısı da yinelenebilir.
 	if q.Get("format") == "ocsf" {
 		evs := make([]model.Event, 0, len(events))
 		for _, d := range events {
@@ -2604,7 +2604,7 @@ func (s *Server) handleTestDetection(w http.ResponseWriter, r *http.Request, _ s
 	})
 }
 
-// handleAIAnalyze, AI SOC ASİSTANI (§27): bir analiz isteğini (alarm/olay özeti,
+// handleAIAnalyze, AI SOC ASİSTANI: bir analiz isteğini (alarm/olay özeti,
 // MITRE eşleme, yanlış-pozitif, düzeltme önerisi) sağlayıcıya iletir ve ÖNERİ döner.
 // KRİTİK: yalnız öneridir — hiçbir eylem YÜRÜTÜLMEZ. Önerilen eylemler ancak
 // policy + insan onayı (aiassist.Gate) ile uygulanabilir; bu uç yürütme yapmaz.
@@ -2635,7 +2635,7 @@ func (s *Server) handleAIAnalyze(w http.ResponseWriter, r *http.Request, _ strin
 	})
 }
 
-// handleABACEvaluate, ÖZNİTELİK-TABANLI ERİŞİM KONTROLÜ (§35): bir erişim isteğini
+// handleABACEvaluate, ÖZNİTELİK-TABANLI ERİŞİM KONTROLÜ: bir erişim isteğini
 // (özne/kaynak öznitelikleri + eylem) yapılandırılmış ABAC politikalarına göre
 // değerlendirir ve karar (izin/ret + eşleşen politika) döner. RBAC'ı tamamlar; salt
 // değerlendirme (politikaları uygulamaz, yalnız yanıtlar). Motor yapılandırılmamışsa 404.
@@ -2645,7 +2645,7 @@ func (s *Server) handleABACEvaluate(w http.ResponseWriter, r *http.Request, admi
 		return
 	}
 	// Politika-oracle'ı: yetkilendirme yüzeyini haritalamak isteyen düşük-yetkili bir
-	// kullanıcıya kapalı olmalı (§35 ADMIN).
+	// kullanıcıya kapalı olmalı (ADMIN).
 	if respondErr(w, s.adminSvc.EnsureRole(r.Context(), adminID, admin.RoleAdmin)) {
 		return
 	}
@@ -2657,7 +2657,7 @@ func (s *Server) handleABACEvaluate(w http.ResponseWriter, r *http.Request, admi
 	writeJSON(w, http.StatusOK, map[string]any{"allowed": allowed, "matched_policy": matched})
 }
 
-// --- SCIM 2.0 kullanıcı sağlama (§35) — ADMIN; IdP provisioning ------------------
+// --- SCIM 2.0 kullanıcı sağlama — ADMIN; IdP provisioning ------------------
 
 // scimUUID, yeni bir SCIM kullanıcısı için rastgele RFC4122 v4 UUID üretir (DB ::uuid
 // kolonuyla uyumlu). Provisioner sözleşmesi id'yi çağırandan bekler.
@@ -2780,7 +2780,7 @@ func (s *Server) handleSCIMDeactivate(w http.ResponseWriter, r *http.Request, ad
 	writeJSON(w, http.StatusOK, u)
 }
 
-// --- MSP müşteri yönetimi (§37) — ADMIN --------------------------------------
+// --- MSP müşteri yönetimi — ADMIN --------------------------------------
 
 // handleMSPCreateCustomer, yeni bir MSP müşterisi ekler.
 func (s *Server) handleMSPCreateCustomer(w http.ResponseWriter, r *http.Request, adminID string) {
@@ -2805,7 +2805,7 @@ func (s *Server) handleMSPCreateCustomer(w http.ResponseWriter, r *http.Request,
 		writeErr(w, http.StatusBadRequest, "name ve tenant_id zorunlu")
 		return
 	}
-	// Z4b-08: kiracı kimliği sınırda doğrulanır/normalleştirilir (küçük harf, [a-z0-9-], 1-63);
+	// kiracı kimliği sınırda doğrulanır/normalleştirilir (küçük harf, [a-z0-9-], 1-63);
 	// büyük-küçük harf varyantları ayrı müşteri olamaz, uzun değer VARCHAR(63) taşmasıyla 500 vermez.
 	normTenant, nerr := normalizeTenantInput(req.TenantID)
 	if nerr != nil {
@@ -3027,7 +3027,7 @@ func (s *Server) buildReportData(r *http.Request, tenantID string) (report.Data,
 	}
 	incs, _ := s.reader.Incidents(r.Context(), 20, tenantID)
 	// Süreç-geneli sayaçlar (tespit/alarm/IoC...) TÜM kiracıların etkinliğini toplar: kiracıya
-	// bağlı rapora KONMAZ (Z5-15). Platform raporu (tenantID == "") bunları taşır.
+	// bağlı rapora KONMAZ. Platform raporu (tenantID == "") bunları taşır.
 	var c map[string]int64
 	if tenantID == "" {
 		c = metrics.Counters()
@@ -3075,7 +3075,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request, adminID st
 		writeJSON(w, http.StatusOK, d)
 		return
 	case "md", "markdown":
-		// Markdown rapor (§33) — kind=executive|technical|incident (varsayılan technical).
+		// Markdown rapor — kind=executive|technical|incident (varsayılan technical).
 		kind := report.Kind(r.URL.Query().Get("kind"))
 		switch kind {
 		case report.KindExecutive, report.KindTechnical, report.KindIncident:
@@ -3490,7 +3490,7 @@ func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request, adm
 }
 
 // handleDeviceEvidence, cihazın toplanan artefaktlarını kurcalamaya-dayanıklı delil
-// kayıtları (SHA-256 + gözetim-zinciri, doğrulanmış) olarak döner (§23; adli/IR zinciri).
+// kayıtları (SHA-256 + gözetim-zinciri, doğrulanmış) olarak döner (; adli/IR zinciri).
 // OPERATOR+: zincir, delile kimin dokunduğunu (actor) ve dosya yollarını içerir; indirme/
 // gözetim-yazımı ile tek tutarlı adli eşik.
 func (s *Server) handleDeviceEvidence(w http.ResponseWriter, r *http.Request, adminID string) {
@@ -3509,7 +3509,7 @@ func (s *Server) handleDeviceEvidence(w http.ResponseWriter, r *http.Request, ad
 }
 
 // handleRecordCustody, bir delile (artefakt) KALICI bir gözetim olayı (ACCESSED/
-// TRANSFERRED/SEALED) ekler (§23): eylemi yapan = oturum açan admin. Zincirin ucuna
+// TRANSFERRED/SEALED) ekler: eylemi yapan = oturum açan admin. Zincirin ucuna
 // hash-bağlı yeni kayıt hesaplanır ve depolanır. Adli/IR zinciri.
 func (s *Server) handleRecordCustody(w http.ResponseWriter, r *http.Request, adminID string) {
 	// Delil zincirine KALICI yazma: salt-okur VIEWER değil, OPERATOR+ (adli/IR rolü).
@@ -3670,7 +3670,7 @@ func (s *Server) handleSoftwareSearch(w http.ResponseWriter, r *http.Request, ad
 // etkinlik kartı). Süreç başından beri kümülatiftir (/metrics ile aynı kaynak).
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request, adminID string) {
 	// Sayaçlar süreç-geneldir (tüm kiracıların etkinliği): kiracıya bağlı çağırana VERİLMEZ
-	// (Z5-15); yalnız platform admini görür. Kiracılı yanıt boş sayaç + counters_omitted bayrağı taşır.
+	// yalnız platform admini görür. Kiracılı yanıt boş sayaç + counters_omitted bayrağı taşır.
 	ct, err := s.callerTenant(r.Context(), adminID)
 	if respondErr(w, err) {
 		return

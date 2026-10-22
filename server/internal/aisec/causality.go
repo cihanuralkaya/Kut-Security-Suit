@@ -1,6 +1,6 @@
 package aisec
 
-// causality.go — AG-06: Agent Causality Graph (KUT-AI-SEC-006/007/009). Veri-zemininin
+// causality.go — Agent Causality Graph (KUT-AI-SEC-006/007/009). Veri-zemininin
 // asıl amacı: agent olaylarını (kimlik, delegation, tool/memory read/write, influence) bir
 // nedensellik grafına örmek ve TAINT'i graf boyunca yayarak AI-agent saldırı zincirini
 // uçtan-uca tespit etmek — ör. `untrusted context → agent → credential read → external

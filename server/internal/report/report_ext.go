@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// report_ext.go — GELİŞMİŞ RAPORLAMA (§33): rapor TÜRLERİ (executive/technical/incident)
+// report_ext.go — GELİŞMİŞ RAPORLAMA: rapor TÜRLERİ (executive/technical/incident)
 // ve yeni MARKDOWN biçimi. Markdown, e-posta/wiki/PDF-dönüşümü için taşınabilir bir
 // metin biçimidir (harici PDF kütüphanesi gerektirmeden). HTML/CSV/JSON korunur.
 
@@ -59,7 +59,7 @@ func RenderMarkdown(d Data, kind Kind) string {
 		fmt.Fprintf(&b, "| Uyumsuz | %d (%%%s) |\n\n", d.NonCompliant, pctStr(d.NonCompliant, d.DevicesTotal))
 	}
 
-	// Tehdit etkinliği (tümünde). Süreç-geneli sayaçlar kiracıya bağlı raporda ATLANIR (Z5-15).
+	// Tehdit etkinliği (tümünde). Süreç-geneli sayaçlar kiracıya bağlı raporda ATLANIR.
 	if !d.CountersOmitted {
 		b.WriteString("## Tehdit etkinliği\n\n")
 		b.WriteString("| Metrik | Değer |\n|---|---:|\n")

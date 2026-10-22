@@ -74,7 +74,7 @@ func doReq(t *testing.T, method, url, token string, body string) int {
 	return resp.StatusCode
 }
 
-// --- Z4b-01 / Z4a-02: enrollment token kiracısı ---
+// --- enrollment token kiracısı ---
 
 func TestIssueTokenTenantBoundCallerCannotChooseTenant(t *testing.T) {
 	ts, store := wallServer(t)
@@ -140,7 +140,7 @@ func TestIssueTokenPlatformAdminChoosesValidatedTenant(t *testing.T) {
 	}
 }
 
-// --- Z4b-10: token iptali kiracı kapısı ---
+// --- token iptali kiracı kapısı ---
 
 func TestRevokeTokenTenantGateHTTP(t *testing.T) {
 	ts, store := wallServer(t)
@@ -180,7 +180,7 @@ func TestRevokeTokenTenantGateHTTP(t *testing.T) {
 	}
 }
 
-// --- Z4a-01 / Z4b-05: yönetici-yönetimi HTTP ---
+// --- yönetici-yönetimi HTTP ---
 
 func TestAdminManagementTenantScopeHTTP(t *testing.T) {
 	ts, store := wallServer(t)
@@ -235,7 +235,7 @@ func TestAdminManagementTenantScopeHTTP(t *testing.T) {
 	}
 }
 
-// --- Z4a-03: yönetilen API token'ları yalnız platform admini ---
+// --- yönetilen API token'ları yalnız platform admini ---
 
 func TestManagedAPITokensPlatformAdminOnly(t *testing.T) {
 	srv, store := newServer(t)
@@ -280,7 +280,7 @@ func TestManagedAPITokensPlatformAdminOnly(t *testing.T) {
 	}
 }
 
-// --- Z4a-09: cihaz etiketleri ---
+// --- cihaz etiketleri ---
 
 func TestDeviceTagsCrossTenantDeniedHTTP(t *testing.T) {
 	ts, store := wallServer(t)
@@ -326,7 +326,7 @@ func TestForensicsRoutesRequireOperator(t *testing.T) {
 	}
 }
 
-// --- Z4a-06: MFA yeniden kayıt HTTP ---
+// --- MFA yeniden kayıt HTTP ---
 
 func TestMFAReenrollNeedsCodeHTTP(t *testing.T) {
 	ts, store := wallServer(t)
@@ -369,7 +369,7 @@ func TestMFAReenrollNeedsCodeHTTP(t *testing.T) {
 	}
 }
 
-// S-1 (HTTP): kiracının SON etkin ADMIN'i kendini düşüremez/pasifleştiremez (403); ikinci bir
+// (HTTP): kiracının SON etkin ADMIN'i kendini düşüremez/pasifleştiremez (403); ikinci bir
 // ADMIN varsa düşürebilir. Platform admini ve diğer kiracıların ADMIN'leri sayılmaz.
 func TestLastTenantAdminSelfDemotionDeniedHTTP(t *testing.T) {
 	ts, store := wallServer(t)
@@ -397,7 +397,7 @@ func TestLastTenantAdminSelfDemotionDeniedHTTP(t *testing.T) {
 	}
 }
 
-// --- Z4a-04 / Z4b-04: politika sahipliği HTTP ---
+// --- politika sahipliği HTTP ---
 
 func TestPolicyTenantWallHTTP(t *testing.T) {
 	ts, store := wallServer(t)
@@ -504,7 +504,7 @@ func TestPolicyTenantWallHTTP(t *testing.T) {
 	}
 }
 
-// W1b-1 QA: artefakt/delil LİSTELEME uçları (dosya yolları + gözetim-zinciri aktörleri) de
+// Kiracı Duvarı II: artefakt/delil LİSTELEME uçları (dosya yolları + gözetim-zinciri aktörleri) de
 // adli eşikte (OPERATOR+) olmalı; gözetim-zinciri yazımı yönetici denetim izine de düşmeli.
 func TestForensicsListingsRequireOperatorAndCustodyIsAudited(t *testing.T) {
 	ts, store := wallServer(t)
@@ -566,7 +566,7 @@ func (r *recMSP) MSPAddCustomer(name, tenantID string) (msp.Customer, error) {
 	return msp.Customer{Name: name, TenantID: tenantID}, nil
 }
 
-// Z4b-08: istekten gelen kiracı değerleri sınırda doğrulanır/normalleştirilir (MSP müşterisi,
+// istekten gelen kiracı değerleri sınırda doğrulanır/normalleştirilir (MSP müşterisi,
 // yönetici oluşturma, ajan-güvenlik ?tenant= filtresi). Boş kiracı yönetici oluşturmada
 // "platform" olarak KALIR ('default'a dönüşmez).
 func TestTenantInputValidatedAtBoundaries(t *testing.T) {

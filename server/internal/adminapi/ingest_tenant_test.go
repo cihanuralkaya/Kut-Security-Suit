@@ -70,7 +70,7 @@ func mintIngest(t *testing.T, ts *httptest.Server, plat, tenantID string) string
 
 const cefLine = "CEF:0|Vendor|Product|1.0|100|firewall deny|5|src=10.0.0.5 rt=1700000000000"
 
-// TestIngestTokenBindsTenant (Z3-01): kiracıya bağlı token ile gelen olaylar SaveEvents'ten
+// TestIngestTokenBindsTenant: kiracıya bağlı token ile gelen olaylar SaveEvents'ten
 // ÖNCE o kiracıyla damgalanır; aynı kaynak adını kullanan iki kiracı AYRI cihaz kimliğine
 // düşer; istemci başlık/gövde/query ile kiracı SEÇEMEZ.
 func TestIngestTokenBindsTenant(t *testing.T) {

@@ -42,7 +42,7 @@ func agentSecServer(t *testing.T) (*httptest.Server, *memStore) {
 	return ts, store
 }
 
-// Z5-02 / Z4a-05: agentsec grafı kiracı başına bölümlüdür — okuma ve yazma çapraz-kiracı
+// agentsec grafı kiracı başına bölümlüdür — okuma ve yazma çapraz-kiracı
 // geçmez; platform admini tümünü (etiketli) ya da açık filtreyle tek kiracıyı görür.
 func TestAgentSecTenantPartitionHTTP(t *testing.T) {
 	ts, store := agentSecServer(t)
@@ -173,7 +173,7 @@ func TestAgentSecSignedTelemetryLandsInRegisteredTenantPartition(t *testing.T) {
 	}
 }
 
-// Z5-03: /api/ai/hunt kiracılı çağıranı kendi graf düğümleriyle sınırlar; platform admini hepsini
+// /api/ai/hunt kiracılı çağıranı kendi graf düğümleriyle sınırlar; platform admini hepsini
 // görür ve açık tenant ile daraltır; kiracılı çağıranın body'deki tenant'ı yok sayılır.
 func TestAIHuntTenantScopedHTTP(t *testing.T) {
 	g := entitygraph.New()
@@ -235,7 +235,7 @@ func TestAIHuntTenantScopedHTTP(t *testing.T) {
 	}
 }
 
-// Z5-15: kiracıya bağlı rapor ve /api/activity süreç-geneli sayaçları TAŞIMAZ; platform taşır.
+// kiracıya bağlı rapor ve /api/activity süreç-geneli sayaçları TAŞIMAZ; platform taşır.
 func TestReportAndActivityOmitProcessCountersForTenant(t *testing.T) {
 	srv, store := newServer(t)
 	ts := httptest.NewServer(srv.Handler())
@@ -283,7 +283,7 @@ func TestReportAndActivityOmitProcessCountersForTenant(t *testing.T) {
 	}
 }
 
-// Z5-18: /api/hunt/sequence-score çağıranın KİRACI taban çizgisini kullanır; kiracılı çağıran
+// /api/hunt/sequence-score çağıranın KİRACI taban çizgisini kullanır; kiracılı çağıran
 // başka kiracının taban çizgisini seçemez (?tenant= yok sayılır); platform admini seçebilir.
 func TestSequenceScoreTenantBaselines(t *testing.T) {
 	srv, store := newServer(t)

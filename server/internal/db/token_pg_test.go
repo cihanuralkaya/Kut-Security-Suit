@@ -1,6 +1,6 @@
 package db
 
-// Yönetilen ingest token'ının kiracı bağı (Z3-01) — gerçek PostgreSQL'e karşı. KUT_DATABASE_URL
+// Yönetilen ingest token'ının kiracı bağı — gerçek PostgreSQL'e karşı. KUT_DATABASE_URL
 // yoksa ATLANIR (CI'daki "DB yolu (PostgreSQL)" işi koşturur).
 
 import (

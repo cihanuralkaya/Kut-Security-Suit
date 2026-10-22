@@ -51,7 +51,7 @@ func devStatus(ctx context.Context, t *testing.T, s *Store, id string) string {
 	return st
 }
 
-// Z4b-02 (PG): ON CONFLICT yolu cihazı kiracılar arası TAŞIMAZ ve karantinayı ACTIVE'e düşürmez.
+// (PG): ON CONFLICT yolu cihazı kiracılar arası TAŞIMAZ ve karantinayı ACTIVE'e düşürmez.
 func TestPGEnrollTenantWallAndStatusKept(t *testing.T) {
 	s, ctx := pgStore(t)
 	tA, tB := uniq(t, "ta-"), uniq(t, "tb-")
@@ -68,7 +68,7 @@ func TestPGEnrollTenantWallAndStatusKept(t *testing.T) {
 	t.Cleanup(func() { _, _ = s.pool.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, id) })
 
 	// NEGATIF (re-home): aynı MAC, başka kiracının token'ı → A'nın satırına DOKUNULMAZ; B kendi
-	// AYRI cihazını alır (S-3: tekillik kiracı başına, MAC-squat DoS yok).
+	// AYRI cihazını alır (tekillik kiracı başına, MAC-squat DoS yok).
 	evil := in
 	evil.TenantID, evil.HostnameEnc = tB, []byte("EVIL")
 	idB, err := s.UpsertEnrollingDevice(ctx, evil)
@@ -132,7 +132,7 @@ func TestPGEnrollTenantWallAndStatusKept(t *testing.T) {
 	}
 }
 
-// Z4b-10 / Z4a-01 (PG): token kiracı sorgusu ve kiracı süzmeli yönetici listesi.
+// (PG): token kiracı sorgusu ve kiracı süzmeli yönetici listesi.
 func TestPGTokenTenantAndAdminListScoped(t *testing.T) {
 	s, ctx := pgStore(t)
 	tA, tB := uniq(t, "ta-"), uniq(t, "tb-")
@@ -174,7 +174,7 @@ func devTenant(ctx context.Context, t *testing.T, s *Store, id string) string {
 	return tn
 }
 
-// S-2 (PG): kiracı öncesi (legacy) cihazların tenant_id'si boştur (şema varsayılanı). Örtük
+// (PG): kiracı öncesi (legacy) cihazların tenant_id'si boştur (şema varsayılanı). Örtük
 // "default" token'ıyla yeniden kayıt (hem MAC/ON CONFLICT hem PreferredDeviceID yolu)
 // reddedilmez ve kiracıyı default'a normalleştirir; gerçek kiracılar için taşıma engelli kalır.
 func TestPGLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
@@ -196,7 +196,7 @@ func TestPGLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 		t.Fatalf("legacy cihaz boş kiracıyla başlamalı: %q", tn)
 	}
 
-	// NEGATIF: gerçek kiracı legacy cihazı devralamaz: kendi AYRI satırını alır (S-3), legacy
+	// NEGATIF: gerçek kiracı legacy cihazı devralamaz: kendi AYRI satırını alır, legacy
 	// satır değişmez.
 	evil := in
 	evil.TenantID, evil.HostnameEnc = other, []byte("EVIL")
@@ -250,7 +250,7 @@ func TestPGLegacyEmptyTenantDeviceReenrollsUnderDefault(t *testing.T) {
 	}
 }
 
-// S-7 (PG): bekleyen sır AYRI sütunda tutulur; ActivateMFA tek UPDATE ile takas yapar;
+// (PG): bekleyen sır AYRI sütunda tutulur; ActivateMFA tek UPDATE ile takas yapar;
 // bekleyen pencerede etkin sır + enrolled=true korunur; Disable ikisini de temizler.
 func TestPGMFAPendingSecretSwap(t *testing.T) {
 	s, ctx := pgStore(t)
@@ -320,7 +320,7 @@ func TestPGMFAPendingSecretSwap(t *testing.T) {
 	look("", false, "")
 }
 
-// S-3 (PG): MAC-squat DoS. Kiracı A, B'nin MAC'ini önceden kaydetse bile B kendi cihazını
+// (PG): MAC-squat DoS. Kiracı A, B'nin MAC'ini önceden kaydetse bile B kendi cihazını
 // enroll edebilir; uq_devices_tenant_mac aynı kiracıda ikinci satırı engeller (kanonik
 // kiracı: legacy boş ≡ default); eski küresel kısıt artık yoktur.
 func TestPGMACSquatCannotBlockOtherTenant(t *testing.T) {
@@ -413,7 +413,7 @@ func upgradeBlock(t *testing.T, name string) []string {
 	return stmts
 }
 
-// S-3 / W1b-2 (PG): schema.sql'deki GERÇEK W1B1 ve W1B2 yükseltme blokları, ESKİ (legacy) bir
+// Kiracı Duvarı III (PG): schema.sql'deki GERÇEK TENANT-MAC ve INGEST-TOKEN-TENANT yükseltme blokları, ESKİ (legacy) bir
 // durumdan — küresel mac_address_bidx kısıtı VAR, policies.tenant_id / tokens.tenant_id YOK —
 // başlayıp İKİ KEZ çalıştırılır: ilk turda eski kısıt düşer, yeni indeks ve sütunlar oluşur;
 // ikinci tur hatasız no-op'tur. Her şey bir transaction + geçici şema içinde yapılır (geri alınır,
@@ -466,7 +466,7 @@ func TestPGUpgradeBlockIdempotent(t *testing.T) {
 		t.Fatal("legacy durumda küresel kısıt bulunmalı (test ön koşulu)")
 	}
 
-	blocks := append(upgradeBlock(t, "W1B1-UPGRADE"), upgradeBlock(t, "W1B2-UPGRADE")...)
+	blocks := append(upgradeBlock(t, "TENANT-MAC-UPGRADE"), upgradeBlock(t, "INGEST-TOKEN-TENANT-UPGRADE")...)
 	for round := 0; round < 2; round++ {
 		for _, stmt := range blocks {
 			if _, err := tx.Exec(ctx, stmt); err != nil {
@@ -493,7 +493,7 @@ func TestPGUpgradeBlockIdempotent(t *testing.T) {
 	}
 }
 
-// S-5 / Z4b-09 (PG): bilinmeyen, geçersiz-id'li veya pasif yönetici platform ("") DEĞİL,
+// (PG): bilinmeyen, geçersiz-id'li veya pasif yönetici platform ("") DEĞİL,
 // ErrUnknownAdmin; etkin platform/kiracılı admin doğru kiracıyı alır.
 func TestPGAdminTenantUnknownInactiveFailsClosed(t *testing.T) {
 	s, ctx := pgStore(t)
@@ -535,7 +535,7 @@ func TestPGAdminTenantUnknownInactiveFailsClosed(t *testing.T) {
 	}
 }
 
-// S-4 (PG): token iptali, yönetici rol/pasifleştirme ve cihaz etiketi SQL'i kiracı
+// (PG): token iptali, yönetici rol/pasifleştirme ve cihaz etiketi SQL'i kiracı
 // predicate'ini taşır — servis kapısı atlansa bile çapraz-kiracı yazma etkisizdir; boş
 // kiracı (platform) süzülmez.
 func TestPGWritesCarryTenantPredicate(t *testing.T) {
@@ -703,7 +703,7 @@ func pgPolicy(ctx context.Context, t *testing.T, s *Store, name, tenantID string
 	return id
 }
 
-// Z4a-04 / Z4b-04 (PG): politika sahipliği — PolicyTenant, kiracı süzmeli liste (kendi +
+// (PG): politika sahipliği — PolicyTenant, kiracı süzmeli liste (kendi +
 // paylaşımlı, cihaz sayımı yalnız kendi kiracısı), atama bütünlüğü (SQL seviyesinde) ve
 // CurrentPolicy'nin çapraz-kiracı atamayı ajana itmemesi.
 func TestPGPolicyTenantOwnership(t *testing.T) {
@@ -809,7 +809,7 @@ type adminreadPolicy struct {
 	devices int
 }
 
-// Z4b-04 (PG): legacy boş kiracılı cihaz ≡ 'default' kiracı — 'default' politikası atanabilir,
+// (PG): legacy boş kiracılı cihaz ≡ 'default' kiracı — 'default' politikası atanabilir,
 // gerçek kiracının politikası atanamaz.
 func TestPGPolicyAssignLegacyEmptyTenantDevice(t *testing.T) {
 	s, ctx := pgStore(t)
@@ -853,7 +853,7 @@ func ackTenantOf(ctx context.Context, t *testing.T, s *Store, eventID string) st
 	return tn
 }
 
-// Z4b-11 (PG): event_ack.tenant_id artık OLAYIN kiracısıyla yazılır (ack ve vaka yolları);
+// (PG): event_ack.tenant_id artık OLAYIN kiracısıyla yazılır (ack ve vaka yolları);
 // eski boş kiracı 'default'a kanonikleşir; önceki hatalı ('default') satır doğru kiracıyla onarılır;
 // bulunamayan/geçersiz olay 'default' alır ve mevcut satırın kiracısını bozmaz.
 func TestPGEventAckWritesEventTenant(t *testing.T) {
@@ -931,7 +931,7 @@ func TestPGEventAckWritesEventTenant(t *testing.T) {
 	}
 }
 
-// Z4b-11 (PG): incidents.tenant_id cihazın kiracısıyla yazılır; legacy boş kiracı, cihazsız
+// (PG): incidents.tenant_id cihazın kiracısıyla yazılır; legacy boş kiracı, cihazsız
 // incident ve bilinmeyen cihaz 'default'.
 func TestPGOpenIncidentWritesDeviceTenant(t *testing.T) {
 	s, ctx := pgStore(t)

@@ -1,6 +1,6 @@
 package aisec
 
-// memory.go — AG-03: agent hafıza bütünlüğü (KUT-AI-SEC-005) + provenance zorunluluğu
+// memory.go — agent hafıza bütünlüğü (KUT-AI-SEC-005) + provenance zorunluluğu
 // (INV-AG-006) + memory-poisoning taint yayılımı. Hafıza, agent'ın kararlarını etkileyen
 // kalıcı bağlamdır; zehirlenmiş bir hafıza girdisi sonraki eylemleri sessizce yönlendirir.
 
@@ -47,8 +47,8 @@ func (r MemoryRecord) Expired(now time.Time) bool {
 
 // ReadTrust, bir agent'ın bu hafıza girdisini okuduktan sonraki ETKİN güven düzeyini
 // döner: girdinin SourceTrust'ı agent'a YAYILIR (en kirli kazanır, INV-AG-001). Böylece
-// zehirlenmiş (tainted) hafıza okuyan agent tainted olur → sonraki exfil guard (AG-02,
-// INV-AG-004) bunu yakalar. Bu, memory-poisoning → downstream-etki zincirinin veri-zemini.
+// zehirlenmiş (tainted) hafıza okuyan agent tainted olur → sonraki exfil guard
+// (INV-AG-004) bunu yakalar. Bu, memory-poisoning → downstream-etki zincirinin veri-zemini.
 func (r MemoryRecord) ReadTrust(agentTrust TrustLevel) TrustLevel {
 	return PropagateTrust(agentTrust, r.SourceTrust)
 }

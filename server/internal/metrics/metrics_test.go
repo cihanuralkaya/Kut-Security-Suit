@@ -70,7 +70,7 @@ func TestWriteExposition(t *testing.T) {
 	}
 }
 
-// W1b-2: sınırlı bellek-içi durumun düşen/atılan/boyut metrikleri /metrics'te görünür.
+// Kiracı Duvarı III: sınırlı bellek-içi durumun düşen/atılan/boyut metrikleri /metrics'te görünür.
 func TestWriteBoundedStateMetrics(t *testing.T) {
 	SetGraphStats(7, 5, 3, 120, 90)
 	SetSeqModelStats(11, 2, 4, 33)

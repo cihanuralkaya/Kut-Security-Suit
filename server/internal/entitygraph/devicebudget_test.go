@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// S4: tek bir (ele geçirilmiş) cihaz benzersiz alan adı seliyle kiracı tavanını doldurup
+// tek bir (ele geçirilmiş) cihaz benzersiz alan adı seliyle kiracı tavanını doldurup
 // diğer cihazların kenarlarını ya da kendi ESKİ C2 kenarını tahliye ettiremez. Yeni kenarlar
 // düşer ve sayılır; mevcutlar korunur.
 func TestDeviceBudgetFloodCannotEvict(t *testing.T) {

@@ -134,7 +134,7 @@ func (m *memStore) EnrollmentTokenTenant(_ context.Context, tokenID string) (str
 	return t, ok, nil
 }
 func (m *memStore) RevokeEnrollmentToken(_ context.Context, tokenID, tenantID string) error {
-	// S-4: db gibi — tenantID doluysa token'ın kiracısı eşleşmeli.
+	// db gibi — tenantID doluysa token'ın kiracısı eşleşmeli.
 	if tenantID != "" {
 		if t, ok := m.tokenTenants[tokenID]; !ok || t != tenantID {
 			return ErrForbidden
@@ -160,7 +160,7 @@ func (m *memStore) SetDeviceStatus(_ context.Context, deviceID, status string) e
 	return nil
 }
 func (m *memStore) SetDeviceTags(_ context.Context, deviceID string, tags []string, tenantID string) error {
-	// S-4: db gibi — tenantID doluysa cihazın kiracısı eşleşmeli.
+	// db gibi — tenantID doluysa cihazın kiracısı eşleşmeli.
 	if tenantID != "" && m.deviceTenant[deviceID] != tenantID {
 		return ErrForbidden
 	}
@@ -238,7 +238,7 @@ func (m *memStore) CreateAdmin(_ context.Context, email, passwordHash string, ro
 	return id, nil
 }
 func (m *memStore) AdminTenant(_ context.Context, adminID string) (string, error) {
-	// Z4b-09: db gibi — bilinmeyen/pasif yönetici platform ("") DEĞİL, ErrUnknownAdmin.
+	// db gibi — bilinmeyen/pasif yönetici platform ("") DEĞİL, ErrUnknownAdmin.
 	if a, ok := m.admins[adminID]; ok {
 		if a.active {
 			return a.tenant, nil
@@ -258,7 +258,7 @@ func (m *memStore) EventTenant(_ context.Context, eventID string) (string, error
 	return m.eventTenant[eventID], nil
 }
 func (m *memStore) SetAdminRole(_ context.Context, id string, role Role, tenantID string) error {
-	// S-4: db gibi — tenantID doluysa hedefin kiracısı eşleşmeli.
+	// db gibi — tenantID doluysa hedefin kiracısı eşleşmeli.
 	if tenantID != "" {
 		if a, ok := m.admins[id]; !ok || a.tenant != tenantID {
 			return ErrForbidden
@@ -744,7 +744,7 @@ func TestQuarantineReleaseReflectsStatus(t *testing.T) {
 	svc, _ := newService(t, store)
 
 	// Karantina: DESIRED durum QUARANTINE_PENDING olarak yansımalı (effective 'QUARANTINED'
-	// yalnız ajan komut SUCCESS bildirince verilir — F-D desired≠effective).
+	// yalnız ajan komut SUCCESS bildirince verilir — desired≠effective).
 	if err := svc.QuarantineDevice(context.Background(), "op1", "dev-1"); err != nil {
 		t.Fatal(err)
 	}
@@ -1131,7 +1131,7 @@ func TestScopeGuardWipe(t *testing.T) {
 }
 
 // TestScopeGuardG04, AssignPolicy ve CollectFile'ın da diğer yüksek-etkili yollarla
-// TUTARLI biçimde Scope/ROE'den geçtiğini doğrular (audit G-04/F-A): enforce+kapsam-dışı
+// TUTARLI biçimde Scope/ROE'den geçtiğini doğrular: enforce+kapsam-dışı
 // → ErrOutOfScope ve hiçbir yan-etki; enforce+izinli → geçer ve uygulanır.
 func TestScopeGuardG04(t *testing.T) {
 	ctx := context.Background()
@@ -1180,7 +1180,7 @@ func TestScopeGuardG04(t *testing.T) {
 }
 
 // TestScopeTenantRequired, yapılandırılmış motorda boş tenant'ın yüksek-etkili
-// operasyonu fail-closed reddettiğini doğrular (audit G-05 / INV-044).
+// operasyonu fail-closed reddettiğini doğrular (INV-044).
 func TestScopeTenantRequired(t *testing.T) {
 	ctx := context.Background()
 	store := newMemStore()
@@ -1205,7 +1205,7 @@ func TestScopeTenantRequired(t *testing.T) {
 }
 
 // TestScopeGuardErase, en yıkıcı yolun (EraseDevice) Scope/ROE'den FAIL-CLOSED geçtiğini
-// doğrular (audit G-03): motor yapılandırılmamışsa reddedilir; enforce+kapsam-dışı
+// doğrular: motor yapılandırılmamışsa reddedilir; enforce+kapsam-dışı
 // reddedilir (ve EraseDeviceData çağrılmaz); enforce+izinli geçer.
 func TestScopeGuardErase(t *testing.T) {
 	ctx := context.Background()

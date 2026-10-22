@@ -13,7 +13,7 @@ import (
 
 // TestLoginViaCanonicalAuthenticator, admin login'in controlplane.Authenticator'a
 // devredildiğinde doğru kimlikle token verdiğini, yanlış parolada 401 döndüğünü
-// doğrular (kanonik auth otoritesi yolu — W5b).
+// doğrular (kanonik auth otoritesi yolu).
 func TestLoginViaCanonicalAuthenticator(t *testing.T) {
 	srv, store := newServer(t)
 	addAdmin(t, store, "a1", "admin@x", "secret", admin.RoleAdmin)

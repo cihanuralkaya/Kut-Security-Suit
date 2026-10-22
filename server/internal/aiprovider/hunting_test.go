@@ -71,7 +71,7 @@ func TestHuntingAgent_ExecuteHunt(t *testing.T) {
 	}
 }
 
-// Z5-03: av koşusu çağıranın kiracısıyla kısıtlıdır — başka kiracının süreç/IP düğümleri ve
+// av koşusu çağıranın kiracısıyla kısıtlıdır — başka kiracının süreç/IP düğümleri ve
 // kenarları DÖNMEZ (negatif); sahibi kendi bulgusunu görür (pozitif); platform tümünü görür.
 func TestHuntingAgent_ExecuteHuntTenantScoped(t *testing.T) {
 	g := entitygraph.New()

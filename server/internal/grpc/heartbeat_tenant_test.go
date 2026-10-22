@@ -27,7 +27,7 @@ func hb(t *testing.T, h *AgentHandler) {
 	}
 }
 
-// Z3-06: heartbeat cihaz-durumu bildirimi CİHAZIN kiracısına atfedilir; sunucu varsayılan
+// heartbeat cihaz-durumu bildirimi CİHAZIN kiracısına atfedilir; sunucu varsayılan
 // kiracısına ("default") DEĞİL.
 func TestHeartbeatPublishesUnderDeviceTenant(t *testing.T) {
 	adm := &tenantAdmin{}
@@ -75,7 +75,7 @@ func TestHeartbeatNoticeTenantFailClosed(t *testing.T) {
 	}
 }
 
-// Z3-06: otomatik karantina sonrası cihaz-durumu bildirimi de cihazın kiracısına atfedilir.
+// otomatik karantina sonrası cihaz-durumu bildirimi de cihazın kiracısına atfedilir.
 func TestAutoQuarantineNoticeUsesDeviceTenant(t *testing.T) {
 	adm := &tenantAdmin{}
 	h := newTestHandler(&fakeDevices{tenant: "b"}, &fakeEvents{}, &fakeUpdates{})

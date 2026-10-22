@@ -1,6 +1,6 @@
 package agentsec
 
-// sign.go — P0-A: imzalı telemetri. Bir agent, gözlemlerini ed25519 ile imzalayıp
+// sign.go — imzalı telemetri. Bir agent, gözlemlerini ed25519 ile imzalayıp
 // KUT'un imza-doğrulamalı ucuna (POST /api/agentsec/telemetry) gönderir. Sunucu
 // (server/internal/aisec.TrustVerifier) imzayı + tenant + sequence + anti-replay +
 // tazeliği doğrular. signingBytes layout'u aisec.SigningBytes ile BİREBİR AYNI olmalıdır.

@@ -12,10 +12,10 @@ alınan kararlar.
 | 2 | Düz SHA-256 blind index kırılabilir (MAC ~48 bit) | HMAC(keyed) blind index (`*_bidx BYTEA`) | `db/schema.sql` |
 | 3 | Yerel saatle politika bypass edilir | Heartbeat yanıtı `server_time` taşır; politika buna çıpalı | `proto/.../agent.proto` |
 | 4 | OTA sadece hash → MITM | Manifesto `signature` alanı; ajan imzayı doğrular | `agent.proto`, `ota_releases` |
-| 5 | Dual-process tamper yetersiz | Watchdog "ilk savunma" olarak işaretlendi; gerçek koruma Faz 7 (sürücü/PPL) | `agent/cmd/watchdog` |
+| 5 | Dual-process tamper yetersiz | Watchdog "ilk savunma" olarak işaretlendi; gerçek koruma sürücü/PPL katmanıdır | `agent/cmd/watchdog` |
 | 6 | Enrollment/PKI tanımsız | `EnrollmentService` + `enrollment_tokens` + `agent_certificates` | `enrollment.proto`, `db` |
-| 7 | "Sandbox" gerçek sınır değil | Karar: script yürütme ayrı süreç + kısıtlı token/AppContainer (Faz 2+) | — |
-| 8 | Otomatik karantina + ML FP riski | Kademeli yanıt (uyar→kısıtla→izole), kritikte human-in-loop | Faz 5/6 |
+| 7 | "Sandbox" gerçek sınır değil | Karar: script yürütme ayrı süreç + kısıtlı token/AppContainer | — |
+| 8 | Otomatik karantina + ML FP riski | Kademeli yanıt (uyar→kısıtla→izole), kritikte human-in-loop | `agent/internal/quarantine` |
 | 9 | Offline senaryolar | Store-and-forward olay tamponu (`sequence`/`EventAck`); offline uninstall açık | `agent.proto` |
 | 10 | Ölçek/operasyon | RBAC (`admins`) + değişmez denetim izi (`audit_log`) | `db/schema.sql` |
 | 11 | KVKK | Bkz. `docs/kvkk.md`; saklama = partition DROP | `db`, `kvkk.md` |
@@ -48,10 +48,10 @@ response in the skeleton.
 | 2 | Plain SHA-256 blind index is breakable (MAC ~48 bit) | HMAC(keyed) blind index (`*_bidx BYTEA`) | `db/schema.sql` |
 | 3 | Policy bypassable via local clock | Heartbeat response carries `server_time`; policy is anchored to it | `proto/.../agent.proto` |
 | 4 | OTA hash-only -> MITM | Manifest `signature` field; the agent verifies the signature | `agent.proto`, `ota_releases` |
-| 5 | Dual-process tamper protection insufficient | Watchdog marked as a "first line of defense"; real protection is Phase 7 (driver/PPL) | `agent/cmd/watchdog` |
+| 5 | Dual-process tamper protection insufficient | Watchdog marked as a "first line of defense"; real protection is the driver/PPL layer | `agent/cmd/watchdog` |
 | 6 | Enrollment/PKI undefined | `EnrollmentService` + `enrollment_tokens` + `agent_certificates` | `enrollment.proto`, `db` |
-| 7 | "Sandbox" is not a real boundary | Decision: script execution in a separate process + constrained token/AppContainer (Phase 2+) | - |
-| 8 | Auto-quarantine + ML false-positive risk | Graded response (warn -> restrict -> isolate), human-in-loop on critical | Phase 5/6 |
+| 7 | "Sandbox" is not a real boundary | Decision: script execution in a separate process + constrained token/AppContainer | - |
+| 8 | Auto-quarantine + ML false-positive risk | Graded response (warn -> restrict -> isolate), human-in-loop on critical | `agent/internal/quarantine` |
 | 9 | Offline scenarios | Store-and-forward event buffer (`sequence`/`EventAck`); offline uninstall is an open item | `agent.proto` |
 | 10 | Scale/operations | RBAC (`admins`) + immutable audit log (`audit_log`) | `db/schema.sql` |
 | 11 | Data protection (KVKK) | See `docs/kvkk.md`; retention = partition DROP | `db`, `kvkk.md` |

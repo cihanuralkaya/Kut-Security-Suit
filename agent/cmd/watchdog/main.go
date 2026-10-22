@@ -6,7 +6,7 @@
 // rollback eder.
 //
 // NOT (inceleme #5): Bu, kaza sonucu sonlanmalara karşı ilk savunmadır; SYSTEM
-// yetkili müdahaleye karşı gerçek koruma ayrı bir faz (sürücü + PPL/ELAM).
+// yetkili müdahaleye karşı gerçek koruma ayrı bir katmandır (sürücü + PPL/ELAM).
 package main
 
 import (

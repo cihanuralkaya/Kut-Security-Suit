@@ -1,5 +1,5 @@
 // Package aisecnorm, Agentic Threat Defense düzleminin (aisec) bulgularını MEVCUT kanonik
-// olay modeline (model.Event) dönüştüren köprüdür (roadmap P0-B). AMAÇ: agent güvenlik
+// olay modeline (model.Event) dönüştüren köprüdür. AMAÇ: agent güvenlik
 // tespitleri için İKİNCİ bir olay modeli icat etmemek — bulgular da kimlik (içerik-adresli
 // EventID → dedup §6), korelasyon (§5) ve SIEM dışa aktarımı ile aynı hattan akmalı.
 //

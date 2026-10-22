@@ -62,7 +62,7 @@ message HeartbeatRequest {
   repeated string acked_command_ids = 6;
   // command_results, ajanın komutları YÜRÜTME SONUCUDUR (SUCCEEDED/FAILED) — ACK'ten
   // (yalnız teslim/alındı) FARKLI. Sunucu bunu effective-state geçişi için kullanır
-  // (ör. QUARANTINE SUCCEEDED → cihaz gerçekten izole; desired≠effective ayrımı, F-D).
+  // (ör. QUARANTINE SUCCEEDED → cihaz gerçekten izole; desired≠effective ayrımı).
   repeated CommandResult command_results = 7;
 }
 

@@ -5,8 +5,8 @@
 // REGRESSED/INCONCLUSIVE. FAIL-CLOSED: değerlendirilemeyen bir check ASLA VERIFIED
 // vermez (bu yüzden çekirdek-içi ve deterministiktir; fail-open bir dış servise konmaz).
 //
-// Bu dosya (Dilim 1) yalnız tipleri ve kiracı-kapsamlı depoyu içerir; kural yeniden-koşumu
-// (Verifier) ve risk-hesabı sonraki dilimlerde eklenir. Saf-stdlib (zero-dep Lite uyumlu).
+// Bu dosya yalnız tipleri ve kiracı-kapsamlı depoyu içerir; kural yeniden-koşumu
+// (Verifier) ve risk-hesabı sonra eklenir. Saf-stdlib (zero-dep Lite uyumlu).
 package verify
 
 import (
@@ -38,7 +38,7 @@ const (
 	// yol açan kötü-amaçlı göstergeye (IP/domain/hash) entity-graf üzerinden bağlı AKRAN
 	// cihazların da kontrol-altında olup olmadığı (lateral yayılım tam temizlendi mi?).
 	KindGraphContainment = "graph_containment"
-	// (rezerve: "compliance" — sonraki dilim)
+	// (rezerve: "compliance" — sonraki sürüm)
 )
 
 // Hatalar.

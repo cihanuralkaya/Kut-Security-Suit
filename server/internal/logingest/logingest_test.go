@@ -437,7 +437,7 @@ func TestStampCanonical(t *testing.T) {
 }
 
 // TestTenantDeviceIDNamespacesPerTenant: aynı kaynak adı iki farklı kiracıda AYRI cihaz
-// kimliğine eşlenir (Z3-01); varsayılan/boş kiracı eski kimliği korur; çıktı geçerli UUID.
+// kimliğine eşlenir; varsayılan/boş kiracı eski kimliği korur; çıktı geçerli UUID.
 func TestTenantDeviceIDNamespacesPerTenant(t *testing.T) {
 	base := SourceUUID("fw1")
 	a := TenantDeviceID("acme", base)

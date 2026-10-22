@@ -62,7 +62,7 @@ func TestHTTPProviderFailOpen(t *testing.T) {
 }
 
 // TestBrainResilienceMatrix, dış AI'ın KÖTÜ DAVRANDIĞI her senaryoda Brain'in ok=false +
-// SIFIR değer döndüğünü ve güvenliğin BOZULMADIĞINI doğrular (P0-C güvenlik-sınırı). Hiçbir
+// SIFIR değer döndüğünü ve güvenliğin BOZULMADIĞINI doğrular (güvenlik-sınırı). Hiçbir
 // senaryo panik/kalıcı-bloklama/kısmi-veri üretmez; çağıran (riskfusion/correlate) AI'ı
 // "yokmuş gibi" ele alıp deterministik yola döner. AI yalnız ÖNERİ üretir; bir arıza
 // enforcement'ı ne durdurabilir ne de zayıflatabilir.

@@ -1,6 +1,6 @@
 package aisec
 
-// tenant.go — AG-05: agent kimlik-bilgisi tenant sınırı (INV-AG-008) + agent containment
+// tenant.go — agent kimlik-bilgisi tenant sınırı (INV-AG-008) + agent containment
 // önerisinin DATA olması (INV-AG-010: containment normal authorization'ı bypass edemez;
 // yalnız §0 zinciriyle ActionRequest'e dönüşür).
 

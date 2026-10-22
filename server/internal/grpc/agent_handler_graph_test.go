@@ -91,7 +91,7 @@ func TestObserveGraphSafeWithoutGraph(t *testing.T) {
 	}
 }
 
-// Z3-03: ajan-kontrollü dizgeler sınırlıdır — aşırı uzun alan adı/süreç adı atlanır, parent_chain
+// ajan-kontrollü dizgeler sınırlıdır — aşırı uzun alan adı/süreç adı atlanır, parent_chain
 // derinlik tavanında kesilir; graf kiracı tavanıyla sınırlı kalır.
 func TestObserveGraphBoundsAgentStrings(t *testing.T) {
 	g := entitygraph.New()
@@ -138,7 +138,7 @@ func itoa(n int) string {
 	return string(b[i:])
 }
 
-// Z5-18: sekans taban çizgisi KİRACI başınadır — A kiracısı olaylarıyla öğrenilen zincir
+// sekans taban çizgisi KİRACI başınadır — A kiracısı olaylarıyla öğrenilen zincir
 // B kiracısının skorunu etkilemez.
 func TestObserveGraphSeqModelIsPerTenant(t *testing.T) {
 	m := aibrain.NewSeqModels()
@@ -159,7 +159,7 @@ func TestObserveGraphSeqModelIsPerTenant(t *testing.T) {
 	}
 }
 
-// S4 (kablolama): graf besleyicisi kenarları GÖNDEREN cihaza atfeder; bütçesi dolan cihazın
+// graf besleyicisi kenarları GÖNDEREN cihaza atfeder; bütçesi dolan cihazın
 // (süreç soyağacı dahil) yeni kenarları düşer, başka cihazın kenarları etkilenmez.
 func TestObserveGraphChargesDeviceBudget(t *testing.T) {
 	g := entitygraph.New()

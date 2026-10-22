@@ -22,7 +22,7 @@ func eventIDFor(t *testing.T, s *Store, deviceID, tenantID string) string {
 	return s.events[len(s.events)-1].id
 }
 
-// Z4b-11 (memstore, db ile aynı): event_ack kiracısı OLAYIN kiracısıdır (ack ve vaka yolları);
+// (memstore, db ile aynı): event_ack kiracısı OLAYIN kiracısıdır (ack ve vaka yolları);
 // eski boş kiracı 'default'a kanonikleşir; bilinmeyen olay 'default' alır ve mevcut satırın
 // kiracısını bozmaz. Kiracı yalnız olaydan gelir: Store API'sinde çağıranın kiracı girdisi yoktur.
 func TestEventAckWritesEventTenant(t *testing.T) {
@@ -77,7 +77,7 @@ func TestEventAckWritesEventTenant(t *testing.T) {
 	}
 }
 
-// Z4b-11 (memstore): incident kiracısı cihazın kiracısıdır; legacy boş kiracı, cihazsız ve
+// (memstore): incident kiracısı cihazın kiracısıdır; legacy boş kiracı, cihazsız ve
 // bilinmeyen cihaz 'default'. Okuma yolu (device→tenant) kiracıyı doğru süzer.
 func TestOpenIncidentWritesDeviceTenant(t *testing.T) {
 	ctx := context.Background()

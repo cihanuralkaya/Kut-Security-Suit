@@ -152,10 +152,10 @@ type Store interface {
 	// (çok-tenant izolasyonu; device→tenant).
 	GetArtifact(ctx context.Context, id string, tenantID string) (ArtifactContent, bool, error)
 	// ListCustody, bir delilin (artefakt) KALICI gözetim-zinciri kayıtlarını (seq>=1,
-	// ACCESSED/TRANSFERRED/SEALED) seq'e göre artan sırada döner (§23). Genesis (seq=0)
+	// ACCESSED/TRANSFERRED/SEALED) seq'e göre artan sırada döner. Genesis (seq=0)
 	// artefakttan türetilir, burada DÖNMEZ.
 	ListCustody(ctx context.Context, evidenceID string) ([]evidence.CustodyEntry, error)
-	// AppendCustody, gözetim zincirine EKLE-YALNIZ bir kayıt yazar (§23). UNIQUE(evidence_id,
+	// AppendCustody, gözetim zincirine EKLE-YALNIZ bir kayıt yazar. UNIQUE(evidence_id,
 	// seq) çatallanmayı engeller (eşzamanlı ekleme → ikinci yazma hata).
 	AppendCustody(ctx context.Context, evidenceID string, e evidence.CustodyEntry) error
 	ListAudit(ctx context.Context, limit int, tenantID string) ([]AuditRow, error)
@@ -1190,14 +1190,14 @@ func (s *Service) ArtifactBytes(ctx context.Context, id string, tenantID string)
 	return s.store.GetArtifact(ctx, id, tenantID)
 }
 
-// EvidenceDTO, bir delil kaydı + zincir doğrulama sonucudur (§23).
+// EvidenceDTO, bir delil kaydı + zincir doğrulama sonucudur.
 type EvidenceDTO struct {
 	evidence.Evidence
 	Verified bool `json:"verified"`
 }
 
 // DeviceEvidence, cihazın TOPLANAN artefaktlarından kurcalamaya-dayanıklı delil
-// kayıtları üretir (§23): her artefaktın kaydedilmiş SHA-256'sından (yeniden okumadan)
+// kayıtları üretir: her artefaktın kaydedilmiş SHA-256'sından (yeniden okumadan)
 // genesis COLLECTED gözetim kaydıyla bir zincir kurulur ve bütünlüğü doğrulanır.
 // Salt-okuma; mevcut artefakt meta verisi üzerine (şema değişikliği yok). Kalıcı
 // gözetim-zinciri (erişim denetimi dahil) bir sonraki adımdır.
@@ -1228,7 +1228,7 @@ func (s *Service) DeviceEvidence(ctx context.Context, deviceID string, tenantID 
 	return out, nil
 }
 
-// RecordCustody, bir delile (artefakt) KALICI bir gözetim olayı ekler (§23): mevcut
+// RecordCustody, bir delile (artefakt) KALICI bir gözetim olayı ekler: mevcut
 // zincirin (genesis + kalıcı kayıtlar) ucuna hash-bağlı yeni bir kayıt hesaplar ve
 // depolar. actor eylemi yapan; action ∈ {ACCESSED,TRANSFERRED,SEALED}. Artefakt
 // bulunamazsa hata. Eklenen kaydı döner.

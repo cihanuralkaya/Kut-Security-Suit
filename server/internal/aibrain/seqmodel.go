@@ -1,6 +1,6 @@
 package aibrain
 
-// seqmodel.go — süreç-zinciri sekans nadirlik modeli. SINIRLI ve KİRACI-BÖLÜMLÜ (Z3-03/Z5-18):
+// seqmodel.go — süreç-zinciri sekans nadirlik modeli. SINIRLI ve KİRACI-BÖLÜMLÜ:
 // girdi cihaz-kontrollü süreç adlarından gelir; önceki sürüm sınırsız büyür (OOM) ve tüm
 // kiracıların taban çizgisini tek modelde karıştırırdı (bir kiracının kendi zincirini "normal"
 // diye zehirlemesi başkalarının skorunu da etkilerdi). Şimdi: kaynak token başına LRU tahliyesi,
@@ -215,7 +215,7 @@ func (m *SeqModel) Score(tokens []string) SequenceScore {
 // maxSeqTenants, eşzamanlı kiracı modeli üst sınırıdır (bellek DoS savunması).
 const maxSeqTenants = 4096
 
-// SeqModels, KİRACI BAŞINA bir SeqModel tutar (Z5-18): bir kiracının taban çizgisi başkasının
+// SeqModels, KİRACI BAŞINA bir SeqModel tutar: bir kiracının taban çizgisi başkasının
 // skorunu etkilemez ve bir kiracının tavanı yalnız kendi modelini doldurur. Kiracı anahtarı
 // SUNUCU-TARAFI çözülmüş kiracıdır (cihaz/olay kiracısı ya da çağıranın kiracısı).
 type SeqModels struct {

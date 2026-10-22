@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Z4b-09 / S-5: bilinmeyen ya da PASİF yönetici için kiracı sorgusu "" (platform) DÖNMEZ;
+// bilinmeyen ya da PASİF yönetici için kiracı sorgusu "" (platform) DÖNMEZ;
 // ErrUnknownAdmin (403) döner. Çağıranlar fail-closed reddeder, platform kapsamına düşmez.
 func TestAdminTenantUnknownOrInactiveFailsClosed(t *testing.T) {
 	ctx := context.Background()
@@ -34,7 +34,7 @@ func TestAdminTenantUnknownOrInactiveFailsClosed(t *testing.T) {
 	}
 }
 
-// Z4b-09 / S-5: require() ile AdminTenant() arasında pasifleşen (TOCTOU) yönetici hiçbir
+// require() ile AdminTenant() arasında pasifleşen (TOCTOU) yönetici hiçbir
 // kapıdan platform admini gibi geçemez ve hiçbir yazma/okuma yapılamaz.
 func TestDeactivatedBetweenRequireAndTenantNeverBecomesPlatform(t *testing.T) {
 	ctx := context.Background()
@@ -84,7 +84,7 @@ func TestDeactivatedBetweenRequireAndTenantNeverBecomesPlatform(t *testing.T) {
 	}
 }
 
-// S-4: kiracı predicate'i depo (SQL) katmanında da zorlanır — servis kapısı atlansa bile
+// kiracı predicate'i depo (SQL) katmanında da zorlanır — servis kapısı atlansa bile
 // kiracıya bağlı çağıran başka kiracıya yazamaz; boş kiracı (platform) süzülmez.
 func TestStoreWritesCarryTenantPredicate(t *testing.T) {
 	ctx := context.Background()

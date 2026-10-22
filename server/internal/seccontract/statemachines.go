@@ -2,8 +2,8 @@ package seccontract
 
 // statemachines.go — CONTRACTS §5-9,§12 durum makinelerinin dondurulmuş geçiş
 // tabloları. Her tablo yalnız GEÇERLİ geçişleri içerir; tabloda olmayan her geçiş
-// fail-closed reddedilir. Bu PR-00B iskeletidir; mevcut impl'ler (device_commands,
-// quarantine.Manager, evidence) sonraki PR'larda bu tablolara migrate edilir.
+// fail-closed reddedilir. Bu bir iskelettir; mevcut impl'ler (device_commands,
+// quarantine.Manager, evidence) sonraki değişikliklerde bu tablolara migrate edilir.
 
 // ---- Command lifecycle (§6; INV-007/026/043/048/050) ----
 type CommandState string

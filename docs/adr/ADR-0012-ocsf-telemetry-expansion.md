@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Following the Roadmap vision (§17, §21, §108 `XDR-001`), KUT Security Fabric standardizes incoming endpoint telemetry using the Open Cybersecurity Schema Framework (OCSF v1.1.0). Previously, all canonical events were mapped exclusively to OCSF Detection Finding (`Class 2004`). 
+Following the product direction, KUT Security Fabric standardizes incoming endpoint telemetry using the Open Cybersecurity Schema Framework (OCSF v1.1.0). Previously, all canonical events were mapped exclusively to OCSF Detection Finding (`Class 2004`). 
 
 While appropriate for alerts and detections, high-volume process execution (EDR visibility) and network connection telemetry require distinct first-class OCSF event classes so external data lakes, SIEMs, and downstream analytical pipelines can ingest, filter, and partition them efficiently without confusion.
 

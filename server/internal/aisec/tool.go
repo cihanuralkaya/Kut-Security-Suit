@@ -1,6 +1,6 @@
 package aisec
 
-// tool.go — AG-04: tool/MCP çağrısı allowlist'i (KUT-AI-SEC-004) + bilinmeyen sunucu
+// tool.go — tool/MCP çağrısı allowlist'i (KUT-AI-SEC-004) + bilinmeyen sunucu
 // deny-by-default (INV-AG-009). Bilinmeyen bir tool/MCP sunucusu, saldırganın agent'a
 // kötü-niyetli araç enjekte etme (tool/context poisoning, MITRE ATLAS) vektörüdür.
 

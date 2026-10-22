@@ -1,5 +1,5 @@
 // Package trace, OpenTelemetry SDK'sına BAĞIMLI OLMADAN saf-Go dağıtık izleme
-// (distributed tracing) ilkellerini sağlar (yol haritası §14 — Gözlemlenebilirlik).
+// (distributed tracing) ilkellerini sağlar (Gözlemlenebilirlik).
 //
 // Amaç: Agent→C2 sınırını aşabilen hafif bir span/trace modeli kurmak ve bunu
 // ileride bir OTLP toplayıcısına (collector) DIŞ BAĞIMLILIK EKLEMEDEN aktarabilmek.

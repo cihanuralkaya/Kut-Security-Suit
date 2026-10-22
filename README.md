@@ -133,9 +133,9 @@ Tüm ayarlar ortam değişkenleriyle yapılır. Tam liste + açıklama:
 Etkin korumaları konsoldan (Yönetim → **Koruma Katmanları**) veya `GET /api/features`
 ile görebilirsiniz.
 
-## Yol haritası
+## Belgeler
 
-Bkz. [docs/architecture.md](docs/architecture.md) — fazlara bölünmüş plan.
+Mimari: [docs/architecture.md](docs/architecture.md).
 İnceleme bulguları ve karşılığında alınan kararlar [docs/threat-model.md](docs/threat-model.md)
 içinde. Harici log alımı entegrasyonu için [docs/INGEST.md](docs/INGEST.md);
 ONNX model entegrasyonu için [docs/ONNX.md](docs/ONNX.md); çekirdek-seviye kurcalama
@@ -277,9 +277,9 @@ All settings are via environment variables. Full list + descriptions:
 You can see which protections are enabled from the console (Management → **Protection
 Layers**) or via `GET /api/features`.
 
-## Roadmap
+## Documentation
 
-See [docs/architecture.md](docs/architecture.md) — a phased plan. Review findings
+Architecture: [docs/architecture.md](docs/architecture.md). Review findings
 and the decisions taken in response are in [docs/threat-model.md](docs/threat-model.md).
 For external log ingest integration, see [docs/INGEST.md](docs/INGEST.md); for ONNX
 model integration, see [docs/ONNX.md](docs/ONNX.md); for kernel-level tamper-protection

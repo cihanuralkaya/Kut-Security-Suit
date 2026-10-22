@@ -13,7 +13,7 @@ import (
 // korumalı sınırdan (admin/adminapi → privman/GuardedExecutor → Store) geçirerek
 // kuyruğa ekler. Bu arayüzün PRODUCTION gerçekleştirimi YALNIZ bir sınır paketinde
 // (server/internal/admin veya adminapi) yaşamalıdır — commandplane'in kendisi raw
-// Store mutasyonu (EnqueueCommand) ÇAĞIRMAZ (G-02 bariyeri: audit §1/§4). Böylece
+// Store mutasyonu (EnqueueCommand) ÇAĞIRMAZ (raw mutasyon bariyeri). Böylece
 // komut düzlemi gölge bir yetki/depo yolu oluşturmaz; tek yaptırımlı sınırdan geçer.
 type GuardedCommandSink interface {
 	// DispatchSigned, imzalı+yetkili zarfı korumalı sınırdan kuyruğa ekler ve

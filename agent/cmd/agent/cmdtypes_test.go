@@ -17,7 +17,7 @@ import (
 // OLMAYAN tiplerdir. Bir tip burada duruyorsa ajan onu yürütmez; bir dal eklendiğinde bu
 // liste güncellenmelidir (test aksi halde kırılır) — sessiz sürüklenme olmaz.
 var agentUnhandled = map[string]string{
-	cmdenvelope.TypeUninstall:          "yönetici giriş noktası yok; kaldırma akışı ayrı (W2 sonrası)",
+	cmdenvelope.TypeUninstall:          "yönetici giriş noktası yok; kaldırma akışı ayrı (sonraki sürüm)",
 	cmdenvelope.TypeCollectDiagnostics: "ajan tarafı uygulaması henüz yok (varsayılan dal boş)",
 }
 

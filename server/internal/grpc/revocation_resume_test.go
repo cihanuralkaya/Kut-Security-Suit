@@ -138,7 +138,7 @@ func (h *resumeHarness) connect() (srv hsResult, clientResumed bool) {
 	return srv, clientResumed
 }
 
-// TestRevokedCertRejectedOnResumedSession, Z3-04/Z4b-06: iptal kontrolü YALNIZ
+// TestRevokedCertRejectedOnResumedSession: iptal kontrolü YALNIZ
 // VerifyPeerCertificate'te olursa Go oturum devamında onu çağırmaz ve iptal edilmiş
 // sertifika eski bilet ile yeniden bağlanır. VerifyConnection her el sıkışmada çalışır.
 func TestRevokedCertRejectedOnResumedSession(t *testing.T) {
