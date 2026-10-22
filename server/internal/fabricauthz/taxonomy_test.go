@@ -34,7 +34,7 @@ func decide(t *testing.T, ca *CommandAuthorizer, action, dev string) commandplan
 	return d
 }
 
-// N15: her tablo tipi için sınıflandırma var, scope aksiyonu scope paketinde KAYITLI ve sınıfa
+// her tablo tipi için sınıflandırma var, scope aksiyonu scope paketinde KAYITLI ve sınıfa
 // uygun etki seviyesinde; bilinmeyen tip her modda reddedilir.
 func TestCommandAuthorizer_EveryTableTypeClassified(t *testing.T) {
 	wantImpact := map[cmdenvelope.Class]scope.Impact{
@@ -69,7 +69,7 @@ func TestCommandAuthorizer_EveryTableTypeClassified(t *testing.T) {
 	}
 }
 
-// N16: UNQUARANTINE enforce altında GERÇEK motorla izinli (hariç cihazda da), nil motorda da.
+// UNQUARANTINE enforce altında GERÇEK motorla izinli (hariç cihazda da), nil motorda da.
 func TestCommandAuthorizer_UnquarantineAllowedUnderEnforce(t *testing.T) {
 	ca := NewCommandAuthorizer(taxonomyEngine(false), "t")
 	for _, dev := range []string{"dev-in", "dev-ex", "dev-unknown"} {
@@ -89,7 +89,7 @@ func TestCommandAuthorizer_UnquarantineAllowedUnderEnforce(t *testing.T) {
 	}
 }
 
-// N17: COLLECT_FILE / RUN_SIGNED_SCRIPT kapsamdaki cihazda izinli, hariç cihazda red.
+// COLLECT_FILE / RUN_SIGNED_SCRIPT kapsamdaki cihazda izinli, hariç cihazda red.
 func TestCommandAuthorizer_CollectAndScriptFollowScope(t *testing.T) {
 	ca := NewCommandAuthorizer(taxonomyEngine(false), "t")
 	for _, typ := range []string{"COLLECT_FILE", "RUN_SIGNED_SCRIPT"} {
@@ -109,7 +109,7 @@ func TestCommandAuthorizer_CollectAndScriptFollowScope(t *testing.T) {
 	}
 }
 
-// N18: yıkıcı tipler (WIPE, UNINSTALL) açık ROE olmadan reddedilir, ROE ile izinli.
+// yıkıcı tipler (WIPE, UNINSTALL) açık ROE olmadan reddedilir, ROE ile izinli.
 func TestCommandAuthorizer_DestructiveNeedsROE(t *testing.T) {
 	for _, typ := range []string{"WIPE", "UNINSTALL"} {
 		if d := decide(t, NewCommandAuthorizer(taxonomyEngine(false), "t"), typ, "dev-in"); d.Allowed {
@@ -124,7 +124,7 @@ func TestCommandAuthorizer_DestructiveNeedsROE(t *testing.T) {
 	}
 }
 
-// N19: AUDIT modunda motor reddederse komut izinli döner + would-deny sayacı artar.
+// AUDIT modunda motor reddederse komut izinli döner + would-deny sayacı artar.
 func TestCommandAuthorizer_AuditModeWouldDeny(t *testing.T) {
 	ca := NewCommandAuthorizerMode(taxonomyEngine(false), "t", false)
 	before := metrics.Counters()["cmd_would_deny"]
@@ -151,7 +151,7 @@ func TestCommandAuthorizer_AuditModeWouldDeny(t *testing.T) {
 	}
 }
 
-// N20: nil motor — enforce: red, audit: izin; bilinmeyen tip her zaman red.
+// nil motor — enforce: red, audit: izin; bilinmeyen tip her zaman red.
 func TestCommandAuthorizer_NilEngineModes(t *testing.T) {
 	if d := decide(t, NewCommandAuthorizerMode(nil, "t", true), "QUARANTINE", "dev-in"); d.Allowed {
 		t.Error("nil motor + enforce: red beklenirdi")
@@ -168,14 +168,54 @@ func TestCommandAuthorizer_NilEngineModes(t *testing.T) {
 	}
 }
 
-// Küçük harf / boşluklu KAYITLI tip adı kabul edilir (eski çağrı sözleşmesi: "wipe"); scope
-// aksiyon adları ("remote_command") ise komut tipi sayılmaz.
-func TestCommandAuthorizer_CaseInsensitiveRegisteredOnly(t *testing.T) {
+// Yalnız kanonik (BÜYÜK harf, tam eşleşme) tip adı kabul edilir; küçük harf/boşluklu ad ve scope
+// aksiyon adları ("remote_command") komut tipi sayılmaz (commandplane.Validate ile tutarlı).
+func TestCommandAuthorizer_ExactRegisteredOnly(t *testing.T) {
 	ca := NewCommandAuthorizer(taxonomyEngine(true), "t")
-	if d := decide(t, ca, " wipe ", "dev-in"); !d.Allowed {
-		t.Errorf("küçük harf kayıtlı tip kabul edilmeli: %s", d.Reason)
+	if d := decide(t, ca, "WIPE", "dev-in"); !d.Allowed {
+		t.Errorf("kanonik tip kabul edilmeli: %s", d.Reason)
+	}
+	if d := decide(t, ca, " wipe ", "dev-in"); d.Allowed {
+		t.Error("küçük harf/boşluklu ad komut tipi sayılmamalı")
 	}
 	if d := decide(t, ca, "remote_command", "dev-in"); d.Allowed {
 		t.Error("scope aksiyon adı komut tipi sayılmamalı")
+	}
+}
+
+// komut adı HER yerde tam eşleşir. Kırpma/büyük harfe çevirme yok;
+// Authorize ile commandplane.Validate aynı biçimleri reddeder.
+func TestCommandName_ExactEverywhere(t *testing.T) {
+	variants := func(name string) []string {
+		return []string{
+			strings.ToLower(name), " " + name, name + " ", "\t" + name, name + "\n", name + "\x00",
+			strings.ToUpper(name[:1]) + strings.ToLower(name[1:]), strings.ReplaceAll(name, "_", "-"),
+		}
+	}
+	for _, enforce := range []bool{true, false} {
+		ca := NewCommandAuthorizerMode(taxonomyEngine(true), "t", enforce)
+		for _, s := range cmdenvelope.All() {
+			// Kanonik ad: motor çözer (bilinmeyen değil).
+			if d := decide(t, ca, s.Name, "dev-in"); !d.Allowed && strings.Contains(d.Reason, "bilinmeyen komut tipi") {
+				t.Errorf("enforce=%v: kanonik %s bilinmeyen sayıldı", enforce, s.Name)
+			}
+			for _, v := range variants(s.Name) {
+				if v == s.Name {
+					continue
+				}
+				d := decide(t, ca, v, "dev-in")
+				if d.Allowed || !strings.Contains(d.Reason, "bilinmeyen komut tipi") {
+					t.Errorf("enforce=%v: Authorize(%q) = %+v, bilinmeyen olarak reddedilmeliydi", enforce, v, d)
+				}
+				req := commandplane.CommandRequest{DeviceID: "dev-in", Type: commandplane.CommandType(v), IssuedBy: "admin:1"}
+				if err := req.Validate(); err == nil {
+					t.Errorf("Validate(%q) kabul etti; Authorize ile tutarsız", v)
+				}
+			}
+			req := commandplane.CommandRequest{DeviceID: "dev-in", Type: commandplane.CommandType(s.Name), IssuedBy: "admin:1"}
+			if err := req.Validate(); err != nil {
+				t.Errorf("Validate(%q) kanonik adı reddetti: %v", s.Name, err)
+			}
+		}
 	}
 }

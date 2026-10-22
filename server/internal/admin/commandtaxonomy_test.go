@@ -45,7 +45,7 @@ func queuedTypes(store *memStore) []string {
 	return out
 }
 
-// TestEnforce_QuarantineThenUnquarantine (N16): enforce altında yetkili rol karantinaya alıp
+// TestEnforce_QuarantineThenUnquarantine: enforce altında yetkili rol karantinaya alıp
 // SONRA kaldırabilir. Eskiden UNQUARANTINE komut düzleminde ham ad olarak Destructive'e
 // düşüp daima reddediliyordu (guardScope muaf tutarken düzlem tutmuyordu).
 func TestEnforce_QuarantineThenUnquarantine(t *testing.T) {
@@ -100,7 +100,7 @@ func TestEnforce_ExcludedDevice(t *testing.T) {
 	}
 }
 
-// TestEnforce_CollectFileScope (N17): COLLECT_FILE kapsamdaki cihazda geçer (düzlemde
+// TestEnforce_CollectFileScope: COLLECT_FILE kapsamdaki cihazda geçer (düzlemde
 // bilinmeyen ad → Destructive → daima red), dışlanmış cihazda reddedilir.
 func TestEnforce_CollectFileScope(t *testing.T) {
 	svc, store, _ := enforceFixture(t, false)
@@ -116,7 +116,7 @@ func TestEnforce_CollectFileScope(t *testing.T) {
 	}
 }
 
-// TestEnforce_PlaneSharesScopeDecision (N17): yönetici yolu olmayan RUN_SIGNED_SCRIPT dâhil,
+// TestEnforce_PlaneSharesScopeDecision: yönetici yolu olmayan RUN_SIGNED_SCRIPT dâhil,
 // komut düzlemi kapsamdaki cihaza izin verir, dışlanmışa vermez (admin ile aynı tablo).
 func TestEnforce_PlaneSharesScopeDecision(t *testing.T) {
 	_, store, plane := enforceFixture(t, false)
@@ -132,7 +132,7 @@ func TestEnforce_PlaneSharesScopeDecision(t *testing.T) {
 	}
 }
 
-// TestEnforce_WipeKeepsROEAndDualControl (N18): WIPE açık ROE olmadan reddedilir; ROE ile geçer.
+// TestEnforce_WipeKeepsROEAndDualControl: WIPE açık ROE olmadan reddedilir; ROE ile geçer.
 // Çift-kontrol (iki farklı ADMIN) enforce altında da korunur: kendi talebini onaylayamaz.
 func TestEnforce_WipeKeepsROEAndDualControl(t *testing.T) {
 	ctx := context.Background()
@@ -168,7 +168,7 @@ func TestEnforce_WipeKeepsROEAndDualControl(t *testing.T) {
 	}
 }
 
-// TestUnknownCommandTypeDenied (N15): kayıtsız tip hiçbir yoldan kuyruğa giremez — ne yönetici
+// TestUnknownCommandTypeDenied: kayıtsız tip hiçbir yoldan kuyruğa giremez — ne yönetici
 // command() yolu (ErrInvalidInput), ne komut düzlemi (Validate), ne de yetkilendirici.
 func TestUnknownCommandTypeDenied(t *testing.T) {
 	svc, store, plane := enforceFixture(t, true)
